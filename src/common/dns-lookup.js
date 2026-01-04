@@ -2,6 +2,16 @@ import { extractSubdomain, getEtld1, getHostname, scoreSubdomainEntropy } from '
 
 export async function dnsLookup(url) {
     const hostname = getHostname(url);
+
+    if (hostname.endsWith('.test')) {
+        const testDnsData = [
+            { name: 'tracker.site.test.', type: 5, TTL: 3600, data: 'tracker.test.' },
+            { name: 'tracker.test.', type: 1, TTL: 3600, data: '127.0.0.1' },
+        ];
+
+        return enrichDnsAnswer(testDnsData, hostname);
+    }
+
     const lookupUrl = `https://dns.google/resolve?name=${hostname}`;
 
     const resp = await fetch(lookupUrl, {
