@@ -59,41 +59,50 @@ function hookFetch() {
     window.fetch = hookedFetch;
 }
 
+// Wraps open/send on the prototype rather than replacing the XMLHttpRequest constructor,
+// so static constants (XMLHttpRequest.DONE), subclassing and constructor identity keep working.
 function hookXHR() {
-    const OriginalXHR = window.XMLHttpRequest;
-    if (typeof OriginalXHR !== 'function') {
+    const proto = window.XMLHttpRequest?.prototype;
+    if (!proto) {
         return;
     }
 
-    function HookedXHR() {
-        const xhr = new OriginalXHR();
-
-        let url: string | null = null;
-        let method: string | null = null;
-
-        const originalOpen = xhr.open;
-
-        xhr.open = function (this: XMLHttpRequest, m: string, u: string | URL) {
-            method = m ? String(m) : null;
-            url = u ? String(u) : null;
-
-            return Reflect.apply(originalOpen, this, arguments);
-        };
-
-        const originalSend = xhr.send;
-        xhr.send = function (this: XMLHttpRequest) {
-            recordHttpEvent('xhr', url, method, xhr.withCredentials ? 'include' : 'omit');
-
-            return Reflect.apply(originalSend, this, arguments);
-        };
-
-        return xhr;
+    const originalOpen: Hooked<XMLHttpRequest['open']> = proto.open;
+    const originalSend: Hooked<XMLHttpRequest['send']> = proto.send;
+    if (originalOpen.__is_hooked__ || originalSend.__is_hooked__) {
+        return;
     }
 
-    HookedXHR.prototype = OriginalXHR.prototype;
-    const hookedXHR = HookedXHR as unknown as Hooked<typeof XMLHttpRequest>;
-    hookedXHR.__is_hooked__ = true;
-    window.XMLHttpRequest = hookedXHR;
+    const openedRequests = new WeakMap<XMLHttpRequest, { url: string | null; method: string | null }>();
+
+    // A request is only tracked once the native open() has succeeded, which also proves `this`
+    // is a real XHR. send() records only tracked requests, so invalid calls (non-XHR `this`,
+    // send without open, repeated send) reach the native method untouched and emit no event.
+    const hookedOpen: Hooked<XMLHttpRequest['open']> = function (this: XMLHttpRequest, method: string, url: string | URL) {
+        const result = Reflect.apply(originalOpen, this, arguments);
+
+        openedRequests.set(this, {
+            method: method ? String(method) : null,
+            url: url ? String(url) : null,
+        });
+
+        return result;
+    };
+
+    const hookedSend: Hooked<XMLHttpRequest['send']> = function (this: XMLHttpRequest) {
+        const request = openedRequests.get(this);
+        if (request) {
+            openedRequests.delete(this);
+            recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit');
+        }
+
+        return Reflect.apply(originalSend, this, arguments);
+    };
+
+    hookedOpen.__is_hooked__ = true;
+    hookedSend.__is_hooked__ = true;
+    proto.open = hookedOpen;
+    proto.send = hookedSend;
 }
 
 function getCallerScriptUrl(): string | null {
