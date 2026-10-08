@@ -1,5 +1,22 @@
 {
+  "name": "web-tracking-extension",
+  "description": "Detects browser fingerprinting, CNAME cloaking and DNS-based tracking on visited websites.",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
-    "@types/chrome": "^0.1.32"
+    "typescript": "^5.9.3",
+    "web-ext": "^10.7.0",
+    "wxt": "^0.21.4"
   }
 }

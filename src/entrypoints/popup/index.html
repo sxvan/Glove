@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Tracking Detector</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <header>
+    <div class="titleRow">
+      <div class="title">Tracking Snapshot</div>
+      <div class="pill" id="pillStatus">No data</div>
+    </div>
+    <div class="sub" id="pageUrl">—</div>
+  </header>
+
+  <main>
+    <section class="grid" aria-label="Overview">
+
+      <!-- Fingerprinting (single card + accordion) -->
+      <details id="fpAccordion" class="card">
+        <summary>
+          <div class="cardHead" style="width:100%; margin:0;">
+            <h3 style="margin:0;">
+              <span class="dot" id="dotFp"></span> Fingerprinting
+            </h3>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge" id="badgeFp">—</span>
+              <div class="chev" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="kv" style="margin-top:8px;">
+            <span><b id="fpIntensity">—</b> events</span>
+            <span><b id="fpDuration">—</b> sec</span>
+            <span><b id="fpApis">—</b> APIs</span>
+            <span><b id="fpCats">—</b> categories</span>
+          </div>
+        </summary>
+
+        <div class="accBody">
+          <p class="sentence" id="fpSentence">—</p>
+
+          <details class="miniDetails" id="fpMetricsDetails">
+            <summary>
+              <div class="miniTitle">Metrics</div>
+              <div class="chev" aria-hidden="true"></div>
+            </summary>
+            <div class="miniBody">
+              <div class="list" id="fpMetricsList"></div>
+            </div>
+          </details>
+
+          <div class="sectionTitle">Scripts</div>
+          <div id="scriptsList" aria-label="Fingerprinting scripts list"></div>
+
+          <button id="scriptsToggleBtn" class="toggleBtn" style="display:none;" type="button">
+            Show all scripts
+          </button>
+        </div>
+      </details>
+
+      <!-- CNAME cloaking (accordion) -->
+      <details id="cnameAccordion" class="card">
+        <summary>
+          <div class="cardHead" style="width:100%; margin:0;">
+            <h3 style="margin:0;">
+              <span class="dot" id="dotCname"></span> CNAME cloaking
+            </h3>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge" id="badgeCname">—</span>
+              <div class="chev" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="kv" style="margin-top:8px;">
+            <span><b id="cnameDomains">—</b> domains</span>
+            <span><b id="cnameRequests">—</b> requests</span>
+          </div>
+        </summary>
+
+        <div class="accBody">
+          <div id="cnameDomainsList"></div>
+        </div>
+      </details>
+
+      <!-- DNS tracking (accordion) -->
+      <details id="dnsAccordion" class="card">
+        <summary>
+          <div class="cardHead" style="width:100%; margin:0;">
+            <h3 style="margin:0;">
+              <span class="dot" id="dotDns"></span> DNS tracking
+            </h3>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge" id="badgeDns">—</span>
+              <div class="chev" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="kv" style="margin-top:8px;">
+            <span><b id="dnsDomains">—</b> domains</span>
+            <span><b id="dnsRequests">—</b> requests</span>
+          </div>
+        </summary>
+
+        <div class="accBody">
+          <div id="dnsDomainsList"></div>
+        </div>
+      </details>
+
+    </section>
+  </main>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+
+</html>
