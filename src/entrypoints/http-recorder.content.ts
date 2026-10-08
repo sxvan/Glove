@@ -75,22 +75,25 @@ function hookXHR() {
 
     const openedRequests = new WeakMap<XMLHttpRequest, { url: string | null; method: string | null }>();
 
-    // Calls with a non-XHR `this` skip recording, so the native method throws its usual error.
+    // A request is only tracked once the native open() has succeeded, which also proves `this`
+    // is a real XHR. send() records only tracked requests, so invalid calls (non-XHR `this`,
+    // send without open, repeated send) reach the native method untouched and emit no event.
     const hookedOpen: Hooked<XMLHttpRequest['open']> = function (this: XMLHttpRequest, method: string, url: string | URL) {
-        if (this instanceof XMLHttpRequest) {
-            openedRequests.set(this, {
-                method: method ? String(method) : null,
-                url: url ? String(url) : null,
-            });
-        }
+        const result = Reflect.apply(originalOpen, this, arguments);
 
-        return Reflect.apply(originalOpen, this, arguments);
+        openedRequests.set(this, {
+            method: method ? String(method) : null,
+            url: url ? String(url) : null,
+        });
+
+        return result;
     };
 
     const hookedSend: Hooked<XMLHttpRequest['send']> = function (this: XMLHttpRequest) {
-        if (this instanceof XMLHttpRequest) {
-            const request = openedRequests.get(this);
-            recordHttpEvent('xhr', request?.url ?? null, request?.method ?? null, this.withCredentials ? 'include' : 'omit');
+        const request = openedRequests.get(this);
+        if (request) {
+            openedRequests.delete(this);
+            recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit');
         }
 
         return Reflect.apply(originalSend, this, arguments);
