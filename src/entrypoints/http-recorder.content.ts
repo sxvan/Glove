@@ -41,22 +41,81 @@ function hookFetch() {
         return;
     }
 
+    const describe = createFetchDescriber();
+
     const hookedFetch: Hooked<typeof fetch> = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
-        let req: Request;
-
-        if (input instanceof Request) {
-            req = init ? new Request(input, init) : input;
-        } else {
-            req = new Request(input, init);
-        }
-
-        recordHttpEvent('fetch', req.url, req.method, req.cache);
+        // Recording must never change what the page observes, so its errors are ignored.
+        try {
+            const { url, method, credentials } = describe(input, init);
+            recordHttpEvent('fetch', url, method, credentials);
+        } catch {}
 
         return Reflect.apply(originalFetch, this, arguments);
     };
 
     hookedFetch.__is_hooked__ = true;
     window.fetch = hookedFetch;
+}
+
+// Methods the Fetch standard normalizes to uppercase; others (e.g. "patch") are sent as written.
+const NORMALIZED_METHODS = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT']);
+
+/**
+ * Derives what fetch() will request without constructing a Request, which would consume the
+ * body of a Request input and throw synchronously on invalid input.
+ */
+function createFetchDescriber() {
+    // Captured at install time, before page scripts run, so replaced globals can't affect them.
+    const requestUrl = nativeGetter<string>(Request.prototype, 'url');
+    const requestMethod = nativeGetter<string>(Request.prototype, 'method');
+    const requestCredentials = nativeGetter<string>(Request.prototype, 'credentials');
+    const urlHref = nativeGetter<string>(URL.prototype, 'href');
+
+    return (input: unknown, init: unknown): { url: string | null; method: string; credentials: string } => {
+        const url: string | null = requestUrl(input) ?? urlHref(input) ?? (typeof input === 'string' ? resolveUrl(input) : null);
+        let method = requestMethod(input) ?? 'GET';
+        let credentials = requestCredentials(input) ?? 'same-origin';
+
+        if (init !== null && typeof init === 'object') {
+            const { method: initMethod, credentials: initCredentials } = init as RequestInit;
+            if (typeof initMethod === 'string') {
+                method = NORMALIZED_METHODS.has(initMethod.toUpperCase()) ? initMethod.toUpperCase() : initMethod;
+            }
+            if (typeof initCredentials === 'string') {
+                credentials = initCredentials;
+            }
+        }
+
+        return { url, method, credentials };
+    };
+}
+
+function resolveUrl(url: string): string | null {
+    try {
+        return new URL(url, document.baseURI).href;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Returns a reader for a native getter. Reading through the original getter doubles as a brand
+ * check: it throws (and the reader returns undefined) unless `target` is a genuine instance.
+ */
+function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | undefined {
+    const get = Object.getOwnPropertyDescriptor(proto, prop)?.get;
+
+    return (target) => {
+        if (!get || target === null || typeof target !== 'object') {
+            return undefined;
+        }
+
+        try {
+            return Reflect.apply(get, target, []) as T;
+        } catch {
+            return undefined;
+        }
+    };
 }
 
 // Wraps open/send on the prototype rather than replacing the XMLHttpRequest constructor,
