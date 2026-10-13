@@ -3,6 +3,7 @@ import { defineConfig } from 'wxt';
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   srcDir: 'src',
+  modules: ['@wxt-dev/module-svelte'],
   // Explicit imports instead of auto-imports, so every file shows where its symbols come from.
   imports: false,
   manifest: {
