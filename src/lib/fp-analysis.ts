@@ -2,14 +2,14 @@ import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/typ
 import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
 import { FP_APIS_BY_ID, FP_TOTAL_WEIGHT, FP_CATEGORIES_TOTAL_WEIGHT, FP_CATEGORY_WEIGHTS } from './fp-apis';
-import { consolidateHttpEvents, getEnrichedHttpRequestsWithDns } from './http-analysis';
+import { consolidateHttpEvents, enrichHttpRequestsWithDns } from './http-analysis';
 import { detectSpikes } from './spike-detection';
 
 export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>) {
     const documentFpEvents: FpMonkeyEvent[] = [];
     const documentConsolidatedHttpEvents: HttpConsolidatedEvent[] = [];
 
-    document.httpRequests = getEnrichedHttpRequestsWithDns(document, dnsResults);
+    enrichHttpRequestsWithDns(document, dnsResults);
 
     for (const script of Object.values(document.scripts)) {
         if (script.fpEvents.length === 0) {

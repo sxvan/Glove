@@ -17,6 +17,34 @@ export default defineBackground(() => {
     const session = createSession();
     const fpScheduler = createScheduler({ debounceMs: DEBOUNCE_MS, maxIntervalMs: MAX_INTERVAL_MS });
 
+    // In-flight DNS lookups by hostname, shared by all requests to that host.
+    const pendingLookups = new Map<string, Promise<void>>();
+
+    function scheduleAnalysis(document: DocumentState, tabId: number) {
+        fpScheduler.notify(document.documentId, () => {
+            analyzeDocumentFp(document, session.dnsResults);
+            broadcastTabSnapshot(session, tabId);
+        });
+    }
+
+    /** Resolves once a DNS result for the host is cached; rejects if the lookup failed (it is retried later). */
+    function lookUpHost(hostname: string): Promise<void> {
+        if (session.dnsResults.has(hostname)) {
+            return Promise.resolve();
+        }
+
+        let lookup = pendingLookups.get(hostname);
+        if (!lookup) {
+            lookup = dnsLookup(hostname)
+                .then((dnsResult) => {
+                    session.dnsResults.set(hostname, dnsResult);
+                })
+                .finally(() => pendingLookups.delete(hostname));
+            pendingLookups.set(hostname, lookup);
+        }
+        return lookup;
+    }
+
     function storeHttpRequest(tabId: number, frameId: number, documentId: string, details: Browser.webRequest.OnBeforeRequestDetails) {
         if (details.url.startsWith('chrome-extension://')) {
             return;
@@ -33,19 +61,18 @@ export default defineBackground(() => {
         }
 
         const hostname = getHostname(details.url);
-        if (!session.dnsResults.has(hostname!)) {
-            dnsLookup(hostname).then((dnsResponse) => {
-                session.dnsResults.set(hostname!, dnsResponse);
-            });
-        }
-
         const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, hostname };
         document.httpRequests.push(httpEvent);
 
-        fpScheduler.notify(document.documentId, () => {
-            analyzeDocumentFp(document, session.dnsResults);
-            broadcastTabSnapshot(session, tabId);
-        });
+        scheduleAnalysis(document, tabId);
+
+        // Analyze again once the host's DNS result arrives, so the request gets its CNAME details.
+        if (hostname && !session.dnsResults.has(hostname)) {
+            lookUpHost(hostname).then(
+                () => scheduleAnalysis(document, tabId),
+                (error) => console.warn('DNS lookup failed', hostname, error)
+            );
+        }
     }
 
     browser.runtime.onMessage.addListener((msg: RecorderMessage, sender) => {
@@ -66,20 +93,14 @@ export default defineBackground(() => {
                 storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, fpEvent);
             }
 
-            fpScheduler.notify(document.documentId, () => {
-                analyzeDocumentFp(document, session.dnsResults);
-                broadcastTabSnapshot(session, tabId);
-            });
+            scheduleAnalysis(document, tabId);
             return;
         }
 
         if (msg.type === 'http') {
             storeHttpEvent(session, tabId, frameId, sender.documentId, sender.url, msg.payload);
 
-            fpScheduler.notify(document.documentId, () => {
-                analyzeDocumentFp(document, session.dnsResults);
-                broadcastTabSnapshot(session, tabId);
-            });
+            scheduleAnalysis(document, tabId);
             return;
         }
     });
