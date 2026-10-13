@@ -15,9 +15,9 @@ export default defineContentScript({
 
     main() {
         document.documentElement.addEventListener('fp-monkey', (event) => {
-            const { detail } = event as CustomEvent<FpMonkeyEvent>;
-            if (detail) {
-                const message: RecorderMessage = { type: 'fp', payload: detail };
+            const { detail } = event as CustomEvent<FpMonkeyEvent[]>;
+            if (Array.isArray(detail) && detail.length > 0) {
+                const message: RecorderMessage = { type: 'fp-batch', payload: detail };
                 browser.runtime.sendMessage(message);
             }
         });

@@ -61,8 +61,10 @@ export default defineBackground(() => {
         const frameId = sender.frameId!;
         const { document } = ensureDocument(session, tabId, frameId, sender.documentId, sender.url);
 
-        if (msg.type === 'fp') {
-            storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, msg.payload);
+        if (msg.type === 'fp-batch') {
+            for (const fpEvent of msg.payload) {
+                storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, fpEvent);
+            }
 
             fpScheduler.notify(document.documentId, () => {
                 analyzeDocumentFp(document, session.dnsResults);
