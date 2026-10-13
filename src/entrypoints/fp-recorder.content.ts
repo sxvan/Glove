@@ -18,11 +18,22 @@ export default defineContentScript({
     },
 });
 
+// Native functions the recorder relies on, captured in installFpHooks before page scripts run,
+// so a page that patches them can't see, delay or break recording.
+let nativeSetTimeout: (handler: () => void, timeout: number) => number;
+let captureStackTrace: (target: object, skipAbove: Function) => void; // V8-specific
+
 function installFpHooks() {
+    nativeSetTimeout = window.setTimeout.bind(window);
+    captureStackTrace = (Error as unknown as { captureStackTrace: typeof captureStackTrace }).captureStackTrace;
+
     for (const target of FP_APIS) {
         const proto = getProtoForOwner(target.owner);
         hookAny(proto, target.prop, target.id);
     }
+
+    // Hand over buffered events before the page is unloaded or put into the back/forward cache.
+    window.addEventListener('pagehide', flushFpEvents);
 
     console.log('FP hooks installed');
 }
@@ -62,14 +73,35 @@ function getProtoForOwner(owner: FpApiOwner): any {
     }
 }
 
-function recordFpEvent(id: string) {
-    const fpMonkeyEvent: FpMonkeyEvent = {
+// Hooked APIs can be called thousands of times per second, so events are buffered and handed to
+// the bridge in batches instead of one dispatch (and one extension message) per call.
+const FLUSH_INTERVAL_MS = 100;
+
+const pendingEvents: FpMonkeyEvent[] = [];
+let flushScheduled = false;
+
+/** @param hook the wrapper that was called; stack frames from it inward are skipped */
+function recordFpEvent(id: string, hook: Function) {
+    pendingEvents.push({
         id: id,
         timeStamp: Date.now(),
-        scriptUrl: getCallerScriptUrl(),
-    };
+        scriptUrl: getCallerScriptUrl(hook),
+    });
 
-    document.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: fpMonkeyEvent }));
+    if (!flushScheduled) {
+        flushScheduled = true;
+        nativeSetTimeout(flushFpEvents, FLUSH_INTERVAL_MS);
+    }
+}
+
+function flushFpEvents() {
+    flushScheduled = false;
+    if (pendingEvents.length === 0) {
+        return;
+    }
+
+    const batch = pendingEvents.splice(0);
+    document.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: batch }));
 }
 
 function hookAny(proto: any, prop: string, id: string) {
@@ -100,7 +132,7 @@ function hookMethod(proto: any, prop: string, id: string) {
     }
 
     const wrapped: HookableFn = function (this: unknown, ...args: unknown[]) {
-        recordFpEvent(id);
+        recordFpEvent(id, wrapped);
         return original.apply(this, args);
     };
 
@@ -120,7 +152,7 @@ function hookGetter(proto: any, prop: string, id: string) {
     }
 
     const wrapped: HookableFn = function (this: unknown) {
-        recordFpEvent(id);
+        recordFpEvent(id, wrapped);
         return original.apply(this);
     };
 
@@ -132,14 +164,18 @@ function hookGetter(proto: any, prop: string, id: string) {
     });
 }
 
-function getCallerScriptUrl(): string | null {
-    const err = new Error();
+// Frames kept per capture: the caller of the hook plus a few in case the first has no URL.
+// Fewer frames saves formatting time; V8 still walks the whole stack, so deep stacks cost more.
+const STACK_FRAMES = 4;
 
-    if (!err.stack) {
+function getCallerScriptUrl(hook: Function): string | null {
+    const stack = captureCallerStack(hook);
+
+    if (!stack) {
         return null;
     }
 
-    const lines = err.stack.split('\n').slice(1); // skip "Error" line
+    const lines = stack.split('\n').slice(1); // skip the "[object Object]" header line
 
     for (const line of lines) {
         // capture full URL (including ports) before :line:col
@@ -159,6 +195,26 @@ function getCallerScriptUrl(): string | null {
         return url;
     }
 
-    console.warn('Could not determine caller script URL from stack trace:', err.stack);
     return null;
+}
+
+/** Captures the stack starting at the caller of `hook`, leaving out the extension's own frames. */
+function captureCallerStack(hook: Function): string | undefined {
+    const holder: { stack?: string } = {};
+    const savedLimit = Error.stackTraceLimit;
+
+    // Assigning can throw if the page froze Error; the capture then uses the page's limit.
+    try {
+        Error.stackTraceLimit = STACK_FRAMES;
+    } catch {}
+
+    try {
+        captureStackTrace(holder, hook);
+    } finally {
+        try {
+            Error.stackTraceLimit = savedLimit;
+        } catch {}
+    }
+
+    return holder.stack;
 }
