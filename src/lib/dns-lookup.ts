@@ -24,12 +24,21 @@ export async function dnsLookup(url: string | null): Promise<DnsResult> {
             accept: 'application/dns-json',
         },
     });
+    if (!resp.ok) {
+        throw new Error(`DNS lookup for ${hostname} failed with HTTP ${resp.status}`);
+    }
 
-    const answer: DnsAnswer[] = (await resp.json()).Answer;
-    const enrichedAnswer = enrichDnsAnswer(answer, hostname);
+    const body: { Status?: number; Answer?: DnsAnswer[] } = await resp.json();
+    // SERVFAIL is temporary, so it is reported as an error and the lookup can be retried.
+    if (body.Status === DNS_SERVFAIL) {
+        throw new Error(`DNS lookup for ${hostname} failed (SERVFAIL)`);
+    }
 
-    return enrichedAnswer;
+    // No Answer (e.g. NXDOMAIN, or no records of the requested type) is a valid result without CNAMEs.
+    return enrichDnsAnswer(body.Answer ?? [], hostname);
 }
+
+const DNS_SERVFAIL = 2;
 
 export function enrichDnsAnswer(dnsAnswer: DnsAnswer[], hostname: string): DnsResult {
     const cRecords = dnsAnswer
