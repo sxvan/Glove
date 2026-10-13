@@ -7,10 +7,13 @@ function isCnameCloaked(httpRequest: HttpRequest): boolean {
     return !!(httpRequest.isCrossHost && httpRequest.looksFirstParty && httpRequest.endsThirdParty && httpRequest.cNameDepth! > 0);
 }
 
-export function getEnrichedHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>): HttpRequest[] {
-    const enrichedHttpRequests: HttpRequest[] = [];
+/**
+ * Adds DNS-based fields to the document's requests whose lookup has finished. Requests still
+ * waiting for (or without) a DNS result are kept unchanged and enriched by a later analysis.
+ */
+export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>) {
     for (const httpRequest of document.httpRequests) {
-        let enrichedHttpRequest = httpRequest;
+        const enrichedHttpRequest = httpRequest;
         const dnsEntry = enrichedHttpRequest.hostname ? dnsResults.get(enrichedHttpRequest.hostname) : undefined;
         if (!dnsEntry) {
             continue;
@@ -30,11 +33,7 @@ export function getEnrichedHttpRequestsWithDns(document: DocumentState, dnsResul
         enrichedHttpRequest.isCrossHost = documentHost !== enrichedHttpRequest.hostname;
 
         enrichedHttpRequest.isCnameCloaked = isCnameCloaked(enrichedHttpRequest);
-
-        enrichedHttpRequests.push(enrichedHttpRequest);
     }
-
-    return enrichedHttpRequests;
 }
 
 export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequests: HttpRequest[], maxDeltaMs = 1000): HttpConsolidatedEvent[] {
