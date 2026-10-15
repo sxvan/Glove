@@ -22,6 +22,8 @@ export interface Category {
     likelihood: Likelihood;
     /** One line about what was observed. */
     summary: string;
+    /** Signs of hiding that any of the category's scripts show; empty if there are none. */
+    signals: string[];
     /** The strongest evidence: scripts or hosts, most suspicious first. */
     rows: EvidenceRow[];
     /** Further evidence not in `rows`. */
@@ -99,7 +101,8 @@ function fingerprinting(snapshot: TabSnapshot): Category {
     const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
     const score = Math.max(...documents.map((d) => d.fpMetrics?.score ?? 0), 0);
     // Only scripts rated possible or higher count; many scripts read a detail or two, e.g. the user agent.
-    const scripts = fingerprintingDetails(snapshot).filter((s) => s.likelihood !== 'unlikely');
+    const allScripts = fingerprintingDetails(snapshot);
+    const scripts = allScripts.filter((s) => s.likelihood !== 'unlikely');
 
     let summary = 'No suspicious scripts';
     if (scripts.length > 0) {
@@ -124,6 +127,8 @@ function fingerprinting(snapshot: TabSnapshot): Category {
             'The more different details a script reads in a short time, the more likely it is fingerprinting.',
         likelihood: fpLikelihood(score),
         summary,
+        // Signs of hiding count for every script, also those not rated suspicious.
+        signals: pageSignals(allScripts),
         rows: scripts.slice(0, OVERVIEW_ROWS).map((s) => ({
             key: s.key,
             name: s.name,
@@ -156,6 +161,7 @@ function cnameCloaking(snapshot: TabSnapshot): Category {
         // Content delivery networks look the same as cloaked trackers, so this is never more than possible.
         likelihood: aliases.length > 0 ? 'possible' : 'unlikely',
         summary,
+        signals: [],
         rows: aliases.slice(0, OVERVIEW_ROWS).map((a) => ({
             key: a.host,
             name: a.host,
@@ -190,6 +196,7 @@ function dnsTracking(snapshot: TabSnapshot): Category {
             'That part can be an ID unique to you, sent along with every DNS lookup and request to that host.',
         likelihood: hosts.length === 0 ? 'unlikely' : dnsLikelihood(Math.max(...hosts.map((h) => h.score))),
         summary,
+        signals: [],
         rows: hosts.slice(0, OVERVIEW_ROWS).map((h) => ({
             key: h.host,
             name: h.host,
@@ -245,6 +252,8 @@ export interface ScriptDetail {
      * without one reading at least a few APIs.
      */
     burst: { apis: number; durationMs: number } | null;
+    /** Signs that the script hides what it does; empty if there are none. */
+    signals: Signal[];
     /** Fingerprinting APIs with call counts (null if unknown) and call positions, most called first. */
     apis: ViewerApi[];
     /** Sites the script made requests to right after fingerprinting (contents unknown), with hosts per site, most hosts first. */
@@ -283,6 +292,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         calls: script.fpMetrics?.intensity ?? 0,
                         techniques: techniqueWords(script.fpMetrics?.distinctFpCategories ?? []),
                         burst: strongestBurst(script.fpSpikes),
+                        signals: scriptSignals(script.apiLocations),
                         apis,
                         contacted: groupBySite(correlations.map((c) => hostOf(c.httpRequest?.url ?? c.httpEvent?.requestUrl))),
                     };
@@ -293,6 +303,38 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
 
 /** Bursts reading fewer different APIs aren't worth mentioning. */
 const MIN_BURST_APIS = 3;
+
+export type SignalId = 'generated-code';
+
+export interface Signal {
+    id: SignalId;
+    /** What was observed, e.g. "14 of 14 fingerprinting APIs read by code generated at runtime". */
+    text: string;
+}
+
+/** The signals any of the scripts show, for the overview; it only says that they occur, not how often. */
+function pageSignals(scripts: ScriptDetail[]): string[] {
+    const occurs = (id: SignalId) => scripts.some((s) => s.signals.some((signal) => signal.id === id));
+
+    return [occurs('generated-code') ? 'Fingerprinting APIs read by code generated at runtime' : ''].filter(Boolean);
+}
+
+/** Signs that a script hides what it does, from where its calls came from. */
+function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined): Signal[] {
+    const signals: Signal[] = [];
+
+    // An API counts as read by generated code as soon as one of its calls was, however many weren't.
+    const apis = Object.values(apiLocations ?? {});
+    const generated = apis.filter((locations) => locations.some((l) => l.generated)).length;
+    if (generated > 0) {
+        signals.push({
+            id: 'generated-code',
+            text: `${generated} of ${plural(apis.length, 'fingerprinting API')} read by code generated at runtime`,
+        });
+    }
+
+    return signals;
+}
 
 /** The spike with the highest score, as different APIs read and its duration. */
 function strongestBurst(spikes: (SpikeSnapshot | null)[]): ScriptDetail['burst'] {

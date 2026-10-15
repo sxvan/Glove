@@ -1,6 +1,7 @@
 <script lang="ts">
     import { viewerUrl } from '@/lib/script-viewer';
     import LikelihoodLabel from '../components/LikelihoodLabel.svelte';
+    import SignalLine from '../components/SignalLine.svelte';
     import { duration, plural } from '../format';
     import type { ScriptDetail } from '../model';
 
@@ -38,6 +39,14 @@
                 {script.party === 'first' ? '1st party' : script.party === 'third' ? '3rd party' : ''}
             </span>
         </div>
+
+        {#if script.signals.length > 0}
+            <ul class="signals" aria-label="Signals">
+                {#each script.signals as signal (signal.id)}
+                    <SignalLine text={signal.text} />
+                {/each}
+            </ul>
+        {/if}
 
         <!-- What it did: a label column and a value column. Opened lists span the full width. -->
         <div class="rows">
@@ -138,6 +147,16 @@
         white-space: nowrap;
     }
 
+    /* Signs that the script hides what it does. */
+    .signals {
+        display: grid;
+        gap: 6px;
+        margin: 10px 0 0;
+        padding: 10px 0 0;
+        border-top: 1px solid var(--border);
+        list-style: none;
+    }
+
     .rows {
         --label-width: 72px;
         --column-gap: 8px;
@@ -196,8 +215,9 @@
         color: var(--text);
     }
 
-    /* No bullets, so long names such as intl.datetimeformat.resolvedOptions fit on one line. */
-    ul {
+    /* The opened lists of APIs and servers. No bullets, so long names such as
+       intl.datetimeformat.resolvedOptions fit on one line. */
+    .more ul {
         margin: 4px 0 0;
         padding: 0;
         list-style: none;

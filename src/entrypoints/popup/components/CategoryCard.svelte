@@ -2,6 +2,7 @@
     import { LIKELIHOOD_LABELS, type Category } from '../model';
     import InfoTip from './InfoTip.svelte';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
+    import SignalLine from './SignalLine.svelte';
 
     // tipAbove opens the explanation upwards, so it stays inside the popup for lower cards.
     let { category, tipAbove = false, onOpen }: { category: Category; tipAbove?: boolean; onOpen: () => void } = $props();
@@ -51,6 +52,14 @@
         {#if category.moreRows > 0}
             <p class="line">+{category.moreRows} more</p>
         {/if}
+    {/if}
+
+    {#if category.signals.length > 0}
+        <ul class="signals" aria-label="Signals">
+            {#each category.signals as signal (signal)}
+                <SignalLine text={signal} />
+            {/each}
+        </ul>
     {/if}
 </div>
 
@@ -133,8 +142,17 @@
 
     /* Body lines line up with the title, past the dot. */
     .line,
+    .signals,
     .rows {
         margin: 4px 0 0 19px;
+    }
+
+    .signals {
+        display: grid;
+        gap: 3px;
+        margin-top: 8px;
+        padding: 0;
+        list-style: none;
     }
 
     .line {
