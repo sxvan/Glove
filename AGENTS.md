@@ -37,12 +37,10 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Branches
 
-Branch names use the same types as commits: `<type>/<short-kebab-case-description>`.
+Committing directly to `main` is fine. When working on a branch, its name uses the same types as commits: `<type>/<short-kebab-case-description>`.
 
 ```
 refactor/wxt-port
 fix/xhr-static-constants
 feat/firefox-support
 ```
-
-Don't commit directly to `main`; work on a branch and merge it through a pull request.
