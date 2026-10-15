@@ -1,0 +1,5 @@
+/* Popup-specific base styles; the shared theme is in assets/theme.css. */
+
+body {
+    width: 460px;
+}

@@ -120,6 +120,22 @@ export function updateCurrentDocument(session: Session, tabId: number, frameId: 
     frame.currentDocumentId = documentId;
 }
 
+/**
+ * Forgets the subframes of the tab's previous page once the main frame has loaded a new one, so the
+ * snapshot only shows frames of the current page. Frames whose newest document started at or after
+ * `committedAt` belong to the new page already, as their events can arrive before the commit does.
+ */
+export function dropPreviousPageFrames(session: Session, tabId: number, committedAt: number) {
+    const tab = session.tabs[tabId];
+    if (!tab) return;
+
+    for (const [frameId, frame] of Object.entries(tab.frames)) {
+        if (Number(frameId) === 0) continue;
+        const newest = Math.max(...Object.values(frame.documents).map((d) => d.startTime));
+        if (newest < committedAt) delete tab.frames[Number(frameId)];
+    }
+}
+
 export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: FpMonkeyEvent) {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
 
