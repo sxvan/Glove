@@ -6,7 +6,7 @@ A Chrome extension that detects web tracking on the pages you visit:
 - **CNAME cloaking**: flags first-party-looking requests whose DNS CNAME chain ends at a different domain.
 - **DNS tracking**: scores high-entropy subdomains that look like encoded identifiers.
 
-Built with [WXT](https://wxt.dev) and TypeScript.
+Built with [WXT](https://wxt.dev), TypeScript and [Svelte](https://svelte.dev).
 
 ## Development
 
@@ -25,7 +25,7 @@ Without mise, use Node 22 or newer and pnpm 12.
 | `pnpm dev`     | Development mode with auto-reload        |
 | `pnpm build`   | Production build in `.output/chrome-mv3` |
 | `pnpm zip`     | Packaged build for the Chrome Web Store  |
-| `pnpm compile` | Type-check with `tsc`                    |
+| `pnpm compile` | Type-check with `svelte-check`           |
 
 To load a production build manually, open `chrome://extensions`, enable developer mode, and choose "Load unpacked" with `.output/chrome-mv3`.
 
@@ -38,7 +38,7 @@ src/
     fp-recorder.content.ts    main world: wraps fingerprinting APIs
     http-recorder.content.ts  main world: wraps fetch and XMLHttpRequest
     bridge.content.ts         isolated world: forwards recorder events to the background
-    popup/                    toolbar popup UI
+    popup/                    toolbar popup UI (Svelte components)
   lib/                        analysis, DNS lookup, session management
   types/                      shared types
 ```

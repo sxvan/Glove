@@ -4,11 +4,11 @@ import { createScheduler } from '@/lib/scheduler';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
-import { createSession, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
+import { createSession, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
-import type { DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
+import type { CallLocation, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
 const DEBOUNCE_MS = 500;
 const MAX_INTERVAL_MS = 5000;
@@ -148,6 +148,7 @@ export default defineBackground(() => {
         }
 
         updateCurrentDocument(session, tabId, frameId, documentId, url);
+        if (frameId === 0) dropPreviousPageFrames(session, tabId, details.timeStamp);
     });
 });
 
@@ -195,10 +196,35 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
 }
 
 function scriptSnapshotFromScript(script: ScriptState, scriptName: string): ScriptSnapshot {
+    const apiCounts: Record<string, number> = {};
+    // Per API, the distinct positions it was called from, with call counts.
+    const positions = new Map<string, Map<string, CallLocation>>();
+
+    for (const event of script.fpEvents) {
+        apiCounts[event.id] = (apiCounts[event.id] ?? 0) + 1;
+
+        // == null also skips events from an older recorder, which don't have the fields at all.
+        if (event.line == null || event.column == null) continue;
+        const byPosition = positions.get(event.id) ?? new Map<string, CallLocation>();
+        const generated = event.generated ?? null;
+        const key = `${event.line}:${event.column}` + (generated ? `:${generated.hash}:${generated.line}:${generated.column}` : '');
+        const location = byPosition.get(key) ?? { line: event.line, column: event.column, generated, calls: 0 };
+        location.calls++;
+        byPosition.set(key, location);
+        positions.set(event.id, byPosition);
+    }
+
+    const apiLocations: Record<string, CallLocation[]> = {};
+    for (const [api, byPosition] of positions) {
+        apiLocations[api] = [...byPosition.values()].sort((a, b) => b.calls - a.calls);
+    }
+
     return {
         name: scriptName,
         fpMetrics: convertToMetricsSnapshot(script.fpMetrics),
         fpSpikes: script.fpSpikes.map(convertToSpikeSnapshot),
+        apiCounts,
+        apiLocations,
     };
 }
 

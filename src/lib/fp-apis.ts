@@ -14,11 +14,49 @@ export type FpApiOwner =
     | 'RTCPeerConnection'
     | 'IntlDateTimeFormat';
 
+export type FpCategory =
+    | 'Navigator'
+    | 'Screen'
+    | 'Window'
+    | 'Document'
+    | 'Canvas'
+    | 'WebGL'
+    | 'WebGL2'
+    | 'AudioContext'
+    | 'AudioBuffer'
+    | 'MediaDevices'
+    | 'WebRTC'
+    | 'Intl';
+
+/**
+ * The groups the APIs below belong to, with the name the popup uses for what they reveal.
+ * Categories revealing the same thing share a name (WebGL and WebGL2 are both "WebGL").
+ */
+export const FP_CATEGORIES: Record<FpCategory, { name: string }> = {
+    Navigator: { name: 'browser details' },
+    Screen: { name: 'screen size' },
+    Window: { name: 'window size' },
+    Document: { name: 'cookies' },
+    Canvas: { name: 'canvas' },
+    WebGL: { name: 'WebGL' },
+    WebGL2: { name: 'WebGL' },
+    AudioContext: { name: 'audio' },
+    AudioBuffer: { name: 'audio' },
+    MediaDevices: { name: 'media devices' },
+    WebRTC: { name: 'WebRTC' },
+    Intl: { name: 'time zone' },
+};
+
+/** The popup's name for a category, e.g. "audio" for AudioContext; unknown ones keep their key. */
+export function fpCategoryName(category: string): string {
+    return FP_CATEGORIES[category as FpCategory]?.name ?? category;
+}
+
 export interface FpApi {
     id: string;
     owner: FpApiOwner;
     prop: string;
-    category: string;
+    category: FpCategory;
     weight: number;
 }
 
