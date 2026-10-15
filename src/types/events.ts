@@ -7,17 +7,10 @@ export interface FpMonkeyEvent {
     line: number | null;
     column: number | null;
     /**
-     * For calls from code the script generated at runtime (new Function, eval): that code and the
-     * position in it. `line`/`column` are then where the script generated it.
+     * True for calls from code the script generated at runtime (new Function, eval); `line` and
+     * `column` are then where the script generated it.
      */
-    generated: GeneratedPosition | null;
-}
-
-/** A position in code generated at runtime, identified by the code's hash as V8 reports it. */
-export interface GeneratedPosition {
-    hash: string;
-    line: number;
-    column: number;
+    generated: boolean;
 }
 
 /** A fetch/XHR call, recorded in the page by the http-recorder content script. */

@@ -197,7 +197,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
 
 function scriptSnapshotFromScript(script: ScriptState, scriptName: string): ScriptSnapshot {
     const apiCounts: Record<string, number> = {};
-    // Per API, the distinct positions it was called from, with call counts.
+    // Per API, the positions it was called from: "line:column" -> location with call count.
     const positions = new Map<string, Map<string, CallLocation>>();
 
     for (const event of script.fpEvents) {
@@ -206,10 +206,10 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         // == null also skips events from an older recorder, which don't have the fields at all.
         if (event.line == null || event.column == null) continue;
         const byPosition = positions.get(event.id) ?? new Map<string, CallLocation>();
-        const generated = event.generated ?? null;
-        const key = `${event.line}:${event.column}` + (generated ? `:${generated.hash}:${generated.line}:${generated.column}` : '');
-        const location = byPosition.get(key) ?? { line: event.line, column: event.column, generated, calls: 0 };
+        const key = `${event.line}:${event.column}`;
+        const location = byPosition.get(key) ?? { line: event.line, column: event.column, generated: false, calls: 0 };
         location.calls++;
+        location.generated ||= event.generated === true;
         byPosition.set(key, location);
         positions.set(event.id, byPosition);
     }

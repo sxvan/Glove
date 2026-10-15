@@ -1,5 +1,5 @@
 import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
-import type { FpMonkeyEvent, GeneratedPosition } from './events';
+import type { FpMonkeyEvent } from './events';
 
 // Snapshots are the serializable views of the session state sent to the popup.
 
@@ -34,8 +34,8 @@ export interface ScriptSnapshot {
 export interface CallLocation {
     line: number;
     column: number;
-    /** For calls from code generated at runtime: that code and the position in it (see FpMonkeyEvent). */
-    generated: GeneratedPosition | null;
+    /** True when the calls came from code generated at runtime, here being where it was generated. */
+    generated: boolean;
     calls: number;
 }
 
