@@ -17,6 +17,23 @@
             <button class="open" type="button" onclick={onOpen}>{category.title}</button>
             <InfoTip label="What is {category.title}?" text={category.explanation} above={tipAbove} />
         </div>
+        <!-- The page's score, like the scripts' bars below; empty for categories without one. -->
+        {#if category.score !== null}
+            {@const score = Math.min(category.score, 1)}
+            <span
+                class="bar"
+                role="meter"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={score}
+                aria-label="Page score"
+                title="{LIKELIHOOD_LABELS[category.likelihood]} · {score.toFixed(2)}"
+            >
+                <span class="fill" style:width="{score * 100}%"></span>
+            </span>
+        {:else}
+            <span></span>
+        {/if}
         <LikelihoodLabel likelihood={category.likelihood} />
         <span class="chevron" aria-hidden="true"></span>
     </div>
@@ -74,7 +91,7 @@
 
     .head {
         display: grid;
-        grid-template-columns: auto 1fr auto auto;
+        grid-template-columns: auto 1fr 48px auto auto;
         align-items: center;
         gap: 10px;
     }

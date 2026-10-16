@@ -1,11 +1,12 @@
 <script lang="ts">
     import { viewerUrl } from '@/lib/script-viewer';
     import LikelihoodLabel from '../components/LikelihoodLabel.svelte';
+    import ScoreBreakdown from '../components/ScoreBreakdown.svelte';
     import SignalLine from '../components/SignalLine.svelte';
     import { duration, plural } from '../format';
-    import type { ScriptDetail } from '../model';
+    import type { PageScore, ScriptDetail } from '../model';
 
-    let { scripts }: { scripts: ScriptDetail[] } = $props();
+    let { page, scripts }: { page: PageScore; scripts: ScriptDetail[] } = $props();
 
     const hostCount = (script: ScriptDetail) => script.contacted.reduce((n, s) => n + s.hosts.length, 0);
 
@@ -19,6 +20,10 @@
 
 {#if scripts.length === 0}
     <p class="empty">No script on this page has read identifying device details so far.</p>
+{:else}
+    <div class="card">
+        <ScoreBreakdown label="Page" score={page.score} tree={page.tree} />
+    </div>
 {/if}
 
 {#each scripts as script (script.key)}
@@ -40,6 +45,10 @@
             </span>
         </div>
 
+        <div class="score">
+            <ScoreBreakdown score={script.score} tree={script.tree} />
+        </div>
+
         {#if script.signals.length > 0}
             <ul class="signals" aria-label="Signals">
                 {#each script.signals as signal (signal.id)}
@@ -54,7 +63,7 @@
             <div class="value">{script.techniques.join(', ')}</div>
             {#if script.apis.length > 0}
                 <details class="more">
-                    <summary>{plural(script.apis.length, 'API')} · {plural(script.calls, 'call')}</summary>
+                    <summary>{plural(script.apis.length, 'fingerprinting API')} · {plural(script.calls, 'call')}</summary>
                     <ul class="apis">
                         {#each script.apis as api (api.id)}
                             <li>
@@ -68,7 +77,7 @@
 
             {#if script.burst}
                 <div class="label">Burst</div>
-                <div class="value">{plural(script.burst.apis, 'different API')} within {duration(script.burst.durationMs)}</div>
+                <div class="value">{plural(script.burst.apis, 'different fingerprinting API')} within {duration(script.burst.durationMs)}</div>
             {/if}
 
             {#if script.contacted.length > 0}
@@ -145,6 +154,12 @@
         font-size: 12px;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .score {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
     }
 
     /* Signs that the script hides what it does. */

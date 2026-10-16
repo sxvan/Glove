@@ -1,5 +1,6 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { FP_APIS, type FpApiOwner } from '@/lib/fp-apis';
+import { FP_APIS, type FpApiOwner, type SpecialRead } from '@/lib/fp-apis';
+import { createStackReader, type StackLocation } from '@/lib/call-stack';
 import type { FpMonkeyEvent } from '@/types/events';
 
 type HookableFn = ((...args: any[]) => any) & { __is_hooked__?: boolean };
@@ -21,13 +22,18 @@ export default defineContentScript({
 // Native functions the recorder relies on, captured in installFpHooks before page scripts run,
 // so a page that patches them can't see, delay or break recording.
 let nativeSetTimeout: (handler: () => void, timeout: number) => number;
-let captureStackTrace: (target: object, skipAbove: Function) => void; // V8-specific
+let readStack: (hook: Function) => StackLocation[];
 
 function installFpHooks() {
     nativeSetTimeout = window.setTimeout.bind(window);
-    captureStackTrace = (Error as unknown as { captureStackTrace: typeof captureStackTrace }).captureStackTrace;
+    readStack = createStackReader(STACK_FRAMES);
+    isConnected = nativeGetter(Node.prototype, 'isConnected');
+    contextCanvas = nativeGetter(CanvasRenderingContext2D.prototype, 'canvas');
+    contextFont = nativeGetter(CanvasRenderingContext2D.prototype, 'font');
 
     for (const target of FP_APIS) {
+        // Particular reads through another API are recognized by that API's hook.
+        if (target.readOf) continue;
         const proto = getProtoForOwner(target.owner);
         hookAny(proto, target.prop, target.id);
     }
@@ -68,6 +74,18 @@ function getProtoForOwner(owner: FpApiOwner): any {
             return window.RTCPeerConnection && RTCPeerConnection.prototype;
         case 'IntlDateTimeFormat':
             return Intl.DateTimeFormat.prototype;
+        case 'NavigatorUAData':
+            return (window as { NavigatorUAData?: { prototype: unknown } }).NavigatorUAData?.prototype ?? null;
+        case 'GPU':
+        case 'GPUAdapter':
+        case 'SpeechSynthesis':
+        case 'Keyboard':
+        case 'StorageManager':
+        case 'NetworkInformation':
+            // Not in every browser or context (WebGPU and the keyboard need a secure context).
+            return (window as unknown as Record<string, { prototype: unknown } | undefined>)[owner]?.prototype ?? null;
+        case 'Date':
+            return Date.prototype;
         default:
             return null;
     }
@@ -135,13 +153,71 @@ function hookMethod(proto: any, prop: string, id: string) {
         return;
     }
 
+    // Particular reads through this method, recorded under their own id (e.g. the GPU name).
+    const reads = FP_APIS.filter((api) => api.readOf?.api === id);
+
     const wrapped: HookableFn = function (this: unknown, ...args: unknown[]) {
-        recordFpEvent(id, wrapped);
+        recordFpEvent(reads.find((read) => isSpecialRead(read.readOf!.read, this, args))?.id ?? id, wrapped);
         return original.apply(this, args);
     };
 
     wrapped.__is_hooked__ = true;
     proto[prop] = wrapped;
+}
+
+// ---------- particular reads (see SpecialRead) ----------
+
+// WEBGL_debug_renderer_info's parameters: the graphics card's maker and model.
+const UNMASKED_VENDOR_WEBGL = 0x9245;
+const UNMASKED_RENDERER_WEBGL = 0x9246;
+// Client hints beyond the everyday brands and platform.
+const DETAILED_HINTS = new Set(['architecture', 'bitness', 'formFactors', 'fullVersionList', 'model', 'platformVersion', 'uaFullVersion', 'wow64']);
+// Different fonts measured on one canvas context from which it counts as probing for fonts.
+const FONT_PROBING_MIN_FONTS = 8;
+
+let isConnected: (node: unknown) => boolean | undefined;
+let contextCanvas: (context: unknown) => unknown;
+let contextFont: (context: unknown) => string | undefined;
+const fontsByContext = new WeakMap<object, Set<string>>();
+
+/** Whether a call (`self`, `args`) is the particular read. Never throws. */
+function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boolean {
+    try {
+        switch (read) {
+            case 'gpuName':
+                return args[0] === UNMASKED_VENDOR_WEBGL || args[0] === UNMASKED_RENDERER_WEBGL;
+            case 'highEntropyValues':
+                return Array.isArray(args[0]) && args[0].some((hint) => DETAILED_HINTS.has(String(hint)));
+            case 'hiddenCanvas': {
+                // A context's canvas, or the canvas itself.
+                const canvas = contextCanvas(self) ?? self;
+                return isConnected(canvas) === false;
+            }
+            case 'fontProbing': {
+                const font = contextFont(self);
+                if (!font || typeof self !== 'object' || self === null) return false;
+                const fonts = fontsByContext.get(self) ?? new Set<string>();
+                fonts.add(font);
+                fontsByContext.set(self, fonts);
+                return fonts.size >= FONT_PROBING_MIN_FONTS;
+            }
+        }
+    } catch {
+        return false;
+    }
+}
+
+/** Reads a property through its native getter, so a page can't fake it; undefined if that fails. */
+function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | undefined {
+    const get = Object.getOwnPropertyDescriptor(proto, prop)?.get;
+    return (target) => {
+        if (!get || target === null || typeof target !== 'object') return undefined;
+        try {
+            return Reflect.apply(get, target, []) as T;
+        } catch {
+            return undefined;
+        }
+    };
 }
 
 function hookGetter(proto: any, prop: string, id: string) {
@@ -172,69 +248,7 @@ function hookGetter(proto: any, prop: string, id: string) {
 // Fewer frames saves formatting time; V8 still walks the whole stack, so deep stacks cost more.
 const STACK_FRAMES = 4;
 
-// URLs of scripts, as opposed to e.g. "" for generated code; the scheme can't contain "-", so
-// extension URLs (chrome-extension://) don't match and the extension's own frames are skipped.
-const SCRIPT_URL = /^(?:\w+:\/\/|blob:|data:|about:|file:)/;
-// The script and position in an eval origin, e.g. "eval at f (https://example.com/a.js:1:200)".
-const EVAL_ORIGIN = /((?:\w+:\/\/|blob:|data:|about:|file:).*?):(\d+):(\d+)\)/;
-
-interface CallerLocation {
-    url: string;
-    line: number;
-    column: number;
-    /** True when the call came from code generated at runtime (new Function, eval). */
-    generated: boolean;
-}
-
-/**
- * The script and position the hooked API was called from, taken from the first stack frame with a
- * URL. Code generated with new Function or eval has none; its calls count for the script that
- * generated it, at the place it did.
- */
-function getCallerLocation(hook: Function): CallerLocation | null {
-    for (const site of captureCallerSites(hook)) {
-        const generated = site.isEval();
-        const origin = generated ? EVAL_ORIGIN.exec(site.getEvalOrigin() ?? '') : null;
-        const url = generated ? origin?.[1] : site.getFileName();
-        const line = generated ? Number(origin?.[2]) : site.getLineNumber();
-        const column = generated ? Number(origin?.[3]) : site.getColumnNumber();
-
-        if (url && SCRIPT_URL.test(url) && line && column) return { url, line, column, generated };
-    }
-
-    return null;
-}
-
-/**
- * V8's structured stack frames (see https://v8.dev/docs/stack-trace-api). The browser's types don't
- * include them, as they're V8-specific; Node's types do, since Node runs on V8 as well.
- */
-type CallSite = NodeJS.CallSite;
-
-/** Captures the stack from the caller of `hook` on, leaving out the extension's own frames. */
-function captureCallerSites(hook: Function): CallSite[] {
-    const holder: { stack?: CallSite[] } = {};
-    const savedLimit = Error.stackTraceLimit;
-    const savedPrepare = Error.prepareStackTrace;
-    let sites: CallSite[] | undefined;
-
-    // Assigning can throw if the page froze Error; the capture then fails or uses the page's limit.
-    try {
-        Error.stackTraceLimit = STACK_FRAMES;
-        Error.prepareStackTrace = (_error, callSites) => callSites;
-    } catch {}
-
-    try {
-        captureStackTrace(holder, hook);
-        // The stack is prepared when first read, so it has to be read before restoring.
-        sites = holder.stack;
-    } catch {
-    } finally {
-        try {
-            Error.stackTraceLimit = savedLimit;
-            Error.prepareStackTrace = savedPrepare;
-        } catch {}
-    }
-
-    return Array.isArray(sites) ? sites : [];
+/** The script and position the hooked API was called from: the first page script on the stack. */
+function getCallerLocation(hook: Function): StackLocation | null {
+    return readStack(hook)[0] ?? null;
 }

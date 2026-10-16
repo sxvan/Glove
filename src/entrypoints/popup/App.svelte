@@ -5,7 +5,7 @@
     import type { TabSnapshot } from '@/types/snapshot';
     import CategoryCard from './components/CategoryCard.svelte';
     import DetailHeader from './components/DetailHeader.svelte';
-    import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, pageHost, pageUrl, type Category } from './model';
+    import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPage, pageHost, pageUrl, type Category } from './model';
     import CnameDetail from './screens/CnameDetail.svelte';
     import DnsDetail from './screens/DnsDetail.svelte';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
@@ -71,7 +71,20 @@
 
 <header>
     <h1 title={url ?? ''}>{host || 'Web Tracking Detector'}</h1>
-    {#if status === 'ready'}<span class="live" title="Updates while the page is open">Live</span>{/if}
+    <div class="actions">
+        {#if status === 'ready'}<span class="live" title="Updates while the page is open">Live</span>{/if}
+        <button class="settings" type="button" title="Scoring settings" aria-label="Scoring settings" onclick={() => browser.runtime.openOptionsPage()}>
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+                <path
+                    d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                />
+            </svg>
+        </button>
+    </div>
 </header>
 
 <main>
@@ -82,7 +95,7 @@
     {:else if openCategory && snapshot}
         <DetailHeader category={openCategory} onBack={() => openDetail(null)} />
         {#if openCategory.id === 'fingerprinting'}
-            <FingerprintingDetail scripts={fingerprintingDetails(snapshot)} />
+            <FingerprintingDetail page={fingerprintingPage(snapshot)} scripts={fingerprintingDetails(snapshot)} />
         {:else if openCategory.id === 'cname'}
             <CnameDetail aliases={cnameDetails(snapshot)} />
         {:else}
@@ -123,6 +136,27 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .actions {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .settings {
+        display: flex;
+        padding: 2px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+    }
+
+    .settings:hover {
+        color: var(--text);
     }
 
     .live {

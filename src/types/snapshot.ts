@@ -1,4 +1,5 @@
 import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
+import type { ScoringSettings, SignalPart } from '@/lib/scoring';
 import type { FpMonkeyEvent } from './events';
 
 // Snapshots are the serializable views of the session state sent to the popup.
@@ -12,6 +13,8 @@ export interface MetricsSnapshot {
     startTime: number;
     endTime: number;
     score?: number;
+    /** The signals the score was combined from, by signal key (see scoring). */
+    signals?: Record<string, SignalPart>;
 }
 
 export interface SpikeSnapshot {
@@ -43,6 +46,8 @@ export interface DocumentSnapshot {
     documentId: string;
     url: string | null;
     fpMetrics: MetricsSnapshot | null;
+    /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
+    spikes: MetricsSnapshot[];
     scripts: ScriptSnapshot[];
 }
 
@@ -55,4 +60,6 @@ export interface TabSnapshot {
     cNameRequests: HttpRequest[];
     dnsTrackingRequests: HttpRequest[];
     frames: (FrameSnapshot | null)[];
+    /** Where scores count as possible or likely, from the user's scoring settings. */
+    cutoffs: ScoringSettings['cutoffs'];
 }

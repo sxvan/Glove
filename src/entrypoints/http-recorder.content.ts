@@ -1,9 +1,11 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { createStackReader } from '@/lib/call-stack';
 import type { HttpMonkeyEvent } from '@/types/events';
 
 type Hooked<T> = T & { __is_hooked__?: boolean };
 
-// Runs in the page's main world so it can wrap the page's own fetch and XMLHttpRequest.
+// Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
+// XMLHttpRequest, beacons and image pixels.
 export default defineContentScript({
     matches: ['<all_urls>'],
     runAt: 'document_start',
@@ -13,22 +15,59 @@ export default defineContentScript({
     world: 'MAIN',
 
     main() {
+        readStack = createStackReader(STACK_FRAMES);
         hookFetch();
         hookXHR();
+        hookBeacon();
+        hookImagePixels();
     },
 });
 
-function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: string | null, credentials: string) {
+// Frames read per request. Monitoring, bot-protection and consent scripts often wrap fetch and
+// XMLHttpRequest, so the script that made a request can sit several frames below their wrappers;
+// requests are rare enough that reading deeper costs little.
+const STACK_FRAMES = 30;
+
+let readStack: ReturnType<typeof createStackReader>;
+
+/**
+ * @param hook our wrapper that was called; stack frames from it inward are skipped
+ * @param wrapped whether a page script has replaced our wrapper with its own (see scriptsOnStack)
+ */
+function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: string | null, credentials: string, hook: Function, wrapped: boolean) {
+    const scriptUrls = scriptsOnStack(hook, wrapped);
     const httpMonkeyEvent: HttpMonkeyEvent = {
         id: id,
         timeStamp: Date.now(),
-        scriptUrl: getCallerScriptUrl(),
+        scriptUrl: scriptUrls[0] ?? null,
+        scriptUrls,
         requestUrl: url,
         method: method,
         credentials: credentials,
     };
 
     document.documentElement.dispatchEvent(new CustomEvent('http-monkey', { detail: httpMonkeyEvent }));
+}
+
+/**
+ * The page scripts a request counts for: every script on the stack, as the one that made it may sit
+ * further out than helpers. Monitoring, bot-protection and consent scripts often replace fetch, XHR
+ * or sendBeacon with their own wrapper around ours; then every request passes through them, and the
+ * innermost script is that wrapper rather than the one making the request. It's left out then, unless
+ * it's the only script, i.e. its own request.
+ */
+function scriptsOnStack(hook: Function, wrapped: boolean): string[] {
+    const scriptUrls = [...new Set(readStack(hook).map((location) => location.url))];
+    return wrapped && scriptUrls.length > 1 ? scriptUrls.slice(1) : scriptUrls;
+}
+
+/** Whether the function `current` reads is no longer our hook, i.e. a page script replaced it. */
+function isReplaced(current: () => unknown, hook: Function): boolean {
+    try {
+        return current() !== hook;
+    } catch {
+        return false;
+    }
 }
 
 function hookFetch() {
@@ -47,7 +86,7 @@ function hookFetch() {
         // Recording must never change what the page observes, so its errors are ignored.
         try {
             const { url, method, credentials } = describe(input, init);
-            recordHttpEvent('fetch', url, method, credentials);
+            recordHttpEvent('fetch', url, method, credentials, hookedFetch, isReplaced(() => window.fetch, hookedFetch));
         } catch {}
 
         return Reflect.apply(originalFetch, this, arguments);
@@ -142,7 +181,7 @@ function hookXHR() {
 
         openedRequests.set(this, {
             method: method ? String(method) : null,
-            url: url ? String(url) : null,
+            url: url ? resolveUrl(String(url)) : null,
         });
 
         return result;
@@ -152,7 +191,8 @@ function hookXHR() {
         const request = openedRequests.get(this);
         if (request) {
             openedRequests.delete(this);
-            recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit');
+            const wrapped = isReplaced(() => proto.send, hookedSend) || isReplaced(() => proto.open, hookedOpen);
+            recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit', hookedSend, wrapped);
         }
 
         return Reflect.apply(originalSend, this, arguments);
@@ -164,30 +204,47 @@ function hookXHR() {
     proto.send = hookedSend;
 }
 
-function getCallerScriptUrl(): string | null {
-    const err = new Error();
-
-    if (!err.stack) {
-        return null;
+/** navigator.sendBeacon: made for sending data, e.g. as the page is left. */
+function hookBeacon() {
+    const proto = window.Navigator?.prototype;
+    const originalBeacon: Hooked<Navigator['sendBeacon']> | undefined = proto?.sendBeacon;
+    if (!proto || typeof originalBeacon !== 'function' || originalBeacon.__is_hooked__) {
+        return;
     }
 
-    const lines = err.stack.split('\n').slice(1); // skip "Error" line
+    const hookedBeacon: Hooked<Navigator['sendBeacon']> = function (this: Navigator, url: string | URL) {
+        try {
+            recordHttpEvent('beacon', resolveUrl(String(url)), 'POST', 'include', hookedBeacon, isReplaced(() => navigator.sendBeacon, hookedBeacon));
+        } catch {}
 
-    for (const line of lines) {
-        const m = line.match(/\(?(\w+:\/\/[^):]+):(\d+):(\d+)\)?$/);
-        if (!m) {
-            continue;
-        }
+        return Reflect.apply(originalBeacon, this, arguments);
+    };
 
-        const url = m[1]!;
+    hookedBeacon.__is_hooked__ = true;
+    proto.sendBeacon = hookedBeacon;
+}
 
-        // skip extension scripts (see fp-recorder for why this matches "chrome-extension://")
-        if (url.startsWith('extension://')) {
-            continue;
-        }
-
-        return url;
+/**
+ * Image pixels: a script setting an image's address to send what it collected in the query, e.g.
+ * new Image().src = ".../pixel.gif?id=…". Only addresses with a query are recorded; images from the
+ * page's HTML don't go through this setter at all.
+ */
+function hookImagePixels() {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+    const originalSet: Hooked<(this: HTMLImageElement, value: string) => void> | undefined = descriptor?.set;
+    if (!descriptor || !originalSet || originalSet.__is_hooked__) {
+        return;
     }
 
-    return null;
+    const hookedSet: Hooked<(this: HTMLImageElement, value: string) => void> = function (this: HTMLImageElement, value: string) {
+        try {
+            const url = resolveUrl(String(value));
+            if (url && url.includes('?')) recordHttpEvent('image', url, 'GET', 'include', hookedSet, false);
+        } catch {}
+
+        return Reflect.apply(originalSet, this, arguments);
+    };
+
+    hookedSet.__is_hooked__ = true;
+    Object.defineProperty(HTMLImageElement.prototype, 'src', { ...descriptor, set: hookedSet });
 }

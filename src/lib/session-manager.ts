@@ -142,8 +142,15 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
     script.fpEvents.push(event);
 }
 
+/**
+ * Stores the request for every script on its stack: a script wrapping fetch or XHR (monitoring,
+ * bot protection) sits above the one that made the request, and both should see it.
+ */
 export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: HttpMonkeyEvent) {
-    const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
-
-    script.httpEvents.push(event);
+    // An older recorder only sends scriptUrl.
+    const scriptUrls = event.scriptUrls?.length ? event.scriptUrls : [event.scriptUrl];
+    for (const scriptUrl of scriptUrls) {
+        const { script } = ensureScript(session, tabId, frameId, documentId, url, scriptUrl);
+        script.httpEvents.push(event);
+    }
 }

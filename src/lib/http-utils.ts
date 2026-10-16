@@ -1,4 +1,5 @@
 import type { DnsAnswer } from '@/types/analysis';
+import { combine, type ScoringSettings } from './scoring';
 
 export function getEtld1(hostname: string | null): string | null {
     if (!hostname) return null;
@@ -135,12 +136,10 @@ function isBaseLike(label: string): boolean {
 }
 
 /**
- * Compute a suspicion score (0..1) for a subdomain
- * based on entropy & simple heuristics.
- *
- * @returns score between 0 and 1
+ * How much a subdomain looks like it carries an ID, from 0 to 1, judged by its longest part:
+ * randomness, digits, vowels, encoded-looking parts, length and hyphens (see scoring).
  */
-export function scoreSubdomainEntropy(subdomain: string | null): number {
+export function scoreSubdomainEntropy(subdomain: string | null, settings: ScoringSettings): number {
     if (!subdomain) return 0;
 
     const labels = subdomain.split('.').filter(Boolean);
@@ -163,15 +162,18 @@ export function scoreSubdomainEntropy(subdomain: string | null): number {
     // ---------- length gate ----------
     const lengthActivationFactor = clamp((longedLabelLength - 10) / 20, 0, 1);
 
-    // ---------- final score ----------
-    let score =
-        0.55 * (normalizedEntropyScore * lengthActivationFactor) +
-        0.15 * clamp((digitRatio - 0.35) / 0.35, 0, 1) +
-        0.1 * clamp((0.25 - vowelRatio) / 0.25, 0, 1) +
-        0.1 * looksLikeEncodedIdentifier +
-        0.1 * clamp((longedLabelLength - 25) / 25, 0, 1) +
-        0.05 * clamp((hyphenRatio - 0.05) / 0.15, 0, 1);
-    return clamp(score, 0, 1);
+    return combine(
+        'hostname',
+        {
+            randomness: normalizedEntropyScore * lengthActivationFactor,
+            digits: clamp((digitRatio - 0.35) / 0.35, 0, 1),
+            fewVowels: clamp((0.25 - vowelRatio) / 0.25, 0, 1),
+            encodedId: looksLikeEncodedIdentifier,
+            length: clamp((longedLabelLength - 25) / 25, 0, 1),
+            hyphens: clamp((hyphenRatio - 0.05) / 0.15, 0, 1),
+        },
+        settings
+    );
 }
 
 /**

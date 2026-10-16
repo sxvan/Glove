@@ -1,10 +1,11 @@
 // Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
 // key numbers and the strongest evidence.
-import { FP_CATEGORY_WEIGHTS, fpCategoryName } from '@/lib/fp-apis';
+import { FP_CATEGORY_ENTROPY, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
+import { DEFAULT_SETTINGS, SIGNALS, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
-import type { CallLocation, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
-import { plural } from './format';
+import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
+import { duration, plural } from './format';
 
 export type Likelihood = 'unlikely' | 'possible' | 'likely';
 
@@ -20,6 +21,8 @@ export interface Category {
     /** Plain-language explanation, shown behind the info icon. */
     explanation: string;
     likelihood: Likelihood;
+    /** The category's score from 0 to 1, shown as a bar; null where there is none, e.g. for CNAME aliases. */
+    score: number | null;
     /** One line about what was observed. */
     summary: string;
     /** Signs of hiding that any of the category's scripts show; empty if there are none. */
@@ -44,11 +47,10 @@ export interface EvidenceRow {
     score: number | null;
 }
 
-// Same cut-offs the analysis uses for its medium/high scores.
-const FP_POSSIBLE = 0.4;
-const FP_LIKELY = 0.7;
-const DNS_POSSIBLE = 0.2;
-const DNS_LIKELY = 0.6;
+/** Where scores count as possible or likely: the user's settings, sent with the snapshot. */
+function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
+    return snapshot.cutoffs ?? DEFAULT_SETTINGS.cutoffs;
+}
 
 /** Evidence rows per category on the overview. */
 const OVERVIEW_ROWS = 3;
@@ -75,16 +77,17 @@ export interface Summary {
 
 /** Which third parties may be tracking on the page. */
 export function buildSummary(snapshot: TabSnapshot): Summary {
+    const cutoffs = cutoffsOf(snapshot);
     const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
     const scripts = (snapshot.frames ?? []).filter((f) => f !== null).flatMap((f) => f.document.scripts);
 
     // A domain counts only with real evidence: a script that fingerprints at "possible" or above,
     // being the real target of a cloaked first-party address, or using ID-like hostnames.
     const aliases = cloakedHosts(snapshot);
-    const fingerprinters = scripts.filter((s) => (s.fpMetrics?.score ?? 0) >= FP_POSSIBLE).map((s) => realSite(hostOf(s.name), aliases));
+    const fingerprinters = scripts.filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible).map((s) => realSite(hostOf(s.name), aliases));
     const cloaked = [...aliases.values()].map((target) => getEtld1(target) ?? target);
     const idHosts = unique(
-        (snapshot.dnsTrackingRequests ?? []).filter((r) => (r.subdomainScore ?? 0) > DNS_POSSIBLE).map((r) => r.hostname ?? hostOf(r.url))
+        (snapshot.dnsTrackingRequests ?? []).filter((r) => (r.subdomainScore ?? 0) >= cutoffs.hostname.possible).map((r) => r.hostname ?? hostOf(r.url))
     );
 
     const parties = unique([...fingerprinters, ...cloaked, ...idHosts.map((h) => getEtld1(h))].filter((s): s is string => !!s && s !== pageSite));
@@ -98,6 +101,7 @@ export function buildSummary(snapshot: TabSnapshot): Summary {
 }
 
 function fingerprinting(snapshot: TabSnapshot): Category {
+    const cutoffs = cutoffsOf(snapshot);
     const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
     const score = Math.max(...documents.map((d) => d.fpMetrics?.score ?? 0), 0);
     // Only scripts rated possible or higher count; many scripts read a detail or two, e.g. the user agent.
@@ -108,7 +112,7 @@ function fingerprinting(snapshot: TabSnapshot): Category {
     if (scripts.length > 0) {
         const categories = documents
             .flatMap((d) => d.scripts)
-            .filter((s) => (s.fpMetrics?.score ?? 0) >= FP_POSSIBLE)
+            .filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
             .flatMap((s) => s.fpMetrics?.distinctFpCategories ?? []);
         const techniques = techniqueWords(categories);
         const shown = techniques.length <= 3 ? techniques : [...techniques.slice(0, 2), `${techniques.length - 2} other details`];
@@ -124,8 +128,9 @@ function fingerprinting(snapshot: TabSnapshot): Category {
         explanation:
             'Scripts read details about your browser and device, such as how it draws graphics or processes audio. ' +
             'Combined, these details can recognize you across sites without cookies. ' +
-            'The more different details a script reads in a short time, the more likely it is fingerprinting.',
-        likelihood: fpLikelihood(score),
+            'The more details a script reads that ordinary sites rarely need, and the more they identify, the more likely it is fingerprinting.',
+        likelihood: fpLikelihood(score, cutoffs),
+        score,
         summary,
         // Signs of hiding count for every script, also those not rated suspicious.
         signals: pageSignals(allScripts),
@@ -160,6 +165,7 @@ function cnameCloaking(snapshot: TabSnapshot): Category {
             'Content delivery networks use the same setup, so this is never rated above possible.',
         // Content delivery networks look the same as cloaked trackers, so this is never more than possible.
         likelihood: aliases.length > 0 ? 'possible' : 'unlikely',
+        score: null,
         summary,
         signals: [],
         rows: aliases.slice(0, OVERVIEW_ROWS).map((a) => ({
@@ -194,7 +200,8 @@ function dnsTracking(snapshot: TabSnapshot): Category {
         explanation:
             'Some hostnames contain a long random-looking part, like a3f9c2e8.tracker.com. ' +
             'That part can be an ID unique to you, sent along with every DNS lookup and request to that host.',
-        likelihood: hosts.length === 0 ? 'unlikely' : dnsLikelihood(Math.max(...hosts.map((h) => h.score))),
+        likelihood: hosts.length === 0 ? 'unlikely' : dnsLikelihood(Math.max(...hosts.map((h) => h.score)), cutoffsOf(snapshot)),
+        score: null,
         summary,
         signals: [],
         rows: hosts.slice(0, OVERVIEW_ROWS).map((h) => ({
@@ -209,18 +216,19 @@ function dnsTracking(snapshot: TabSnapshot): Category {
     };
 }
 
-function fpLikelihood(score: number): Likelihood {
-    return score >= FP_LIKELY ? 'likely' : score >= FP_POSSIBLE ? 'possible' : 'unlikely';
+function fpLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Likelihood {
+    const { possible, likely } = cutoffs.fingerprinting;
+    return score >= likely ? 'likely' : score >= possible ? 'possible' : 'unlikely';
 }
 
-/** For a hostname that already scored above the reporting threshold. */
-function dnsLikelihood(score: number): Likelihood {
-    return score > DNS_LIKELY ? 'likely' : 'possible';
+/** For a hostname that already scored above the possible cutoff. */
+function dnsLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Likelihood {
+    return score >= cutoffs.hostname.likely ? 'likely' : 'possible';
 }
 
 /** API categories as words, most identifying first (e.g. canvas before screen size). */
 function techniqueWords(categories: string[]): string[] {
-    const sorted = unique(categories).sort((a, b) => (FP_CATEGORY_WEIGHTS[b] ?? 0) - (FP_CATEGORY_WEIGHTS[a] ?? 0));
+    const sorted = unique(categories).sort((a, b) => (FP_CATEGORY_ENTROPY[b] ?? 0) - (FP_CATEGORY_ENTROPY[a] ?? 0));
     return unique(sorted.map(fpCategoryName));
 }
 
@@ -245,6 +253,8 @@ export interface ScriptDetail {
     aliasOf: string | null;
     likelihood: Likelihood;
     score: number;
+    /** The signals the score was combined from. */
+    tree: ScoreNode[];
     calls: number;
     techniques: string[];
     /**
@@ -262,6 +272,7 @@ export interface ScriptDetail {
 
 /** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
+    const cutoffs = cutoffsOf(snapshot);
     const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
     const aliases = cloakedHosts(snapshot);
 
@@ -287,8 +298,9 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         url: script.name,
                         party: site === null ? null : site === pageSite ? 'first' : 'third',
                         aliasOf: host ? (aliases.get(host) ?? null) : null,
-                        likelihood: fpLikelihood(score),
+                        likelihood: fpLikelihood(score, cutoffs),
                         score,
+                        tree: scriptTree(script),
                         calls: script.fpMetrics?.intensity ?? 0,
                         techniques: techniqueWords(script.fpMetrics?.distinctFpCategories ?? []),
                         burst: strongestBurst(script.fpSpikes),
@@ -304,7 +316,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
 /** Bursts reading fewer different APIs aren't worth mentioning. */
 const MIN_BURST_APIS = 3;
 
-export type SignalId = 'generated-code';
+export type SignalId = 'generated-code' | 'one-place';
 
 export interface Signal {
     id: SignalId;
@@ -316,10 +328,19 @@ export interface Signal {
 function pageSignals(scripts: ScriptDetail[]): string[] {
     const occurs = (id: SignalId) => scripts.some((s) => s.signals.some((signal) => signal.id === id));
 
-    return [occurs('generated-code') ? 'Fingerprinting APIs read by code generated at runtime' : ''].filter(Boolean);
+    return [
+        occurs('generated-code') ? 'Fingerprinting APIs read by code generated at runtime' : '',
+        occurs('one-place') ? 'Fingerprinting APIs read from one place in the code' : '',
+    ].filter(Boolean);
 }
 
-/** Signs that a script hides what it does, from where its calls came from. */
+/**
+ * Different APIs read from one place in the code from which the popup mentions it. Ordinary scripts
+ * read at most 2 there (e.g. { innerWidth, innerHeight } = window); the score counts from 3 on.
+ */
+const ONE_PLACE_MIN_APIS = 5;
+
+/** Signs of fingerprinting in how a script's calls are made: from generated code, or many from one place. */
 function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined): Signal[] {
     const signals: Signal[] = [];
 
@@ -333,17 +354,232 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined)
         });
     }
 
+    // The place in the code reading the most different APIs: a loop or VM instruction collecting them.
+    const byPlace = new Map<string, number>();
+    for (const locations of apis) {
+        for (const place of new Set(locations.map((l) => `${l.line}:${l.column}`))) byPlace.set(place, (byPlace.get(place) ?? 0) + 1);
+    }
+    const fromOnePlace = Math.max(0, ...byPlace.values());
+    if (fromOnePlace >= ONE_PLACE_MIN_APIS) {
+        signals.push({
+            id: 'one-place',
+            text: `${fromOnePlace} of ${plural(apis.length, 'fingerprinting API')} read from one place in the code`,
+        });
+    }
+
     return signals;
 }
 
 /** The spike with the highest score, as different APIs read and its duration. */
 function strongestBurst(spikes: (SpikeSnapshot | null)[]): ScriptDetail['burst'] {
-    const strongest = spikes
-        .map((spike) => spike?.fpMetrics)
-        .filter((metrics) => metrics != null)
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+    const strongest = strongestSpike(spikes);
     if (!strongest || strongest.distinctFpApis.length < MIN_BURST_APIS) return null;
     return { apis: strongest.distinctFpApis.length, durationMs: strongest.durationMs };
+}
+
+/** The metrics of the spike with the highest score. */
+function strongestSpike(spikes: (SpikeSnapshot | null)[]): MetricsSnapshot | null {
+    return (
+        spikes
+            .map((spike) => spike?.fpMetrics)
+            .filter((metrics) => metrics != null)
+            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null
+    );
+}
+
+// ---------- score trees ----------
+
+/**
+ * A part of a score in its tree: a signal, or an API of a signal made from the APIs read. Its share
+ * is how much of its parent's value it accounts for, so the shares of a node's children always add
+ * up to the node's own value (its ring), down to the APIs.
+ */
+export interface ScoreNode {
+    key: string;
+    label: string;
+    /**
+     * How strongly it was observed, from 0 to 1: a signal's value (1 = full), the score of the
+     * script or burst it stands for, or what an API added.
+     */
+    value: number;
+    /** For a signal made from the APIs read: the points it added up and where they count as full. */
+    points?: { total: number; fullAt: number };
+    /** How much of its parent's value it accounts for, on the same scale (0 to 1). */
+    share: number;
+    /** The share rounded to hundredths so that siblings add up to their parent's rounded value. */
+    shownShare: number;
+    /** Whose value the share goes to, in a word or two, e.g. "burst" or "unusual". */
+    shareTo: string;
+    /** What the node was made from, e.g. the strongest script's name; empty if nothing. */
+    detail: string;
+    /** The tooltip: how the share came about. */
+    note: string;
+    /** An API id, shown in monospace. */
+    api?: boolean;
+    children: ScoreNode[];
+}
+
+/** The page's fingerprinting score and the signals it was combined from. */
+export interface PageScore {
+    score: number;
+    likelihood: Likelihood;
+    tree: ScoreNode[];
+}
+
+/** The fingerprinting score of the page's most suspicious document (a frame), and its tree. */
+export function fingerprintingPage(snapshot: TabSnapshot): PageScore {
+    const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
+    const document = documents.sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
+    const score = document?.fpMetrics?.score ?? 0;
+    return { score, likelihood: fpLikelihood(score, cutoffsOf(snapshot)), tree: document ? pageTree(document, score) : [] };
+}
+
+function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
+    return scoreTree('page', document.fpMetrics, total, (key) => {
+        if (key === 'strongestScript') {
+            const script = [...document.scripts].sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
+            return script ? { detail: describeScript(script.name, document.url).name, children: scriptTree(script) } : null;
+        }
+        if (key === 'strongestBurst') {
+            // An older background may not send the page's bursts.
+            const burst = [...(document.spikes ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+            if (!burst) return null;
+            const detail = `${plural(burst.distinctFpApis.length, 'fingerprinting API')} within ${duration(burst.durationMs)}, all scripts together`;
+            return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
+        }
+        return null;
+    });
+}
+
+/** A script's signals, sharing its score. */
+function scriptTree(script: ScriptSnapshot): ScoreNode[] {
+    return scoreTree('script', script.fpMetrics, script.fpMetrics?.score ?? 0, (key) => {
+        if (key !== 'strongestBurst') return null;
+        const burst = strongestSpike(script.fpSpikes);
+        if (!burst) return null;
+        const detail = `${plural(burst.distinctFpApis.length, 'fingerprinting API')} within ${duration(burst.durationMs)}`;
+        return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
+    });
+}
+
+/**
+ * The signals of a score, most contributing first (ties in the order the settings list them),
+ * sharing `total`, the score. A
+ * signal made from another score or from APIs has children sharing its own value in turn, so each
+ * level adds up to the ring of its parent. Signals combine as 1 − Π(1 − alone), which
+ * isn't a sum, so the total is split as a waterfall: the strongest signal gets what it gives alone,
+ * each next one, from strongest to weakest, what it adds on top of those before it. The shares add
+ * up to exactly the total. Signals switched off (strength 0) are left out, as they can't contribute.
+ * `expand` gives what a signal was made from, for those made from another score.
+ */
+function scoreTree(
+    level: ScoreLevel,
+    metrics: MetricsSnapshot | null | undefined,
+    total: number,
+    expand: (key: string) => { detail: string; children: ScoreNode[] } | null = () => null
+): ScoreNode[] {
+    const parts = metrics?.signals ?? {};
+    const signals = Object.entries(SIGNALS[level]).flatMap(([key, signal]) => {
+        const part = parts[key];
+        if (!part || part.strength <= 0) return [];
+        return [{ key, signal, part, alone: part.strength * part.value }];
+    });
+
+    // What each adds on top of the stronger ones, as a fraction of the score they make together.
+    const added = new Map<string, number>();
+    let reached = 0;
+    for (const { key, alone } of [...signals].sort((a, b) => b.alone - a.alone)) {
+        added.set(key, (1 - reached) * alone);
+        reached += (1 - reached) * alone;
+    }
+
+    const nodes = signals.map(({ key, signal, part, alone }): ScoreNode => {
+        const share = reached > 0 ? total * (added.get(key)! / reached) : 0;
+        const source = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label) : expand(key);
+        return {
+            key,
+            label: signal.label,
+            value: part.value,
+            points: part.apis ? { total: part.apis.total, fullAt: part.apis.fullAt } : undefined,
+            share,
+            shownShare: share,
+            shareTo: level,
+            detail: source?.detail ?? '',
+            note: `Accounts for ${share.toFixed(2)} of the ${total.toFixed(2)} above: what it adds on top of the stronger signals. Alone it would give ${alone.toFixed(2)}: up to ${Math.round(part.strength * 100)}% × ${part.value.toFixed(2)} observed.`,
+            children: source?.children ?? [],
+        };
+    });
+    // Most contributing first, reading like the waterfall; sort keeps ties in the settings' order.
+    return withShownShares(nodes, total).sort((a, b) => b.share - a.share);
+}
+
+/**
+ * Rounds the shares of siblings to hundredths so that they add up to their parent's rounded value
+ * (largest remainder): rounded one by one, 0.985 and 0.005 would show as 0.98 and 0.00 under 0.99.
+ */
+function withShownShares(nodes: ScoreNode[], total: number): ScoreNode[] {
+    const cents = nodes.map((node) => node.share * 100);
+    const shown = cents.map(Math.floor);
+    let missing = Math.round(total * 100) - shown.reduce((sum, x) => sum + x, 0);
+    // The largest remainders get the missing hundredths.
+    const byRemainder = cents.map((x, i) => ({ i, rest: x - Math.floor(x) })).sort((a, b) => b.rest - a.rest);
+    for (const { i } of byRemainder) {
+        if (missing <= 0) break;
+        shown[i]! += 1;
+        missing -= 1;
+    }
+    return nodes.map((node, i) => ({ ...node, shownShare: shown[i]! / 100 }));
+}
+
+// Short names of the signals made from APIs, for "+0.10 to unusual" under an API's share.
+const SHORT_NAMES: Record<string, string> = {
+    identifying: 'identifying',
+    unusualApis: 'unusual',
+    onePlace: 'one place',
+    generatedCode: 'generated',
+};
+
+/**
+ * The APIs an API signal was made from, sharing the signal's value like signals share a score: as a
+ * waterfall, from the API adding the most down, each adding its points relative to the full-at
+ * (1 of 10 points is +0.10) until the signal is full; later ones add nothing beyond full. An API
+ * whose information another API already counted adds nothing.
+ */
+function apisSource(sum: ApisSum, total: number, signal: string): { detail: string; children: ScoreNode[] } {
+    const measure = sum.measure === 'entropy' ? 'entropy' : 'rarity';
+    const number = (x: number) => +x.toFixed(2);
+
+    // sum.apis is sorted by what they add, most first.
+    const shares = new Map<string, number>();
+    let reached = 0;
+    for (const api of sum.apis) {
+        const add = sum.fullAt > 0 ? Math.min(api.amount / sum.fullAt, Math.max(0, total - reached)) : 0;
+        shares.set(api.id, add);
+        reached += add;
+    }
+
+    const children = sum.apis.map((api): ScoreNode => {
+        const share = shares.get(api.id) ?? 0;
+        const adds =
+            sum.measure === 'rarity' && api.amount !== api.basis ? `${measure} ${number(api.basis)}, counts ${number(api.amount)}` : `${measure} ${number(api.basis)}`;
+        let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} points that make it full: +${share.toFixed(2)}.`;
+        if (api.countedWith) note = `Same information as ${api.countedWith}, which counts instead.`;
+        else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)
+            note = `Adds ${number(api.amount)} points, but the APIs adding more already filled it up to full: +${share.toFixed(2)}.`;
+        return {
+            key: api.id,
+            label: api.id,
+            api: true,
+            value: api.amount,
+            share,
+            shownShare: share,
+            shareTo: signal,
+            detail: api.countedWith ? `counted with ${api.countedWith}` : adds,
+            note,
+            children: [],
+        };
+    });
+    return { detail: `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'fingerprinting API')}`, children: withShownShares(children, total) };
 }
 
 export interface RequestLine {
@@ -389,15 +625,16 @@ export interface HostnameDetail {
 
 /** Hostnames that look like they carry an ID, most suspicious first. */
 export function dnsDetails(snapshot: TabSnapshot): HostnameDetail[] {
+    const cutoffs = cutoffsOf(snapshot);
     const byHost = new Map<string, HostnameDetail>();
     for (const req of snapshot.dnsTrackingRequests ?? []) {
         const score = req.subdomainScore ?? 0;
         const host = req.hostname ?? hostOf(req.url);
-        if (score <= DNS_POSSIBLE || !host) continue;
+        if (score < cutoffs.hostname.possible || !host) continue;
 
-        const detail = byHost.get(host) ?? { host, likelihood: dnsLikelihood(score), score, requests: [] };
+        const detail = byHost.get(host) ?? { host, likelihood: dnsLikelihood(score, cutoffs), score, requests: [] };
         detail.score = Math.max(detail.score, score);
-        detail.likelihood = dnsLikelihood(detail.score);
+        detail.likelihood = dnsLikelihood(detail.score, cutoffs);
         detail.requests.push(requestLine(req.method, req.url));
         byHost.set(host, detail);
     }

@@ -1,11 +1,13 @@
 import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/types/analysis';
 import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
-import { FP_APIS_BY_ID, FP_TOTAL_WEIGHT, FP_CATEGORIES_TOTAL_WEIGHT, FP_CATEGORY_WEIGHTS } from './fp-apis';
-import { consolidateHttpEvents, enrichHttpRequestsWithDns } from './http-analysis';
+import { FP_APIS_BY_ID } from './fp-apis';
+import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns } from './http-analysis';
+import { BURST_DETECTION, LIMITS, apisSums, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
 
-export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>) {
+/** Scores the document's scripts, their bursts of calls and the requests right after (see scoring). */
+export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>, settings: ScoringSettings) {
     const documentFpEvents: FpMonkeyEvent[] = [];
     const documentConsolidatedHttpEvents: HttpConsolidatedEvent[] = [];
 
@@ -21,7 +23,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
         script.httpConsolidatedEvents = consolidateHttpEvents(script.httpEvents, document.httpRequests);
 
         for (const consolidatedHttp of script.httpConsolidatedEvents) {
-            consolidatedHttp.suspicionScore = computeHttpFpScore(consolidatedHttp);
+            consolidatedHttp.suspicionScore = computeHttpFpScore(consolidatedHttp, settings);
         }
 
         documentConsolidatedHttpEvents.push(...script.httpConsolidatedEvents);
@@ -32,13 +34,13 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
             spike.httpCorrelations = getCorrelatedHttpCandidates(spike, script.httpConsolidatedEvents);
             spike.fpMetrics = getFpMetrics(spike.events);
             if (spike.fpMetrics) {
-                spike.fpMetrics.score = computeSpikeFpScore(spike, spike.fpMetrics);
+                setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings));
             }
         }
 
         script.fpMetrics = getFpMetrics(script.fpEvents);
         if (script.fpMetrics) {
-            script.fpMetrics.score = computeScriptFpScore(script);
+            setScore(script.fpMetrics, computeScriptFpScore(script, settings));
         }
     }
 
@@ -47,15 +49,19 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
         spike.httpCorrelations = getCorrelatedHttpCandidates(spike, documentConsolidatedHttpEvents);
         spike.fpMetrics = getFpMetrics(spike.events);
         if (spike.fpMetrics) {
-            spike.fpMetrics.score = computeSpikeFpScore(spike, spike.fpMetrics);
+            setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings));
         }
     }
 
     document.fpMetrics = getFpMetrics(documentFpEvents);
     if (document.fpMetrics) {
-        document.fpMetrics.score = computeDocumentFpScore(document);
+        setScore(document.fpMetrics, computeDocumentFpScore(document, settings));
     }
-    console.log(document);
+}
+
+function setScore(metrics: FpMetrics, scored: ScoredParts) {
+    metrics.score = scored.score;
+    metrics.signals = scored.parts;
 }
 
 function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
@@ -80,130 +86,117 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
     };
 }
 
-function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics): number {
-    const distinctApiScorePure = getDistinctFpApiScorePure(metrics.distinctFpApis);
-    const distinctCategoryScorePure = getDistinctFpApiCategoryScorePure(metrics.distinctFpCategories);
+function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: ScoringSettings): ScoredParts {
+    const maxRequestScore = Math.max(...(spike.httpCorrelations ?? []).map((corr) => corr.suspicionScore || 0), 0);
 
-    const DENSITY_SAT = 1;
-    const INTENSITY_SAT = 10;
-    const DISTINCT_API_SAT = 0.4;
-    const DISTINCT_CATEGORY_SAT = 0.5;
+    const apis = apiSignals(metrics.distinctFpApis, 'burst', settings);
+    const onePlace = onePlaceSum(spike.events, 'burst', settings);
+    const generated = generatedCodeSum(spike.events, 'burst', settings);
 
-    const distinctApiScore = Math.min(distinctApiScorePure / DISTINCT_API_SAT, 1);
-    const distinctCategoryScore = Math.min(distinctCategoryScorePure / DISTINCT_CATEGORY_SAT, 1);
-
-    const intensityScore = Math.min(metrics.intensity / INTENSITY_SAT, 1);
-    const densityScore = Math.min(metrics.density / DENSITY_SAT, 1);
-
-    const maxHttpSuspicionScore = Math.max(...(spike.httpCorrelations ?? []).map((corr) => corr.suspicionScore || 0), 0);
-
-    const totalScore = 0.35 * distinctApiScore + 0.25 * distinctCategoryScore + 0.2 * maxHttpSuspicionScore + 0.15 * densityScore + 0.05 * intensityScore;
-
-    return totalScore;
-}
-
-function computeScriptFpScore(script: ScriptState): number {
-    const footprintScore = computeScriptFootprintScore(script);
-    const spikeSummary = summarizeSpikeScores(script.fpSpikes);
-
-    return 0.5 * footprintScore + 0.35 * spikeSummary.maxSpike + 0.15 * spikeSummary.highSpikeFeature + 0.05 * spikeSummary.mediumSpikeFeature;
-}
-
-function computeScriptFootprintScore(script: ScriptState): number {
-    const INTENSITY_SAT = 200;
-    const DISTINCT_API_SAT = 0.6;
-    const DISTINCT_CATEGORY_SAT = 0.7;
-
-    const fpMetrics = script.fpMetrics!;
-    const distinctApiScorePure = getDistinctFpApiScorePure(fpMetrics.distinctFpApis);
-    const distinctCategoryScorePure = getDistinctFpApiCategoryScorePure(fpMetrics.distinctFpCategories);
-
-    const intensityScore = Math.min(fpMetrics.intensity / INTENSITY_SAT, 1);
-    const distinctApiScore = Math.min(distinctApiScorePure / DISTINCT_API_SAT, 1);
-    const distinctCategoryScore = Math.min(distinctCategoryScorePure / DISTINCT_CATEGORY_SAT, 1);
-
-    return 0.55 * distinctApiScore + 0.35 * distinctCategoryScore + 0.1 * intensityScore;
-}
-
-function summarizeSpikeScores(spikes: FpSpike[]) {
-    if (!spikes || spikes.length === 0) {
-        return { maxSpike: 0, highSpikeFeature: 0, mediumSpikeFeature: 0 };
-    }
-
-    const HIGH_SPIKE_THRESHOLD = 0.7;
-    const MEDIUM_SPIKE_THRESHOLD = 0.5;
-
-    const scores = spikes.map((s) => s.fpMetrics!.score ?? 0).sort((a, b) => b - a);
-
-    const maxSpike = scores[0] || 0;
-    const highSpikeCount = scores.filter((s) => s >= HIGH_SPIKE_THRESHOLD).length;
-    const mediumSpikeCount = scores.filter((s) => s >= MEDIUM_SPIKE_THRESHOLD && s < HIGH_SPIKE_THRESHOLD).length;
-
-    const HIGH_SPIKE_SAT = 3;
-    const MEDIUM_SPIKE_SAT = 5;
-
-    const highSpikeFeature = Math.min(highSpikeCount / HIGH_SPIKE_SAT, 1);
-    const mediumSpikeFeature = Math.min(mediumSpikeCount / MEDIUM_SPIKE_SAT, 1);
-
-    return { maxSpike, highSpikeFeature, mediumSpikeFeature };
-}
-
-function computeDocumentFootprintScore(document: DocumentState): number {
-    const INTENSITY_SAT = 500;
-    const DISTINCT_API_SAT = 0.7;
-    const DISTINCT_CATEGORY_SAT = 0.8;
-
-    const fpMetrics = document.fpMetrics!;
-    const distinctApiScorePure = getDistinctFpApiScorePure(fpMetrics.distinctFpApis);
-    const distinctCategoryScorePure = getDistinctFpApiCategoryScorePure(fpMetrics.distinctFpCategories);
-
-    const intensityScore = Math.min(fpMetrics.intensity / INTENSITY_SAT, 1);
-    const distinctApiScore = Math.min(distinctApiScorePure / DISTINCT_API_SAT, 1);
-    const distinctCategoryScore = Math.min(distinctCategoryScorePure / DISTINCT_CATEGORY_SAT, 1);
-
-    return 0.55 * distinctApiScore + 0.35 * distinctCategoryScore + 0.1 * intensityScore;
-}
-
-function computeDocumentFpScore(document: DocumentState): number {
-    const footprintScore = computeDocumentFootprintScore(document);
-    const spikeSummary = summarizeSpikeScores(document.spikes);
-    const scriptSummary = summarizeScriptScores(Object.values(document.scripts));
-
-    return (
-        0.4 * footprintScore +
-        0.3 * spikeSummary.maxSpike +
-        0.2 * scriptSummary.maxScript +
-        0.05 * spikeSummary.highSpikeFeature +
-        0.03 * scriptSummary.highScriptFeature +
-        0.02 * spikeSummary.mediumSpikeFeature +
-        0.01 * scriptSummary.mediumScriptFeature
+    return combineParts(
+        'burst',
+        { ...apis.values, onePlace: onePlace.value, generatedCode: generated.value, dataSent: maxRequestScore },
+        settings,
+        { ...apis.sums, onePlace, generatedCode: generated }
     );
 }
 
-function summarizeScriptScores(scripts: ScriptState[]) {
-    if (!scripts || scripts.length === 0) {
-        return { maxScript: 0, highScriptFeature: 0, mediumScriptFeature: 0 };
+function computeScriptFpScore(script: ScriptState, settings: ScoringSettings): ScoredParts {
+    const metrics = script.fpMetrics!;
+    const burstScores = script.fpSpikes.map((s) => s.fpMetrics?.score ?? 0);
+    const likelyBursts = burstScores.filter((score) => score >= settings.cutoffs.fingerprinting.likely).length;
+
+    // As a fallback for collecting spread out, the script's own API signals count only the APIs its
+    // strongest burst didn't read: that burst's APIs, their places and generated code are already
+    // counted through it. Reads spread out and those of its other bursts count, so splitting a
+    // collection into bursts doesn't hide it.
+    const strongest = script.fpSpikes.reduce<FpSpike | null>((best, spike) => ((spike.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? spike : best), null);
+    const counted = new Set(strongest?.events.map((event) => event.id) ?? []);
+    const beyond = script.fpEvents.filter((event) => !counted.has(event.id));
+    const apis = apiSignals([...metrics.distinctFpApis].filter((id) => !counted.has(id)), 'script', settings);
+    const onePlace = onePlaceSum(beyond, 'script', settings);
+    const generated = generatedCodeSum(beyond, 'script', settings);
+
+    return combineParts(
+        'script',
+        {
+            ...apis.values,
+            onePlace: onePlace.value,
+            strongestBurst: Math.max(...burstScores, 0),
+            repeatedBursts: saturate(likelyBursts, LIMITS.script.repeatedBursts),
+            generatedCode: generated.value,
+        },
+        settings,
+        { ...apis.sums, onePlace, generatedCode: generated }
+    );
+}
+
+function computeDocumentFpScore(document: DocumentState, settings: ScoringSettings): ScoredParts {
+    const metrics = document.fpMetrics!;
+    const scripts = Object.values(document.scripts).filter((s) => s.fpMetrics);
+
+    const apis = apiSignals(metrics.distinctFpApis, 'page', settings);
+    // The script reading the most unusual APIs through generated code.
+    const generated = scripts
+        .map((s) => generatedCodeSum(s.fpEvents, 'page', settings))
+        .reduce((most, sum) => (sum.value > most.value ? sum : most), generatedCodeSum([], 'page', settings));
+
+    return combineParts(
+        'page',
+        {
+            ...apis.values,
+            strongestScript: Math.max(...scripts.map((s) => s.fpMetrics!.score ?? 0), 0),
+            strongestBurst: Math.max(...document.spikes.map((s) => s.fpMetrics?.score ?? 0), 0),
+            generatedCode: generated.value,
+        },
+        settings,
+        { ...apis.sums, generatedCode: generated }
+    );
+}
+
+// Fewer different APIs at a place are just a read, not a collection.
+const ONE_PLACE_MIN_APIS = 2;
+
+/**
+ * How many unusual APIs are read from a single place in the code: the unusual APIs value (see
+ * apisSums) of the place reading the most. Only places reading at least ONE_PLACE_MIN_APIS different
+ * APIs count, as every API is read from some place. Everyday APIs count little, so layout code
+ * reading innerWidth and innerHeight together adds almost nothing. Calls from generated code count at
+ * the place it was generated.
+ */
+function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
+    const byPlace = new Map<string, Set<string>>();
+    for (const event of fpEvents) {
+        if (event.line == null || event.column == null) continue;
+        const place = `${event.scriptUrl}:${event.line}:${event.column}`;
+        const apis = byPlace.get(place) ?? new Set<string>();
+        apis.add(event.id);
+        byPlace.set(place, apis);
     }
+    return [...byPlace.values()]
+        .filter((apis) => apis.size >= ONE_PLACE_MIN_APIS)
+        .map((apis) => apisSums(apis, level, settings).unusual)
+        .reduce((most, sum) => (sum.value > most.value ? sum : most), apisSums([], level, settings).unusual);
+}
 
-    const HIGH_SCRIPT_THRESHOLD = 0.7;
-    const MEDIUM_SCRIPT_THRESHOLD = 0.5;
+/** The identifying information and unusual APIs signals for the different APIs read (see apisSums). */
+function apiSignals(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings) {
+    const { identifying, unusual } = apisSums(distinctApis, level, settings);
+    return { values: { identifying: identifying.value, unusualApis: unusual.value }, sums: { identifying, unusualApis: unusual } };
+}
 
-    const scores = scripts
-        .filter((s) => s.fpMetrics)
-        .map((s) => s.fpMetrics!.score ?? 0)
-        .sort((a, b) => b - a);
-
-    const maxScript = scores[0] || 0;
-    const highScriptCount = scores.filter((s) => s >= HIGH_SCRIPT_THRESHOLD).length;
-    const mediumScriptCount = scores.filter((s) => s >= MEDIUM_SCRIPT_THRESHOLD && s < HIGH_SCRIPT_THRESHOLD).length;
-
-    const HIGH_SCRIPT_SAT = 3;
-    const MEDIUM_SCRIPT_SAT = 5;
-
-    const highScriptFeature = Math.min(highScriptCount / HIGH_SCRIPT_SAT, 1);
-    const mediumScriptFeature = Math.min(mediumScriptCount / MEDIUM_SCRIPT_SAT, 1);
-
-    return { maxScript, highScriptFeature, mediumScriptFeature };
+/**
+ * How much fingerprinting is done by code generated at runtime: the unusual APIs read by it, like the
+ * "Unusual fingerprinting APIs" signal. An API counts as soon as one of its calls came from generated code, however
+ * many didn't. Counting unusual APIs rather than the share keeps e.g. a template engine reading
+ * document.cookie through eval from counting much.
+ */
+function generatedCodeSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
+    const generated = new Set<string>();
+    for (const event of fpEvents) {
+        if (event.generated) generated.add(event.id);
+    }
+    return apisSums(generated, level, settings).unusual;
 }
 
 function getDistinctFpApis(fpEvents: FpMonkeyEvent[]): Set<string> {
@@ -226,90 +219,27 @@ function getDistinctFpCategories(fpEvents: FpMonkeyEvent[]): Set<string> {
     return categorySet;
 }
 
-function getDistinctFpApiScorePure(distinctFpApis: Set<string>): number {
-    let combinedWeight = 0;
-    for (const apiId of distinctFpApis) {
-        const api = FP_APIS_BY_ID[apiId];
-        combinedWeight += api!.weight;
-    }
+/** The requests carrying data that the script made from the start of the burst until shortly after it. */
+function getCorrelatedHttpCandidates(fpSpike: FpSpike, consolidatedHttps: HttpConsolidatedEvent[]): HttpConsolidatedEvent[] {
+    const start = fpSpike.events[0]!.timeStamp;
+    const end = fpSpike.events[fpSpike.events.length - 1]!.timeStamp + BURST_DETECTION.requestWindowMs;
 
-    return combinedWeight / FP_TOTAL_WEIGHT;
+    return consolidatedHttps.filter((c) => c.httpEvent.timeStamp >= start && c.httpEvent.timeStamp <= end && carriesData(c));
 }
 
-function getDistinctFpApiCategoryScorePure(distinctFpCategories: Set<string>): number {
-    let combinedWeight = 0;
-    for (const category of distinctFpCategories) {
-        combinedWeight += FP_CATEGORY_WEIGHTS[category]!;
-    }
+function computeHttpFpScore(consolidatedHttp: HttpConsolidatedEvent, settings: ScoringSettings): number {
+    const { httpRequest, httpEvent } = consolidatedHttp;
 
-    return combinedWeight / FP_CATEGORIES_TOTAL_WEIGHT;
-}
-
-function getCorrelatedHttpCandidates(fpSpike: FpSpike, consolidatedHttps: HttpConsolidatedEvent[], preWindowMs = 0, postWindowMs = 200): HttpConsolidatedEvent[] {
-    const start = fpSpike.events[0]!.timeStamp - preWindowMs;
-    const end = fpSpike.events[fpSpike.events.length - 1]!.timeStamp + postWindowMs;
-
-    const correlated = consolidatedHttps.filter((c) => c.httpEvent.timeStamp >= start && c.httpEvent.timeStamp <= end);
-
-    return correlated;
-}
-
-function computeHttpFpScore(consolidatedHttp: HttpConsolidatedEvent): number {
-    const WEIGHTS = {
-        cnameCloaked: 0.3,
-        thirdParty: 0.2,
-        crossOrigin: 0.15,
-        susMethod: 0.15,
-        searchParams: 0.1,
-        type: 0.1,
-    };
-
-    const isCnameCloaked = consolidatedHttp.httpRequest.isCnameCloaked ? 1 : 0;
-    const isCrossOrigin = consolidatedHttp.httpRequest.isCrossOrigin ? 1 : 0;
-    const isThirdParty = consolidatedHttp.httpRequest.endsThirdParty ? 1 : 0;
-    const isSusMethod = ['POST', 'PUT', 'PATCH'].includes(consolidatedHttp.httpEvent.method ?? '') ? 1 : 0;
-    const typeSuspicion = getTypeSuspicion(consolidatedHttp.httpRequest.type);
-
-    const SEARCH_PARAMS_SAT = 5;
-    const searchParamsNumber = new URL(consolidatedHttp.httpRequest.url).searchParams.size;
-
-    const searchParamsScore = Math.min(searchParamsNumber / SEARCH_PARAMS_SAT, 1);
-
-    return (
-        WEIGHTS.cnameCloaked * isCnameCloaked +
-        WEIGHTS.crossOrigin * isCrossOrigin +
-        WEIGHTS.thirdParty * isThirdParty +
-        WEIGHTS.susMethod * isSusMethod +
-        WEIGHTS.searchParams * searchParamsScore +
-        WEIGHTS.type * typeSuspicion
+    return combine(
+        'request',
+        {
+            cnameCloaked: httpRequest.isCnameCloaked ? 1 : 0,
+            thirdParty: httpRequest.endsThirdParty ? 1 : 0,
+            crossOrigin: httpRequest.isCrossOrigin ? 1 : 0,
+            sendsData: ['POST', 'PUT', 'PATCH'].includes(httpEvent.method ?? '') ? 1 : 0,
+            parameters: saturate(new URL(httpRequest.url).searchParams.size, LIMITS.request.parameters),
+            bodySize: saturate(httpRequest.bodyBytes ?? 0, LIMITS.request.bodyBytes),
+        },
+        settings
     );
-}
-
-function getTypeSuspicion(type: string): number {
-    switch (type) {
-        case 'xmlhttprequest':
-        case 'ping':
-            return 1.0;
-
-        case 'websocket':
-        case 'csp_report':
-            return 0.8;
-
-        case 'other':
-        case 'media':
-        case 'webbundle':
-            return 0.5;
-
-        case 'script':
-        case 'main_frame':
-        case 'sub_frame':
-            return 0.2;
-
-        case 'image':
-        case 'font':
-        case 'stylesheet':
-        case 'object':
-        default:
-            return 0.1;
-    }
 }

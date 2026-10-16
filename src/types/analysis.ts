@@ -1,5 +1,6 @@
 import type { Browser } from 'wxt/browser';
 import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
+import type { SignalPart } from '@/lib/scoring';
 
 /** One entry of the `Answer` array returned by DNS-over-HTTPS JSON APIs. */
 export interface DnsAnswer {
@@ -26,6 +27,8 @@ export interface DnsResult {
 export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
     hostname: string | null;
     documentUrl: string | null;
+    /** The size of the request's body in bytes; 0 without one. */
+    bodyBytes: number;
     looksFirstParty?: boolean;
     endsThirdParty?: boolean;
     isCnameCloaked?: boolean;
@@ -45,6 +48,8 @@ export interface FpMetrics {
     startTime: number;
     endTime: number;
     score?: number;
+    /** The signals the score was combined from, by signal key (see scoring). */
+    signals?: Record<string, SignalPart>;
 }
 
 export interface HttpConsolidatedEvent {

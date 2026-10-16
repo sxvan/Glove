@@ -13,11 +13,14 @@ export interface FpMonkeyEvent {
     generated: boolean;
 }
 
-/** A fetch/XHR call, recorded in the page by the http-recorder content script. */
+/** A request a script made (fetch, XHR, beacon, image pixel), recorded by the http-recorder content script. */
 export interface HttpMonkeyEvent {
-    id: 'fetch' | 'xhr';
+    id: 'fetch' | 'xhr' | 'beacon' | 'image';
     timeStamp: number;
+    /** The innermost page script on the stack; often a wrapper around fetch or XHR (see scriptUrls). */
     scriptUrl: string | null;
+    /** Every page script on the stack, innermost first; the request counts for each of them. */
+    scriptUrls: string[];
     requestUrl: string | null;
     method: string | null;
     credentials: string;

@@ -36,13 +36,19 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
     }
 }
 
+/**
+ * Matches the requests scripts made (as recorded in the page) to the requests the browser saw, by
+ * exact URL (the recorder resolves them; fragments aren't sent) and method, the closest in time.
+ */
 export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequests: HttpRequest[], maxDeltaMs = 1000): HttpConsolidatedEvent[] {
     const correlations: HttpConsolidatedEvent[] = [];
     const used = new Set<number>();
+    const withoutFragment = (url: string) => url.split('#')[0];
 
     for (const httpEvent of httpEvents) {
         // An XHR sent before open() has no URL and cannot be matched.
         if (!httpEvent.requestUrl) continue;
+        const eventUrl = withoutFragment(httpEvent.requestUrl);
 
         let bestIndex = -1;
         let bestDelta = maxDeltaMs + 1;
@@ -52,7 +58,7 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
 
             const req = httpRequests[i]!;
 
-            if (!req.url.toLowerCase().includes(httpEvent.requestUrl.toLowerCase())) continue;
+            if (withoutFragment(req.url) !== eventUrl) continue;
 
             if (req.method && httpEvent.method && req.method !== httpEvent.method) continue;
 
@@ -79,4 +85,30 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
     }
 
     return correlations;
+}
+
+// Downloads of files rather than data being sent, even with a query (e.g. "showads.js?adspot=1").
+const STATIC_FILE = /\.(?:m?js|css|json|map|woff2?|ttf|otf|png|jpe?g|gif|webp|avif|svg|ico|mp4|webm|mp3)$/i;
+
+// Image pixels with a file name still count with this many query parameters (e.g. "pixel.gif?a=…&b=…&c=…").
+const PIXEL_MIN_PARAMETERS = 3;
+
+/**
+ * True for requests that send something: a body (POST and the like), or a query on anything but a
+ * static file. Images loaded by scripts often carry a query too (lazy loading, image sizes), so a
+ * file name like ".jpg" only counts as a pixel with several parameters.
+ */
+export function carriesData({ httpEvent, httpRequest }: HttpConsolidatedEvent): boolean {
+    const method = (httpEvent.method ?? httpRequest.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return true;
+
+    let url: URL;
+    try {
+        url = new URL(httpRequest.url);
+    } catch {
+        return false;
+    }
+    if (!url.search) return false;
+    if (!STATIC_FILE.test(url.pathname)) return true;
+    return httpEvent.id === 'image' && url.searchParams.size >= PIXEL_MIN_PARAMETERS;
 }

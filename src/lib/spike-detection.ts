@@ -1,45 +1,32 @@
 import type { FpSpike } from '@/types/analysis';
 import type { FpMonkeyEvent } from '@/types/events';
+import { BURST_DETECTION } from './scoring';
 
 /**
- * Finds bursts of fingerprinting calls. Sorts `events` in place by timestamp.
+ * Finds bursts of fingerprinting calls: runs of calls at most `maxGapMs` apart, split after
+ * `maxDurationMs`, that read at least `minDistinctApis` different APIs (see BURST_DETECTION). Sorts
+ * `events` in place by timestamp.
  */
-export function detectSpikes(events: FpMonkeyEvent[], windowMs = 50, minEvents = 5, minDistinctEvents = 4, maxGapMs = 10): FpSpike[] {
-    if (events.length === 0) {
-        return [];
-    }
-
+export function detectSpikes(events: FpMonkeyEvent[]): FpSpike[] {
+    const { maxGapMs, maxDurationMs, minDistinctApis } = BURST_DETECTION;
     events.sort((a, b) => a.timeStamp - b.timeStamp);
 
     const spikes: FpSpike[] = [];
-    let startIndex = 0;
+    let run: FpMonkeyEvent[] = [];
 
-    for (let endIndex = 0; endIndex < events.length; endIndex++) {
-        while (events[endIndex]!.timeStamp - events[startIndex]!.timeStamp > windowMs) {
-            startIndex++;
-        }
+    const endRun = () => {
+        if (new Set(run.map((e) => e.id)).size >= minDistinctApis) spikes.push({ events: run });
+        run = [];
+    };
 
-        const windowSize = endIndex - startIndex + 1;
-
-        if (windowSize >= minEvents) {
-            let extendedEndIndex = endIndex;
-
-            while (extendedEndIndex + 1 < events.length && events[extendedEndIndex + 1]!.timeStamp - events[extendedEndIndex]!.timeStamp <= maxGapMs) {
-                extendedEndIndex++;
-            }
-
-            const spikeEvents = events.slice(startIndex, extendedEndIndex + 1);
-            const distinctEventsSet = new Set(spikeEvents.map((e) => e.id));
-            if (distinctEventsSet.size < minDistinctEvents) {
-                continue;
-            }
-
-            spikes.push({ events: spikeEvents });
-
-            startIndex = extendedEndIndex + 1;
-            endIndex = startIndex - 1;
-        }
+    for (const event of events) {
+        const previous = run.at(-1);
+        const tooLate = previous && event.timeStamp - previous.timeStamp > maxGapMs;
+        const tooLong = run.length > 0 && event.timeStamp - run[0]!.timeStamp > maxDurationMs;
+        if (tooLate || tooLong) endRun();
+        run.push(event);
     }
+    endRun();
 
     return spikes;
 }

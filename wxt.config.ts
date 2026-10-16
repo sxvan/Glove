@@ -9,7 +9,7 @@ export default defineConfig({
   manifest: {
     name: 'Web Tracking Detector',
     description: 'An extension to detect web tracking scripts on visited websites.',
-    permissions: ['webRequest', 'webNavigation'],
+    permissions: ['webRequest', 'webNavigation', 'storage'],
     host_permissions: ['<all_urls>'],
   },
 });

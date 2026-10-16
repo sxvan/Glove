@@ -4,6 +4,7 @@ import { createScheduler } from '@/lib/scheduler';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
+import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { createSession, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage } from '@/types/messages';
@@ -12,6 +13,9 @@ import type { CallLocation, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, Sc
 
 const DEBOUNCE_MS = 500;
 const MAX_INTERVAL_MS = 5000;
+
+// The user's scoring settings (see lib/scoring); the defaults until they are loaded.
+let settings: ScoringSettings = DEFAULT_SETTINGS;
 
 export default defineBackground(() => {
     const session = createSession();
@@ -22,10 +26,33 @@ export default defineBackground(() => {
 
     function scheduleAnalysis(document: DocumentState, tabId: number) {
         fpScheduler.notify(document.documentId, () => {
-            analyzeDocumentFp(document, session.dnsResults);
+            analyzeDocumentFp(document, session.dnsResults, settings);
             broadcastTabSnapshot(session, tabId);
         });
     }
+
+    /** Scores every open page again, e.g. after the user changed the scoring settings. */
+    function reanalyzeAll() {
+        for (const [tabId, tab] of Object.entries(session.tabs)) {
+            for (const frame of Object.values(tab.frames)) {
+                const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+                if (document) analyzeDocumentFp(document, session.dnsResults, settings);
+            }
+            broadcastTabSnapshot(session, Number(tabId));
+        }
+    }
+
+    loadScoringSettings().then(
+        (loaded) => {
+            settings = loaded;
+            reanalyzeAll();
+        },
+        (error) => console.warn('Could not load the scoring settings; using the defaults', error)
+    );
+    watchScoringSettings((changed) => {
+        settings = changed;
+        reanalyzeAll();
+    });
 
     /** Resolves once a DNS result for the host is cached; rejects if the lookup failed (it is retried later). */
     function lookUpHost(hostname: string): Promise<void> {
@@ -61,7 +88,7 @@ export default defineBackground(() => {
         }
 
         const hostname = getHostname(details.url);
-        const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, hostname };
+        const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, hostname, bodyBytes: bodySize(details.requestBody) };
         document.httpRequests.push(httpEvent);
 
         scheduleAnalysis(document, tabId);
@@ -152,6 +179,17 @@ export default defineBackground(() => {
     });
 });
 
+/** The size of a request's body in bytes: raw data, or form fields as sent. */
+function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']): number {
+    if (!body) return 0;
+    let bytes = 0;
+    for (const part of body.raw ?? []) bytes += part.bytes?.byteLength ?? 0;
+    for (const [name, values] of Object.entries(body.formData ?? {})) {
+        for (const value of values) bytes += name.length + String(value).length + 2; // name=value&
+    }
+    return bytes;
+}
+
 function broadcastTabSnapshot(session: Session, tabId: number) {
     const snapshot = buildTabSnapshot(session, tabId);
     console.log('Broadcasting snapshot for tab', tabId, snapshot);
@@ -167,6 +205,7 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot {
         dnsTrackingRequests: collectDnsTrackingRequestsForTab(session, tabId),
         // TODO(bug): tabState is undefined for tabs without recorded data, which throws here.
         frames: Object.entries(tabState!.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
+        cutoffs: settings.cutoffs,
     };
 
     return tabSnapshot;
@@ -191,6 +230,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
         documentId: document.documentId,
         url: document.currentUrl,
         fpMetrics: convertToMetricsSnapshot(document.fpMetrics),
+        spikes: document.spikes.map((spike) => convertToMetricsSnapshot(spike.fpMetrics)).filter((metrics) => metrics !== null),
         scripts: Object.entries(document.scripts).map(([scriptName, script]) => scriptSnapshotFromScript(script, scriptName)),
     };
 }
@@ -265,9 +305,9 @@ function collectDnsTrackingRequestsForTab(session: Session, tabId: number): Http
         if (!doc || !doc.httpRequests) continue;
 
         for (const req of doc.httpRequests) {
-            const subdomainScore = scoreSubdomainEntropy(extractSubdomain(req.hostname));
+            const subdomainScore = scoreSubdomainEntropy(extractSubdomain(req.hostname), settings);
             req.subdomainScore = subdomainScore;
-            if (req.subdomainScore >= 0.2) {
+            if (req.subdomainScore >= settings.cutoffs.hostname.possible) {
                 results.push(req);
             }
         }
@@ -294,6 +334,7 @@ function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): Metr
         startTime: fpMetrics.startTime,
         endTime: fpMetrics.endTime,
         score: fpMetrics.score,
+        signals: fpMetrics.signals,
     };
 }
 
