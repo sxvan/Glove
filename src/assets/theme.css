@@ -41,6 +41,12 @@ button {
 }
 
 /* The bordered box used for categories, findings and panels. */
+/* Squircle corners: continuous curvature, as on Apple's platforms, calmer than a circular corner of
+   the same radius. Browsers without corner-shape keep the plain border-radius. */
+.squircle {
+    corner-shape: squircle;
+}
+
 .card {
     padding: 12px 14px;
     border: 1px solid var(--border);

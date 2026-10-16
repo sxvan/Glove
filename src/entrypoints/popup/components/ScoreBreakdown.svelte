@@ -83,8 +83,6 @@
     }
 
     .signals {
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid var(--border);
+        margin-top: 12px;
     }
 </style>

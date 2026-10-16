@@ -21,13 +21,13 @@
 {#if scripts.length === 0}
     <p class="empty">No script on this page has read identifying device details so far.</p>
 {:else}
-    <div class="card">
+    <section class="card sleek squircle">
         <ScoreBreakdown label="Page" score={page.score} tree={page.tree} />
-    </div>
+    </section>
 {/if}
 
 {#each scripts as script (script.key)}
-    <div class="card">
+    <article class="card sleek squircle">
         <!-- Who: two rows with a right column, name | likelihood over origin | party. -->
         <div class="head">
             {#if script.viewer}
@@ -45,9 +45,7 @@
             </span>
         </div>
 
-        <div class="score">
-            <ScoreBreakdown score={script.score} tree={script.tree} />
-        </div>
+        <ScoreBreakdown score={script.score} tree={script.tree} />
 
         {#if script.signals.length > 0}
             <ul class="signals" aria-label="Signals">
@@ -68,7 +66,7 @@
                         {#each script.apis as api (api.id)}
                             <li>
                                 <span>{api.id}</span>
-                                {#if api.calls !== null}<span class="calls" title={plural(api.calls, 'call')}>{api.calls}</span>{/if}
+                                {#if api.calls !== null}<span class="calls squircle" title={plural(api.calls, 'call')}>{api.calls}</span>{/if}
                             </li>
                         {/each}
                     </ul>
@@ -100,10 +98,21 @@
                 {/if}
             {/if}
         </div>
-    </div>
+    </article>
 {/each}
 
 <style>
+    /* Cards without a border, set apart by their surface and the space around them. The parts of a
+       card are separated by space only. Corners are squircles (continuous curvature, as on Apple's
+       platforms, see .squircle) where supported, which look calmer than circular corners of the same radius. */
+    .sleek {
+        display: grid;
+        gap: 18px;
+        padding: 18px;
+        border: 0;
+        border-radius: 18px;
+    }
+
     /* Two rows with a right column: name | likelihood, then origin | party, each on a shared baseline. */
     .head {
         display: grid;
@@ -156,19 +165,12 @@
         white-space: nowrap;
     }
 
-    .score {
-        margin-top: 10px;
-        padding-top: 8px;
-        border-top: 1px solid var(--border);
-    }
-
     /* Signs that the script hides what it does. */
     .signals {
         display: grid;
         gap: 6px;
-        margin: 10px 0 0;
-        padding: 10px 0 0;
-        border-top: 1px solid var(--border);
+        margin: 0;
+        padding: 0;
         list-style: none;
     }
 
@@ -177,10 +179,7 @@
         --column-gap: 8px;
         display: grid;
         grid-template-columns: var(--label-width) 1fr;
-        gap: 10px var(--column-gap);
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid var(--border);
+        gap: 12px var(--column-gap);
         font-size: 12px;
     }
 
@@ -255,7 +254,7 @@
         flex-shrink: 0;
         min-width: 22px;
         padding: 0 6px;
-        border-radius: 999px;
+        border-radius: 6px;
         background: var(--border);
         color: var(--text);
         font-family: var(--font);

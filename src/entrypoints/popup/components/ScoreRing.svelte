@@ -61,7 +61,7 @@
 </svg>
 <!-- The outer ring closes at twice full; beyond that, how many times full it is. -->
 {#if ratio > 2}
-    <span class="times" aria-hidden="true">×{ratio.toFixed(1)}</span>
+    <span class="times squircle" aria-hidden="true">×{ratio.toFixed(1)}</span>
 {/if}
 </span>
 

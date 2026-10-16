@@ -154,10 +154,8 @@
         opacity: 0.55;
     }
 
-    /* Signals of the score a signal was made from: indented a little, with a line for the depth. */
+    /* Signals of the score a signal was made from: indented a little; the indent shows the depth. */
     .children {
-        margin: 2px 0 6px 4px;
-        padding-left: 10px;
-        border-left: 1px solid var(--border);
+        margin: 2px 0 8px 14px;
     }
 </style>
