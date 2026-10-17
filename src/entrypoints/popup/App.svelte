@@ -44,6 +44,9 @@
     }
 
     onMount(() => {
+        // Tells the background a popup is open, so it sends updates (see broadcastTabSnapshot); the
+        // port closes with the popup.
+        const port = browser.runtime.connect({ name: 'popup' });
         getActiveTabId().then((tabId) => {
             if (tabId === undefined) {
                 status = 'unavailable';
@@ -67,7 +70,10 @@
         };
 
         browser.runtime.onMessage.addListener(onMessage);
-        return () => browser.runtime.onMessage.removeListener(onMessage);
+        return () => {
+            browser.runtime.onMessage.removeListener(onMessage);
+            port.disconnect();
+        };
     });
 </script>
 

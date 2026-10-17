@@ -19,6 +19,7 @@ const MAX_INTERVAL_MS = 5000;
 let settings: ScoringSettings = DEFAULT_SETTINGS;
 
 export default defineBackground(() => {
+    watchPopups();
     const session = createSession();
     const fpScheduler = createScheduler({ debounceMs: DEBOUNCE_MS, maxIntervalMs: MAX_INTERVAL_MS });
 
@@ -194,17 +195,42 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
     return bytes;
 }
 
+// Open popups, each connected by a port while it is open (see the popup's App and watchPopups).
+const openPopups = new Set<Browser.runtime.Port>();
+
+function watchPopups() {
+    browser.runtime.onConnect.addListener((port) => {
+        if (port.name !== 'popup') return;
+        openPopups.add(port);
+        port.onDisconnect.addListener(() => openPopups.delete(port));
+    });
+}
+
+/**
+ * After an analysis: updates the tab's toolbar ring, and sends an open popup the tab's snapshot.
+ * The snapshot copies all the tab has recorded, so it is only built while a popup shows it; the
+ * ring needs just the page's score, read from the session.
+ */
 function broadcastTabSnapshot(session: Session, tabId: number) {
+    showPageScore(session, tabId);
+    if (openPopups.size === 0) return;
     const snapshot = buildTabSnapshot(session, tabId);
     if (!snapshot) return;
-    // The page's score, as the popup shows it: its most suspicious document's.
-    const documents = snapshot.frames.filter((frame) => frame !== null).map((frame) => frame.document);
-    const page = snapshot.frames.find((frame) => frame?.frameId === '0')?.document ?? documents[0];
-    if (page) showScoreIcon(tabId, page.documentId, Math.max(0, ...documents.map((d) => d.fpMetrics?.score ?? 0)), settings.cutoffs.fingerprinting);
-    console.log('Broadcasting snapshot for tab', tabId, snapshot);
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
     // Rejects when no popup is open to receive it, which is the usual case.
     browser.runtime.sendMessage(message).catch(() => {});
+}
+
+/** The page's score on the tab's toolbar ring, as the popup shows it: its most suspicious document's. */
+function showPageScore(session: Session, tabId: number) {
+    const frames = session.tabs[tabId]?.frames;
+    if (!frames) return;
+    const current = (frame: FrameState | undefined) => (frame?.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined);
+    const documents = Object.values(frames).map(current).filter((document) => document !== undefined);
+    const page = current(frames[0]) ?? documents[0];
+    if (!page) return;
+    const score = Math.max(0, ...documents.map((document) => document.fpMetrics?.score ?? 0));
+    showScoreIcon(tabId, page.documentId, score, settings.cutoffs.fingerprinting);
 }
 
 /**
