@@ -1,2 +1,9 @@
+packages:
+  - tools/*
+
+# puppeteer (tools/profiling) would download Chrome on install; that's its install-chrome script.
+allowBuilds:
+  puppeteer: false
+
 minimumReleaseAgeExclude:
   - vite@8.3.4

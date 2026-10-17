@@ -1,0 +1,14 @@
+{
+  "name": "profiling",
+  "description": "Measures the extension's cost in pages and in its background, from outside the extension.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install-chrome": "puppeteer browsers install chrome",
+    "build": "node build.mjs",
+    "profile": "node profile.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.12.0"
+  }
+}
