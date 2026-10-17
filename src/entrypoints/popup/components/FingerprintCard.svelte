@@ -112,10 +112,8 @@
             {:else}
                 <span class="name" title={script.url}><MiddleTruncate text={script.name} path={script.path} /></span>
             {/if}
-            <!-- Who serves it; for a CNAME-cloaked script also the site's own address it hides behind. -->
-            <span class="origin" title={script.originTitle}
-                >{script.origin}{#if script.via}{' '}<span class="via">through {script.via}</span>{/if}</span
-            >
+            <!-- Who really serves it; how a CNAME-cloaked script hides is an info line, and the tooltip. -->
+            <span class="origin" title={script.originTitle}>{script.origin}</span>
         </div>
         <!-- Opens what the score was combined from (the chevron after the likelihood says it can). -->
         <button
@@ -237,10 +235,6 @@
         font-size: 14px;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    .via {
-        color: var(--muted);
     }
 
     /* What the card says about the script: facts and signs of fingerprinting, one per line. */
