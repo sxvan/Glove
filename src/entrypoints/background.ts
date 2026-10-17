@@ -5,6 +5,7 @@ import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
+import { showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage } from '@/types/messages';
@@ -196,6 +197,10 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
 function broadcastTabSnapshot(session: Session, tabId: number) {
     const snapshot = buildTabSnapshot(session, tabId);
     if (!snapshot) return;
+    // The page's score, as the popup shows it: its most suspicious document's.
+    const documents = snapshot.frames.filter((frame) => frame !== null).map((frame) => frame.document);
+    const page = snapshot.frames.find((frame) => frame?.frameId === '0')?.document ?? documents[0];
+    if (page) showScoreIcon(tabId, page.documentId, Math.max(0, ...documents.map((d) => d.fpMetrics?.score ?? 0)), settings.cutoffs.fingerprinting);
     console.log('Broadcasting snapshot for tab', tabId, snapshot);
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
     // Rejects when no popup is open to receive it, which is the usual case.
