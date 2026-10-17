@@ -156,6 +156,7 @@ function computeScriptFpScore(script: ScriptState, url: string, document: Docume
             onePlace: onePlace.value,
             strongestBurst: Math.max(...burstScores, 0),
             cnameCloaked: servedThroughAlias(url, document) ? 1 : 0,
+            sentThroughAlias: script.fpSpikes.some((spike) => spike.httpCorrelations?.some((c) => c.httpRequest?.isCnameCloaked)) ? 1 : 0,
             generatedCode: generated.value,
         },
         settings,

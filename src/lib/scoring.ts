@@ -85,6 +85,12 @@ export const SIGNALS = {
                 "The script comes from an address of the site that is an alias (CNAME) for another site, which hides who really serves it from blockers. A small extra: sites also serve their own scripts through CDNs this way.",
             strength: 0.15,
         },
+        sentThroughAlias: {
+            label: 'Sent data through a CNAME alias',
+            description:
+                "Right after reading, the script sent data to an address of the site that is an alias (CNAME) for another site. Cookies sent with it count as the site's own, which gets around limits on third-party cookies, and blockers that only know the other site miss it.",
+            strength: 0.15,
+        },
     },
     page: {
         identifying: {
