@@ -112,7 +112,7 @@
     <p class="status" role="status">{status}</p>
 
     {#if settings}
-        <section>
+        <section class="squircle">
             <h2>Likelihood</h2>
             <p class="section-note">Where a score counts as possible or likely tracking.</p>
             {#each [['fingerprinting', 'Fingerprinting (pages and scripts)'], ['hostname', 'ID-like hostnames']] as const as [kind, label] (kind)}
@@ -136,14 +136,14 @@
         </section>
 
         {#each LEVELS as { level, note } (level)}
-            <section id={sectionId(level)}>
+            <section class="squircle" id={sectionId(level)}>
                 <h2>{LEVEL_LABELS[level]}</h2>
                 <p class="section-note">{note}</p>
                 <LevelSettings {level} {settings} onStrength={setStrength} />
             </section>
         {/each}
 
-        <section id="apis">
+        <section class="squircle" id="apis">
             <h2>Fingerprinting APIs</h2>
             <p class="section-note">
                 Each fingerprinting API has two values between 0 and 1. <strong>Entropy</strong> is how much lasting identifying information it
@@ -261,11 +261,11 @@
         font-size: 12px;
     }
 
+    /* Sections are cards: no border, room inside, squircle corners (the .squircle class). */
     section {
-        margin-top: 16px;
-        padding: 14px 16px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
+        margin-top: 24px;
+        padding: 20px 24px;
+        border-radius: 18px;
         background: var(--surface);
     }
 
@@ -286,11 +286,11 @@
     }
 
     .row.cutoffs + .row.cutoffs {
-        border-top: 1px solid var(--border);
+        margin-top: 4px;
     }
 
     h3 {
-        margin: 14px 0 0;
+        margin: 24px 0 4px;
         font-size: 13px;
     }
 
@@ -298,14 +298,14 @@
         margin-left: 6px;
         color: var(--muted);
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 400;
     }
 
     /* APIs are listed compactly: one line each, with entropy and rarity. */
     .row.api {
         grid-template-columns: 1fr auto auto;
-        padding: 4px 0;
+        padding: 6px 0;
     }
 
     .api-id {

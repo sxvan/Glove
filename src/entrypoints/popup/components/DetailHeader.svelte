@@ -45,17 +45,17 @@
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        gap: 10px;
-        margin-top: 8px;
+        gap: 12px;
+        margin-top: 12px;
     }
 
     h2 {
         margin: 0;
-        font-size: 15px;
+        font-size: 16px;
     }
 
     .explanation {
-        margin: 4px 0 0;
+        margin: 6px 0 0;
         color: var(--muted);
         font-size: 12px;
     }

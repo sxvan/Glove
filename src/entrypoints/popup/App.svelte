@@ -125,14 +125,13 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
-        padding: 14px 16px 12px;
-        border-bottom: 1px solid var(--border);
+        gap: 12px;
+        padding: 16px 16px 8px;
     }
 
     h1 {
         margin: 0;
-        font-size: 15px;
+        font-size: 16px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -178,23 +177,23 @@
 
     main {
         display: grid;
-        gap: 10px;
-        padding: 14px 16px 16px;
+        gap: 16px;
+        padding: 16px 16px 24px;
     }
 
     .summary {
-        margin-bottom: 2px;
+        margin-bottom: 8px;
     }
 
     .headline {
         margin: 0;
-        font-size: 15px;
+        font-size: 16px;
         font-weight: 600;
         line-height: 1.3;
     }
 
     .parties {
-        margin: 4px 0 0;
+        margin: 6px 0 0;
         color: var(--muted);
         font-family: var(--mono);
         font-size: 12px;

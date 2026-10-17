@@ -1,21 +1,26 @@
-/* Theme tokens and base styles shared by the extension's pages (popup, script viewer).
-   Always dark, independent of the system theme. Component styles are scoped. */
+/* Theme tokens and base styles shared by the extension's pages (popup, options, script viewer).
+   Always light, independent of the system theme: white cards on a light grey background, in the
+   manner of Apple's light appearance. Component styles are scoped. */
 
 :root {
-    color-scheme: dark;
-    --bg: #0b0f14;
-    --surface: #121821;
-    --border: #1f2a3a;
-    --text: #e6edf6;
-    --muted: #9db0c8;
-    --tooltip-bg: #1a2230;
+    color-scheme: light;
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --border: #e3e3e8;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --tooltip-bg: #ffffff;
 
-    /* Likelihood colours */
-    --unlikely: #4cc47f;
-    --possible: #f28a3c;
-    --likely: #f26868;
+    /* Likelihood colours, dark enough to read on white */
+    --unlikely: #1a8f4c;
+    --possible: #c96512;
+    --likely: #d12f2f;
 
-    --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    /* Plain facts, e.g. the info icon in front of a statement */
+    --info: #2f6fde;
+
+    /* Inter, bundled with the extension (each page's main.ts imports it); the system font until it loads. */
+    --font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 
@@ -27,7 +32,7 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 13px/1.4 var(--font);
+    font: 14px/1.45 var(--font);
 }
 
 button {
@@ -47,10 +52,12 @@ button {
     corner-shape: squircle;
 }
 
+/* Cards are set apart by their surface and the space around them, without a border; corners are
+   squircles where supported (see .squircle). */
 .card {
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
+    padding: 18px;
+    border-radius: 18px;
+    corner-shape: squircle;
     background: var(--surface);
 }
 

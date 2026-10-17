@@ -12,6 +12,13 @@
 
     let open = $state<Record<string, boolean>>({});
 
+    // A list of APIs can be long (40 and more), so only those adding the most show at first.
+    const SHOWN_APIS = 5;
+    let showAll = $state(false);
+    const isApiList = $derived(nodes.length > 0 && nodes.every((node) => node.api));
+    const hidden = $derived(isApiList && !showAll ? Math.max(0, nodes.length - SHOWN_APIS) : 0);
+    const shownNodes = $derived(hidden > 0 ? nodes.slice(0, SHOWN_APIS) : nodes);
+
     // A row made of signals shows their colors in its ring; one made of APIs keeps its own color.
     const segmentsOf = (node: ScoreNode) => {
         const signals = node.children.filter((child) => !child.api);
@@ -25,7 +32,7 @@
 </script>
 
 <ul class="tree">
-    {#each nodes as node (node.key)}
+    {#each shownNodes as node (node.key)}
         {@const expandable = node.children.length > 0}
         <li class:idle={node.shownShare === 0}>
             {#snippet row()}
@@ -53,12 +60,19 @@
             {/if}
         </li>
     {/each}
+    {#if isApiList && nodes.length > SHOWN_APIS}
+        <li>
+            <button type="button" class="more" onclick={() => (showAll = !showAll)}>
+                {showAll ? 'Show less' : `Show ${hidden} more`}
+            </button>
+        </li>
+    {/if}
 </ul>
 
 <style>
     .tree {
         display: grid;
-        gap: 4px;
+        gap: 6px;
         margin: 0;
         padding: 0;
         list-style: none;
@@ -67,7 +81,7 @@
     /* Toggle | label and detail | ring with how strongly it was observed | share of the score above. */
     .row {
         display: grid;
-        grid-template-columns: 10px minmax(0, 1fr) 52px 64px;
+        grid-template-columns: 10px minmax(0, 1fr) 52px 78px;
         align-items: center;
         gap: 12px;
         width: 100%;
@@ -121,12 +135,12 @@
 
     .detail {
         color: var(--muted);
-        font-size: 11px;
+        font-size: 12px;
     }
 
     .label.api {
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 12px;
     }
 
     /* Its share of the score above: secondary to how strongly it was observed. */
@@ -144,9 +158,25 @@
     /* Whose score the share goes to, under it. */
     .to {
         display: block;
-        font-size: 10px;
+        font-size: 12px;
         line-height: 1.2;
         white-space: nowrap;
+    }
+
+    /* Show more / show less under a list of APIs, lined up with their names. */
+    .more {
+        margin-left: 18px;
+        padding: 2px 0;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .more:hover {
+        color: var(--text);
     }
 
     /* Rows adding nothing to their parent, at the bottom: still there, but quieter. */
@@ -156,6 +186,6 @@
 
     /* Signals of the score a signal was made from: indented a little; the indent shows the depth. */
     .children {
-        margin: 2px 0 8px 14px;
+        margin: 6px 0 8px 14px;
     }
 </style>

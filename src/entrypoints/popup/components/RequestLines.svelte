@@ -17,11 +17,13 @@
 
 <style>
     ul {
-        margin: 6px 0 0;
+        display: grid;
+        gap: 4px;
+        margin: 8px 0 0;
         padding: 0;
         list-style: none;
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 12px;
         color: var(--muted);
     }
 

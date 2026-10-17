@@ -11,8 +11,12 @@
         points,
         color = 'var(--muted)',
         segments = [],
+        scale = 1,
         title,
-    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; title: string } = $props();
+    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; scale?: 1 | 100; title: string } = $props();
+
+    // The number in the middle: 0.95 by default, or 95 on a 0–100 scale (a score, not a percentage).
+    const shownValue = (x: number) => (scale === 100 ? String(Math.round(x * 100)) : x.toFixed(2));
 
     const clamp = (x: number) => Math.min(1, Math.max(0, x));
 
@@ -57,7 +61,7 @@
         {/if}
     </g>
     <!-- The value, capped at full; the outer ring shows how far beyond full it went. -->
-    <text class="value" x={CENTER} y={CENTER + 4}>{laps.inner.toFixed(2)}</text>
+    <text class="value" x={CENTER} y={CENTER + 4}>{shownValue(laps.inner)}</text>
 </svg>
 <!-- The outer ring closes at twice full; beyond that, how many times full it is. -->
 {#if ratio > 2}
@@ -88,7 +92,7 @@
         border-radius: 6px;
         background: var(--surface);
         color: var(--muted);
-        font-size: 10px;
+        font-size: 12px;
         font-variant-numeric: tabular-nums;
         line-height: 14px;
     }
@@ -109,15 +113,16 @@
         opacity: 0.5;
     }
 
+    /* The number is secondary: the ring, its color and the rating already say how high it is. */
     text {
-        fill: var(--text);
+        fill: var(--muted);
         font-family: var(--font);
         font-variant-numeric: tabular-nums;
         text-anchor: middle;
     }
 
     .value {
-        font-size: 11.5px;
-        font-weight: 600;
+        font-size: 12px;
+        font-weight: 500;
     }
 </style>

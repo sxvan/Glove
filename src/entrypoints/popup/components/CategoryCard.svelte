@@ -1,6 +1,7 @@
 <script lang="ts">
     import { LIKELIHOOD_LABELS, type Category } from '../model';
     import InfoTip from './InfoTip.svelte';
+    import MiddleTruncate from './MiddleTruncate.svelte';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
     import SignalLine from './SignalLine.svelte';
 
@@ -44,7 +45,7 @@
         <ul class="rows">
             {#each category.rows as row (row.key)}
                 <li>
-                    <span class="name" title={row.title}>{row.name}</span>
+                    <span class="name" title={row.title}><MiddleTruncate text={row.name} path={row.path} /></span>
                     <span class="detail" title={row.detail}>{row.detail}</span>
                     <!-- The score as a bar, in one color so the rows stay calm; the rating is in the tooltip. -->
                     {#if row.score !== null}
@@ -83,17 +84,20 @@
 <style>
     .category {
         position: relative;
+        display: grid;
+        gap: 12px;
     }
 
+    /* Without a border, hovering lightens the surface a little. */
     .category:hover {
-        border-color: var(--muted);
+        background: color-mix(in srgb, var(--surface), var(--text) 4%);
     }
 
     .head {
         display: grid;
         grid-template-columns: auto 1fr 48px auto auto;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
     }
 
     .dot {
@@ -125,7 +129,7 @@
         content: '';
         position: absolute;
         inset: 0;
-        border-radius: 12px;
+        border-radius: 18px;
     }
 
     .open:focus-visible {
@@ -161,13 +165,21 @@
     .line,
     .signals,
     .rows {
-        margin: 4px 0 0 19px;
+        margin: 0 0 0 19px;
+    }
+
+    /* The summary belongs to the title, and "+N more" to the rows: kept close to them. */
+    .head + .line {
+        margin-top: -8px;
+    }
+
+    .rows + .line {
+        margin-top: -4px;
     }
 
     .signals {
         display: grid;
-        gap: 3px;
-        margin-top: 8px;
+        gap: 6px;
         padding: 0;
         list-style: none;
     }
@@ -180,9 +192,8 @@
 
     .rows {
         display: grid;
-        gap: 3px;
-        padding: 6px 0 0;
-        border-top: 1px solid var(--border);
+        gap: 8px;
+        padding: 0;
         list-style: none;
     }
 
@@ -208,7 +219,7 @@
 
     .detail {
         color: var(--muted);
-        font-size: 11px;
+        font-size: 12px;
     }
 
     .bar {

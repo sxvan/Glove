@@ -27,18 +27,18 @@
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        gap: 10px;
+        gap: 12px;
     }
 
     .host {
         font-family: var(--mono);
         font-size: 12px;
         font-weight: 600;
-        overflow-wrap: anywhere;
+        word-break: break-all;
     }
 
     .meta {
-        margin-top: 2px;
+        margin-top: 4px;
         color: var(--muted);
         font-size: 12px;
     }

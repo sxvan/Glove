@@ -194,7 +194,8 @@ function broadcastTabSnapshot(session: Session, tabId: number) {
     const snapshot = buildTabSnapshot(session, tabId);
     console.log('Broadcasting snapshot for tab', tabId, snapshot);
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
-    browser.runtime.sendMessage(message);
+    // Rejects when no popup is open to receive it, which is the usual case.
+    browser.runtime.sendMessage(message).catch(() => {});
 }
 
 function buildTabSnapshot(session: Session, tabId: number): TabSnapshot {

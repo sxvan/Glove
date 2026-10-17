@@ -50,7 +50,7 @@
         border-radius: 8px;
         background: var(--tooltip-bg);
         color: var(--text);
-        box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+        box-shadow: 0 6px 24px rgb(0 0 0 / 0.12);
         font-size: 12px;
         font-weight: 400;
         line-height: 1.45;

@@ -1,148 +1,182 @@
 <script lang="ts">
     import { viewerUrl } from '@/lib/script-viewer';
     import LikelihoodLabel from '../components/LikelihoodLabel.svelte';
-    import ScoreBreakdown from '../components/ScoreBreakdown.svelte';
+    import MiddleTruncate from '../components/MiddleTruncate.svelte';
+    import ScoreRing from '../components/ScoreRing.svelte';
     import SignalLine from '../components/SignalLine.svelte';
-    import { duration, plural } from '../format';
-    import type { PageScore, ScriptDetail } from '../model';
+    import { bytes, plural } from '../format';
+    import type { PageScore, ScriptDetail, SentRequest } from '../model';
+    import type { TextPart } from '../text-parts';
 
     let { page, scripts }: { page: PageScore; scripts: ScriptDetail[] } = $props();
 
-    const hostCount = (script: ScriptDetail) => script.contacted.reduce((n, s) => n + s.hosts.length, 0);
+    /** A statement about a script, shown as an info line: the card's rating is its only judgment, in color. */
+    interface Statement {
+        key: string;
+        /** The heading, with its values marked to be emphasized: counts with what they count ("27 fingerprinting APIs"), sizes, sites. */
+        text: TextPart[];
+        /** Below the text without an icon, e.g. the kinds of detail under "Read 40 fingerprinting APIs". */
+        detail?: string;
+        /** For "Sent …": the requests, listed below it. */
+        requests?: SentRequest[];
+    }
 
-    function partyTitle(script: ScriptDetail): string {
-        if (script.aliasOf) return `Served from ${script.origin}, which is an alias (CNAME) for ${script.aliasOf}`;
-        if (script.party === 'first') return "Loaded from the site's own domain";
-        if (script.party === 'third') return 'Loaded from another domain';
-        return '';
+    // Lines the requests of a site take at most: all of them if they fit, otherwise one fewer and
+    // "Show N more" on the last line. And which sites show all (by script and site).
+    const REQUEST_LINES = 3;
+    let allRequests = $state<Record<string, boolean>>({});
+
+    /** How many of a site's requests to show while collapsed. */
+    function shownRequests(count: number): number {
+        return count <= REQUEST_LINES ? count : REQUEST_LINES - 1;
+    }
+
+    /**
+     * What the card says about a script, as a list of statements. First what is always there (what
+     * it read, and about what), then signs of fingerprinting, then where it sent data right after.
+     */
+    function statements(script: ScriptDetail): Statement[] {
+        const kinds = script.learned.map(({ kind }) => kind.toLowerCase()).join(', ');
+        const list: Statement[] = [
+            {
+                key: 'read',
+                text: ['Read ', { value: plural(script.apis.length, 'fingerprinting API') }, ' in ', { value: plural(script.calls, 'call') }],
+                detail: kinds ? `About ${kinds}` : '',
+            },
+        ];
+        for (const signal of script.signals) {
+            list.push({ key: signal.id, text: [{ value: plural(signal.count, 'API') }, ` ${signal.rest}`] });
+        }
+        for (const sent of sentBySite(script)) list.push({ key: `sent ${sent.key}`, text: sent.text, requests: sent.requests });
+        return list;
+    }
+
+    /** The requests with data, combined per site: "Sent 4.6 KB to walgreens.com right after reading". */
+    function sentBySite(script: ScriptDetail): { key: string; text: TextPart[]; requests: SentRequest[] }[] {
+        // Requests that went through a CNAME alias stay apart from direct ones to the same site.
+        const bySite = new Map<string, SentRequest[]>();
+        for (const request of script.sent) {
+            const key = `${request.site} ${request.via ?? ''}`;
+            bySite.set(key, [...(bySite.get(key) ?? []), request]);
+        }
+        return [...bySite.entries()].map(([key, requests]) => {
+            const { site, via } = requests[0]!;
+            const total = requests.reduce((sum, r) => sum + r.bytes, 0);
+            const text: TextPart[] = ['Sent ', { value: bytes(total) }, ' to ', { value: site }];
+            if (via) text.push(' through ', { value: via });
+            // Only requests from a burst until shortly after it are listed (see fp-analysis).
+            text.push(' right after reading');
+            return { key, text, requests };
+        });
     }
 </script>
 
 {#if scripts.length === 0}
     <p class="empty">No script on this page has read identifying device details so far.</p>
 {:else}
-    <section class="card sleek squircle">
-        <ScoreBreakdown label="Page" score={page.score} tree={page.tree} />
+    <section class="card sleek">
+        <div class="head">
+            <div class="who">
+                <span class="name">This page</span>
+                <span class="origin">All its scripts together</span>
+            </div>
+            <div class="rating">
+                <ScoreRing value={page.score} color="var(--{page.likelihood})" scale={100} title="Page score {Math.round(page.score * 100)}" />
+                <LikelihoodLabel likelihood={page.likelihood} />
+            </div>
+        </div>
     </section>
 {/if}
 
 {#each scripts as script (script.key)}
-    <article class="card sleek squircle">
-        <!-- Who: two rows with a right column, name | likelihood over origin | party. -->
+    <article class="card sleek">
+        <!-- The name over who serves it, beside the score ring over the likelihood. -->
         <div class="head">
+            <div class="who">
             {#if script.viewer}
                 <a class="name link" href={viewerUrl(script.viewer)} target="_blank" rel="noopener noreferrer" title="View {script.url} in the script viewer">
-                    {script.name}
+                    <MiddleTruncate text={script.name} path={script.path} />
                 </a>
             {:else}
-                <span class="name" title={script.url}>{script.name}</span>
+                <span class="name" title={script.url}><MiddleTruncate text={script.name} path={script.path} /></span>
             {/if}
-            <LikelihoodLabel likelihood={script.likelihood} />
-
-            <span class="facts" title={script.origin}>{script.origin}</span>
-            <span class="party" title={partyTitle(script)}>
-                {script.party === 'first' ? '1st party' : script.party === 'third' ? '3rd party' : ''}
-            </span>
+            <!-- Who serves it; for a CNAME-cloaked script also the site's own address it hides behind. -->
+            <span class="origin" title={script.originTitle}
+                >{script.origin}{#if script.via}{' '}<span class="via">through {script.via}</span>{/if}</span
+            >
+            </div>
+            <div class="rating">
+                <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} title="Score {Math.round(script.score * 100)}" />
+                <LikelihoodLabel likelihood={script.likelihood} />
+            </div>
         </div>
 
-        <ScoreBreakdown score={script.score} tree={script.tree} />
-
-        {#if script.signals.length > 0}
-            <ul class="signals" aria-label="Signals">
-                {#each script.signals as signal (signal.id)}
-                    <SignalLine text={signal.text} />
-                {/each}
-            </ul>
-        {/if}
-
-        <!-- What it did: a label column and a value column. Opened lists span the full width. -->
-        <div class="rows">
-            <div class="label">Read</div>
-            <div class="value">{script.techniques.join(', ')}</div>
-            {#if script.apis.length > 0}
-                <details class="more">
-                    <summary>{plural(script.apis.length, 'fingerprinting API')} · {plural(script.calls, 'call')}</summary>
-                    <ul class="apis">
-                        {#each script.apis as api (api.id)}
-                            <li>
-                                <span>{api.id}</span>
-                                {#if api.calls !== null}<span class="calls squircle" title={plural(api.calls, 'call')}>{api.calls}</span>{/if}
-                            </li>
-                        {/each}
-                    </ul>
-                </details>
-            {/if}
-
-            {#if script.burst}
-                <div class="label">Burst</div>
-                <div class="value">{plural(script.burst.apis, 'different fingerprinting API')} within {duration(script.burst.durationMs)}</div>
-            {/if}
-
-            {#if script.contacted.length > 0}
-                <div class="label">Contacted</div>
-                <div class="value">
-                    {#each script.contacted as { site, hosts }, i (site)}
-                        {#if i > 0}{', '}{/if}<span class="site">{site}</span>{#if hosts.length > 1}&nbsp;<span class="count">({hosts.length} servers)</span>{/if}
-                    {/each}
-                    <span class="note">right after reading</span>
-                </div>
-                {#if hostCount(script) > script.contacted.length}
-                    <details class="more">
-                        <summary>{plural(hostCount(script), 'address', 'addresses')}</summary>
-                        {#each script.contacted as { site, hosts } (site)}
-                            <ul>
-                                {#each hosts as host (host)}<li>{host}</li>{/each}
-                            </ul>
-                        {/each}
-                    </details>
+        <ul class="statements">
+            {#each statements(script) as statement (statement.key)}
+                {#if statement.requests}
+                    {@const key = `${script.key} ${statement.key}`}
+                    {@const showAll = allRequests[key] ?? false}
+                    {@const shown = shownRequests(statement.requests.length)}
+                    <SignalLine text={statement.text} tone="info" lead>
+                        <!-- Method | path | how much data. -->
+                        <span class="requests">
+                            {#each showAll ? statement.requests : statement.requests.slice(0, shown) as request, i (i)}
+                                <span class="request">
+                                    <span class="method">{request.method}</span>
+                                    <span class="path" title={request.path}><MiddleTruncate text={request.path} path /></span>
+                                    <span class="size">{bytes(request.bytes)}</span>
+                                </span>
+                            {/each}
+                            {#if statement.requests.length > shown}
+                                <button type="button" class="more" onclick={() => (allRequests[key] = !showAll)}>
+                                    {showAll ? 'Show less' : `Show ${statement.requests.length - shown} more`}
+                                </button>
+                            {/if}
+                        </span>
+                    </SignalLine>
+                {:else}
+                    <SignalLine text={statement.text} tone="info" detail={statement.detail} lead />
                 {/if}
-            {/if}
-        </div>
+            {/each}
+        </ul>
     </article>
 {/each}
 
 <style>
-    /* Cards without a border, set apart by their surface and the space around them. The parts of a
-       card are separated by space only. Corners are squircles (continuous curvature, as on Apple's
-       platforms, see .squircle) where supported, which look calmer than circular corners of the same radius. */
+    /* The parts of a card are separated by space only. */
     .sleek {
         display: grid;
-        gap: 18px;
-        padding: 18px;
-        border: 0;
-        border-radius: 18px;
+        gap: 16px;
     }
 
-    /* Two rows with a right column: name | likelihood, then origin | party, each on a shared baseline. */
+    /* The name over who serves it, as one tight block, centered beside the score ring with its
+       likelihood under it as a caption. The ring's column is narrow, so the name gets the width. */
     .head {
         display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: baseline;
-        gap: 2px 10px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
     }
 
-    /* At most two lines, so a long path can't take over the card; the tooltip has the full URL. */
-    .name {
-        display: -webkit-box;
+    .who {
+        display: grid;
+        gap: 2px;
         min-width: 0;
-        overflow: hidden;
-        font-size: 14px;
+    }
+
+    .rating {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    /* One line, shortened in the middle when too long (see MiddleTruncate); the tooltip has the
+       full URL. */
+    .name {
+        display: block;
+        min-width: 0;
+        font-size: 16px;
         font-weight: 600;
-        overflow-wrap: anywhere;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-    }
-
-    .head :global(.label) {
-        text-align: right;
-    }
-
-    .party {
-        color: var(--muted);
-        font-size: 12px;
-        text-align: right;
-        white-space: nowrap;
     }
 
     /* The title links to the script viewer; underlined on hover. */
@@ -156,17 +190,21 @@
         text-decoration: underline;
     }
 
-    .facts {
+    /* The script's identity, next to its file name: in the text color, not toned down. */
+    .origin {
         min-width: 0;
         overflow: hidden;
-        color: var(--muted);
-        font-size: 12px;
+        font-size: 14px;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    /* Signs that the script hides what it does. */
-    .signals {
+    .via {
+        color: var(--muted);
+    }
+
+    /* What the card says about the script: facts and signs of fingerprinting, one per line. */
+    .statements {
         display: grid;
         gap: 6px;
         margin: 0;
@@ -174,94 +212,44 @@
         list-style: none;
     }
 
-    .rows {
-        --label-width: 72px;
-        --column-gap: 8px;
+    /* The requests under "Sent …", one per line, in one grid so their paths line up:
+       method | path | how much data. Method and size have fixed widths (enough for "DELETE" and
+       "999.9 KB"), so the paths line up and get the same room in every "Sent" section. */
+    .requests {
         display: grid;
-        grid-template-columns: var(--label-width) 1fr;
-        gap: 12px var(--column-gap);
-        font-size: 12px;
+        grid-template-columns: 44px minmax(0, 1fr) 60px;
+        align-items: baseline;
+        gap: 2px 8px;
     }
 
-    .label {
-        color: var(--muted);
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        line-height: 17px;
-        text-transform: uppercase;
+    .request {
+        display: contents;
     }
 
-    .value {
+    /* Shortened like the script's name, but all in the detail's grey: no emphasis on the last part. */
+    .path {
         min-width: 0;
-        overflow-wrap: anywhere;
     }
 
-    /* A row's details toggle: spans the full width so long names fit; the toggle lines up with the values. */
+    .size {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
+    }
+
     .more {
         grid-column: 1 / -1;
-        margin-top: -6px;
-    }
-
-    .more summary {
-        margin-left: calc(var(--label-width) + var(--column-gap));
-    }
-
-    .site {
-        font-weight: 600;
-    }
-
-    .count,
-    .note {
+        justify-self: start;
+        padding: 0;
+        border: 0;
+        background: none;
         color: var(--muted);
-    }
-
-    details {
-        margin-top: 4px;
-    }
-
-    summary {
-        color: var(--muted);
+        font: inherit;
         cursor: pointer;
     }
 
-    summary:hover {
+    .more:hover {
         color: var(--text);
-    }
-
-    /* The opened lists of APIs and servers. No bullets, so long names such as
-       intl.datetimeformat.resolvedOptions fit on one line. */
-    .more ul {
-        margin: 4px 0 0;
-        padding: 0;
-        list-style: none;
-        color: var(--muted);
-        font-family: var(--mono);
-        font-size: 11px;
-        overflow-wrap: normal;
-    }
-
-    .apis li {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 1px 0;
-    }
-
-    /* Call count per API. */
-    .calls {
-        flex-shrink: 0;
-        min-width: 22px;
-        padding: 0 6px;
-        border-radius: 6px;
-        background: var(--border);
-        color: var(--text);
-        font-family: var(--font);
-        font-size: 10.5px;
-        font-variant-numeric: tabular-nums;
-        line-height: 16px;
-        text-align: center;
     }
 
     .empty {

@@ -23,11 +23,11 @@
 <style>
     .host {
         font-weight: 600;
-        overflow-wrap: anywhere;
+        word-break: break-all;
     }
 
     .line {
-        margin: 4px 0 0;
+        margin: 6px 0 0;
         font-size: 12px;
     }
 
@@ -35,11 +35,11 @@
         margin: 2px 0 0;
         color: var(--muted);
         font-size: 12px;
-        overflow-wrap: anywhere;
+        word-break: break-all;
     }
 
     .count {
-        margin-top: 6px;
+        margin-top: 12px;
         color: var(--muted);
         font-size: 12px;
     }

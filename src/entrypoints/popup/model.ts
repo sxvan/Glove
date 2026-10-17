@@ -1,9 +1,10 @@
 // Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
 // key numbers and the strongest evidence.
-import { FP_CATEGORY_ENTROPY, fpCategoryName } from '@/lib/fp-apis';
+import { FP_APIS_BY_ID, FP_CATEGORY_ENTROPY, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, SIGNALS, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
+import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 import { duration, plural } from './format';
 
@@ -38,6 +39,8 @@ export interface EvidenceRow {
     key: string;
     /** A script name or hostname, shown in monospace. */
     name: string;
+    /** True when the name is a URL path: its file name (from the last "/") always shows. */
+    path: boolean;
     /** E.g. the script's host, or the site an alias leads to; may be empty. */
     detail: string;
     /** Full text for the tooltip, e.g. the script URL or the alias chain. */
@@ -137,6 +140,7 @@ function fingerprinting(snapshot: TabSnapshot): Category {
         rows: scripts.slice(0, OVERVIEW_ROWS).map((s) => ({
             key: s.key,
             name: s.name,
+            path: s.path,
             detail: s.origin,
             title: s.url,
             likelihood: s.likelihood,
@@ -171,6 +175,7 @@ function cnameCloaking(snapshot: TabSnapshot): Category {
         rows: aliases.slice(0, OVERVIEW_ROWS).map((a) => ({
             key: a.host,
             name: a.host,
+            path: false,
             detail: `→ ${a.targetSite}`,
             title: [a.host, ...a.via, a.target].join(' → '),
             likelihood: null,
@@ -207,6 +212,7 @@ function dnsTracking(snapshot: TabSnapshot): Category {
         rows: hosts.slice(0, OVERVIEW_ROWS).map((h) => ({
             key: h.host,
             name: h.host,
+            path: false,
             detail: plural(h.requests.length, 'request'),
             title: h.host,
             likelihood: h.likelihood,
@@ -237,10 +243,17 @@ function techniqueWords(categories: string[]): string[] {
 export interface ScriptDetail {
     /** Stable across updates: frame plus script URL. */
     key: string;
-    /** The file name if it is readable, otherwise a description such as "Unnamed script". */
+    /** The URL path, or a description such as "Inline script" when there is none. */
     name: string;
-    /** Where the script came from, e.g. its host or "embedded in the page". */
+    /** True when the name is a URL path: its file name (from the last "/") always shows. */
+    path: boolean;
+    /**
+     * Who serves the script: the site its requests really end on (for a CNAME-cloaked host the site
+     * the alias points to), or a description such as "Embedded in example.com".
+     */
     origin: string;
+    /** The full host behind origin, and the alias it went through, for the tooltip. */
+    originTitle: string;
     url: string;
     /**
      * What the script viewer needs to show the script: its file, or for an inline script its page.
@@ -251,23 +264,43 @@ export interface ScriptDetail {
     party: 'first' | 'third' | null;
     /** The server the script's host is a CNAME alias for, if it is cloaked; null otherwise. */
     aliasOf: string | null;
+    /** The script's own host if it is such an alias, which origin then goes "through"; null otherwise. */
+    via: string | null;
     likelihood: Likelihood;
     score: number;
     /** The signals the score was combined from. */
     tree: ScoreNode[];
     calls: number;
-    techniques: string[];
-    /**
-     * The script's strongest burst of calls: how many different APIs it read and how quickly. Null
-     * without one reading at least a few APIs.
-     */
-    burst: { apis: number; durationMs: number } | null;
+    /** What it learned about the device, by kind of detail, the most identifying kind first. */
+    learned: LearnedKind[];
     /** Signs that the script hides what it does; empty if there are none. */
     signals: Signal[];
     /** Fingerprinting APIs with call counts (null if unknown) and call positions, most called first. */
     apis: ViewerApi[];
-    /** Sites the script made requests to right after fingerprinting (contents unknown), with hosts per site, most hosts first. */
-    contacted: { site: string; hosts: string[] }[];
+    /** Requests carrying data that the script made right after fingerprinting, the most data first. */
+    sent: SentRequest[];
+}
+
+/** A kind of detail a script read, e.g. "Graphics card", with what it learned: "name, rendered 3D image". */
+export interface LearnedKind {
+    kind: string;
+    facts: string[];
+}
+
+/** A request with data, as the extension saw it: its contents are unknown, only its size. */
+export interface SentRequest {
+    method: string;
+    /** The site the request really ends on (see realSite). */
+    site: string;
+    /** The host it went to if that is a CNAME alias for site, which it then went "through"; null otherwise. */
+    via: string | null;
+    /** The URL's path, e.g. "/b/ss/…". */
+    path: string;
+    /**
+     * How much data it carried, in bytes: its body and its URL's query string, so a POST and a GET
+     * are measured alike (a GET carries its data in the query).
+     */
+    bytes: number;
 }
 
 /** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
@@ -282,7 +315,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
             frame.document.scripts
                 .filter((s) => (s.fpMetrics?.intensity ?? 0) > 0)
                 .map((script): ScriptDetail => {
-                    const { name, origin, host, linkable, inline } = describeScript(script.name, frame.document.url);
+                    const { name, path, origin, host, linkable, inline } = describeScript(script.name, frame.document.url);
                     const site = realSite(host, aliases);
                     const score = script.fpMetrics?.score ?? 0;
                     const correlations = script.fpSpikes.flatMap((spike) => spike?.httpCorrelations ?? []);
@@ -293,35 +326,40 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                     return {
                         key: `${frame.frameId}|${script.name}`,
                         name,
-                        origin,
+                        path,
+                        origin: path && site ? site : origin,
+                        originTitle: originTitle(host, aliases) || origin,
                         viewer: viewerSource ? { url: viewerSource, name, apis, inline } : null,
                         url: script.name,
                         party: site === null ? null : site === pageSite ? 'first' : 'third',
                         aliasOf: host ? (aliases.get(host) ?? null) : null,
+                        via: host && aliases.has(host) ? host : null,
                         likelihood: fpLikelihood(score, cutoffs),
                         score,
                         tree: scriptTree(script),
                         calls: script.fpMetrics?.intensity ?? 0,
-                        techniques: techniqueWords(script.fpMetrics?.distinctFpCategories ?? []),
-                        burst: strongestBurst(script.fpSpikes),
+                        learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? []),
                         signals: scriptSignals(script.apiLocations),
                         apis,
-                        contacted: groupBySite(correlations.map((c) => hostOf(c.httpRequest?.url ?? c.httpEvent?.requestUrl))),
+                        sent: sentRequests(correlations, aliases),
                     };
                 })
         )
         .sort((a, b) => b.score - a.score || b.calls - a.calls);
 }
 
-/** Bursts reading fewer different APIs aren't worth mentioning. */
-const MIN_BURST_APIS = 3;
-
 export type SignalId = 'generated-code' | 'one-place';
 
 export interface Signal {
     id: SignalId;
-    /** What was observed, e.g. "14 of 14 fingerprinting APIs read by code generated at runtime". */
-    text: string;
+    /**
+     * What was observed, as a count of APIs and the words after it: "14" and "read from one place in
+     * the code" for "14 APIs read from one place in the code". It follows "Read 14 fingerprinting APIs".
+     */
+    count: number;
+    rest: string;
+    /** Why it is a sign of fingerprinting, in a sentence; not shown for now. */
+    explanation: string;
 }
 
 /** The signals any of the scripts show, for the overview; it only says that they occur, not how often. */
@@ -350,7 +388,9 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined)
     if (generated > 0) {
         signals.push({
             id: 'generated-code',
-            text: `${generated} of ${plural(apis.length, 'fingerprinting API')} read by code generated at runtime`,
+            count: generated,
+            rest: 'read by code generated at runtime',
+            explanation: 'Code created while the page runs (eval, new Function) is hidden from the script file, which hides what it does.',
         });
     }
 
@@ -363,18 +403,61 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined)
     if (fromOnePlace >= ONE_PLACE_MIN_APIS) {
         signals.push({
             id: 'one-place',
-            text: `${fromOnePlace} of ${plural(apis.length, 'fingerprinting API')} read from one place in the code`,
+            count: fromOnePlace,
+            rest: 'read from one place in the code',
+            explanation: 'Ordinary code reads each detail where it needs it; collecting them through one loop is typical of fingerprinting.',
         });
     }
 
     return signals;
 }
 
-/** The spike with the highest score, as different APIs read and its duration. */
-function strongestBurst(spikes: (SpikeSnapshot | null)[]): ScriptDetail['burst'] {
-    const strongest = strongestSpike(spikes);
-    if (!strongest || strongest.distinctFpApis.length < MIN_BURST_APIS) return null;
-    return { apis: strongest.distinctFpApis.length, durationMs: strongest.durationMs };
+/**
+ * What a script learned from the APIs it read, as the APIs' own words (see FpApi.reveals), grouped by
+ * kind. Kinds and the facts in them go from the most identifying API down; APIs revealing the same
+ * value share their words, so they show once.
+ */
+function learnedKinds(apiIds: string[]): LearnedKind[] {
+    const apis = apiIds
+        .map((id) => FP_APIS_BY_ID[id])
+        .filter((api) => api !== undefined)
+        .sort((a, b) => b.entropy - a.entropy);
+    const byKind = new Map<string, string[]>();
+    for (const api of apis) {
+        const facts = byKind.get(api.category) ?? [];
+        if (!facts.includes(api.reveals)) facts.push(api.reveals);
+        byKind.set(api.category, facts);
+    }
+    // Map keeps the order in which kinds first appear: by their most identifying API.
+    return [...byKind.entries()].map(([category, facts]) => ({ kind: capitalize(fpCategoryName(category)), facts }));
+}
+
+function capitalize(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The requests with data a script made right after fingerprinting, the most data first; one per URL. */
+function sentRequests(correlations: HttpConsolidatedEvent[], aliases: Map<string, string>): SentRequest[] {
+    const byUrl = new Map<string, SentRequest>();
+    for (const { httpRequest, httpEvent } of correlations) {
+        const url = httpRequest?.url ?? httpEvent?.requestUrl;
+        if (!url) continue;
+        const method = (httpRequest?.method ?? httpEvent?.method ?? 'GET').toUpperCase();
+        let query = '';
+        try {
+            query = new URL(url).search.slice(1);
+        } catch {}
+        const request: SentRequest = {
+            method,
+            site: realSite(hostOf(url), aliases) ?? hostOf(url),
+            via: aliases.has(hostOf(url)) ? hostOf(url) : null,
+            path: urlPath(url),
+            bytes: (httpRequest?.bodyBytes ?? 0) + new TextEncoder().encode(query).length,
+        };
+        const key = `${method} ${url}`;
+        if ((byUrl.get(key)?.bytes ?? -1) < request.bytes) byUrl.set(key, request);
+    }
+    return [...byUrl.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
 /** The metrics of the spike with the highest score. */
@@ -660,18 +743,6 @@ function apiList(
         .sort((a, b) => b.calls - a.calls || a.id.localeCompare(b.id));
 }
 
-/** Groups hosts by site, e.g. many googlevideo.com servers under one entry; sites with the most hosts first. */
-function groupBySite(hosts: string[]): { site: string; hosts: string[] }[] {
-    const bySite = new Map<string, string[]>();
-    for (const host of unique(hosts.filter(Boolean))) {
-        const site = getEtld1(host) ?? host;
-        bySite.set(site, [...(bySite.get(site) ?? []), host]);
-    }
-    return [...bySite.entries()]
-        .map(([site, siteHosts]) => ({ site, hosts: siteHosts.sort() }))
-        .sort((a, b) => b.hosts.length - a.hosts.length);
-}
-
 function requestLine(method: string, url: string): RequestLine {
     try {
         const u = new URL(url);
@@ -690,14 +761,14 @@ function requestLine(method: string, url: string): RequestLine {
 function describeScript(
     url: string,
     documentUrl: string | null
-): { name: string; origin: string; host: string | null; linkable: boolean; inline: boolean } {
+): { name: string; path: boolean; origin: string; host: string | null; linkable: boolean; inline: boolean } {
     if (url === 'null') {
-        return { name: 'Unknown script', origin: 'Its source could not be determined', host: null, linkable: false, inline: false };
+        return { name: 'Unknown script', path: false, origin: 'Its source could not be determined', host: null, linkable: false, inline: false };
     }
 
     if (documentUrl && url === documentUrl) {
         const host = hostOf(url);
-        return { name: 'Inline script', origin: `Embedded in ${host}`, host, linkable: false, inline: true };
+        return { name: 'Inline script', path: false, origin: `Embedded in ${host}`, host, linkable: false, inline: true };
     }
 
     if (/^(blob|data):/i.test(url)) {
@@ -707,53 +778,18 @@ function describeScript(
             creator = hostOf(new URL(url).origin);
         } catch {}
         const origin = creator ? `Created at runtime by ${creator}` : 'Created at runtime';
-        return { name: 'Generated script', origin, host: creator || null, linkable: false, inline: false };
+        return { name: 'Generated script', path: false, origin, host: creator || null, linkable: false, inline: false };
     }
 
     const host = hostOf(url);
     return {
-        name: readableFileName(url) ?? urlPath(url),
+        name: urlPath(url),
+        path: true,
         origin: host,
         host: host || null,
         linkable: true,
         inline: false,
     };
-}
-
-/**
- * The script's file name as it is, if it has a real word in it: `launch-ENdd5c82….min.js` or
- * `f4c2e99c…_complete.js`, ignoring their hashes and IDs. Names without one, such as `KTUB2JkY` or
- * `1.js`, give null; some scripts use those deliberately to avoid being recognized.
- */
-function readableFileName(url: string): string | null {
-    const segment = pathSegments(url).pop();
-    if (!segment) return null;
-
-    const extension = segment.match(/(\.min)?\.(m|c)?js$/i)?.[0] ?? '';
-    const base = segment.slice(0, segment.length - extension.length);
-
-    if (!extension) {
-        // Without a .js extension, only word-like names count (e.g. "boomerang", not "KTUB2JkY").
-        const parts = base.split(/[-_.]/).filter(Boolean);
-        const wordLike = parts.length > 0 && parts.every((part) => /^[a-z]+$/i.test(part) && part.length >= 3 && vowelShare(part) >= 0.25);
-        return wordLike ? segment : null;
-    }
-
-    const words = base.split(/[^a-z0-9]+/i).filter((token) => !isRandomToken(token));
-    const hasWord = words.some((token) => token.replace(/[^a-z]/gi, '').length >= 3);
-    return hasWord ? segment : null;
-}
-
-/** Long runs that are mostly digits or have hardly any vowels, such as hashes, IDs and timestamps. */
-function isRandomToken(part: string): boolean {
-    if (part.length < 10) return false;
-    const digits = part.replace(/\D/g, '').length;
-    return digits >= 4 || vowelShare(part) < 0.2;
-}
-
-function vowelShare(text: string): number {
-    const letters = text.replace(/[^a-z]/gi, '');
-    return letters.length === 0 ? 0 : letters.replace(/[^aeiou]/gi, '').length / letters.length;
 }
 
 /** The URL if it uses http or https. Script URLs come from page stack traces, so other schemes are not linked. */
@@ -766,11 +802,7 @@ function linkableUrl(url: string): string | null {
     }
 }
 
-/**
- * The URL's path, for scripts without a readable name, e.g. `/0RoDdc4z/Tb8rr/9a0Fq`. Such random
- * paths are typical for bot protection served from the site itself, which avoids names that
- * blocklists could match.
- */
+/** The URL's path, e.g. "/libs/launch-ENdd5c82….min.js"; its last segment is the file name. */
 function urlPath(url: string): string {
     return `/${pathSegments(url).join('/')}`;
 }
@@ -792,6 +824,13 @@ function cloakedHosts(snapshot: TabSnapshot): Map<string, string> {
         if (host && target && !aliases.has(host)) aliases.set(host, target);
     }
     return aliases;
+}
+
+/** The host a script came from, and the server it is an alias (CNAME) for if it is cloaked. */
+function originTitle(host: string | null, aliases: Map<string, string>): string {
+    if (!host) return '';
+    const target = aliases.get(host);
+    return target ? `${host}, an alias (CNAME) for ${target}` : host;
 }
 
 /**

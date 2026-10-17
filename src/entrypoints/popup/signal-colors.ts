@@ -5,15 +5,15 @@
 import type { ScoreNode } from './model';
 
 const SIGNAL_COLORS: Record<string, string> = {
-    identifying: '#60a5fa',
-    unusualApis: '#a78bfa',
-    generatedCode: '#2dd4bf',
-    onePlace: '#f472b6',
-    dataSent: '#facc15',
+    identifying: '#3b82f6',
+    unusualApis: '#8b5cf6',
+    generatedCode: '#14b8a6',
+    onePlace: '#ec4899',
+    dataSent: '#d4a106',
     // Signals standing for a whole score: calmer slate tones, as they sum up the signals below them.
-    strongestScript: '#cbd5e1',
-    strongestBurst: '#94a3b8',
-    repeatedBursts: '#64748b',
+    strongestScript: '#94a3b8',
+    strongestBurst: '#64748b',
+    repeatedBursts: '#475569',
 };
 
 /** The color of a node in a score tree; APIs and signals without their own color are grey. */
