@@ -17,23 +17,31 @@
         text: TextPart[];
         /** Below the text without an icon, e.g. the kinds of detail under "Read 40 fingerprinting APIs". */
         detail?: string;
-        /** For "Sent …": the requests, listed below it. */
-        requests?: SentRequest[];
     }
 
-    // Lines the requests of a site take at most: all of them if they fit, otherwise one fewer and
-    // "Show N more" on the last line. And which sites show all (by script and site).
-    const REQUEST_LINES = 3;
+    // Lines a list takes at most while collapsed (the sites a script sent data to, and the requests
+    // to each): all of it if it fits, otherwise one fewer and the rest on the last line, as "Show N
+    // more" for requests and as one line summing up the other sites.
+    const COLLAPSED_LINES = 3;
+    // Which scripts show all their sites (by script), and which sites all their requests (by script and site).
+    let allSites = $state<Record<string, boolean>>({});
     let allRequests = $state<Record<string, boolean>>({});
 
-    /** How many of a site's requests to show while collapsed. */
-    function shownRequests(count: number): number {
-        return count <= REQUEST_LINES ? count : REQUEST_LINES - 1;
+    /** How many of `count` items to show while collapsed. */
+    function shownWhileCollapsed(count: number): number {
+        return count <= COLLAPSED_LINES ? count : COLLAPSED_LINES - 1;
+    }
+
+    /** The other sites, as one line: "Sent 64 KB to 6 more sites right after reading". */
+    function sentSummary(sites: SentSite[]): TextPart[] {
+        const total = sites.reduce((sum, site) => sum + site.total, 0);
+        return ['Sent ', { value: bytes(total) }, ' to ', { value: plural(sites.length, 'more site') }, ' right after reading'];
     }
 
     /**
-     * What the card says about a script, as a list of statements. First what is always there (what
-     * it read, and about what), then signs of fingerprinting, then where it sent data right after.
+     * What the card says about a script, as a list of statements: what is always there (what it
+     * read, and about what), then signs of fingerprinting. Where it sent data is listed after them
+     * (see sentBySite).
      */
     function statements(script: ScriptDetail): Statement[] {
         const kinds = script.learned.map(({ kind }) => kind.toLowerCase()).join(', ');
@@ -47,27 +55,39 @@
         for (const signal of script.signals) {
             list.push({ key: signal.id, text: [{ value: plural(signal.count, 'API') }, ` ${signal.rest}`] });
         }
-        for (const sent of sentBySite(script)) list.push({ key: `sent ${sent.key}`, text: sent.text, requests: sent.requests });
         return list;
     }
 
-    /** The requests with data, combined per site: "Sent 4.6 KB to walgreens.com right after reading". */
-    function sentBySite(script: ScriptDetail): { key: string; text: TextPart[]; requests: SentRequest[] }[] {
+    /**
+     * The requests with data, combined per site, the most data first: "Sent 4.6 KB to walgreens.com
+     * right after reading".
+     */
+    function sentBySite(script: ScriptDetail): SentSite[] {
         // Requests that went through a CNAME alias stay apart from direct ones to the same site.
         const bySite = new Map<string, SentRequest[]>();
         for (const request of script.sent) {
             const key = `${request.site} ${request.via ?? ''}`;
             bySite.set(key, [...(bySite.get(key) ?? []), request]);
         }
-        return [...bySite.entries()].map(([key, requests]) => {
-            const { site, via } = requests[0]!;
-            const total = requests.reduce((sum, r) => sum + r.bytes, 0);
-            const text: TextPart[] = ['Sent ', { value: bytes(total) }, ' to ', { value: site }];
-            if (via) text.push(' through ', { value: via });
-            // Only requests from a burst until shortly after it are listed (see fp-analysis).
-            text.push(' right after reading');
-            return { key, text, requests };
-        });
+        return [...bySite.entries()]
+            .map(([key, requests]) => ({ key, requests, total: requests.reduce((sum, r) => sum + r.bytes, 0) }))
+            .sort((a, b) => b.total - a.total)
+            .map(({ key, requests, total }) => {
+                const { site, via } = requests[0]!;
+                const text: TextPart[] = ['Sent ', { value: bytes(total) }, ' to ', { value: site }];
+                if (via) text.push(' through ', { value: via });
+                // Only requests from a burst until shortly after it are listed (see fp-analysis).
+                text.push(' right after reading');
+                return { key, text, requests, total };
+            });
+    }
+
+    /** The requests with data to one site, in one line with the requests below it. */
+    interface SentSite {
+        key: string;
+        text: TextPart[];
+        requests: SentRequest[];
+        total: number;
     }
 </script>
 
@@ -89,6 +109,10 @@
 {/if}
 
 {#each scripts as script (script.key)}
+    {@const sites = sentBySite(script)}
+    {@const shownSites = shownWhileCollapsed(sites.length)}
+    {@const rest = sites.slice(shownSites)}
+    {@const showRest = allSites[script.key] ?? false}
     <article class="card sleek">
         <!-- The name over who serves it, beside the score ring over the likelihood. -->
         <div class="head">
@@ -113,34 +137,48 @@
 
         <ul class="statements">
             {#each statements(script) as statement (statement.key)}
-                {#if statement.requests}
-                    {@const key = `${script.key} ${statement.key}`}
-                    {@const showAll = allRequests[key] ?? false}
-                    {@const shown = shownRequests(statement.requests.length)}
-                    <SignalLine text={statement.text} tone="info" lead>
-                        <!-- Method | path | how much data. -->
-                        <span class="requests">
-                            {#each showAll ? statement.requests : statement.requests.slice(0, shown) as request, i (i)}
-                                <span class="request">
-                                    <span class="method">{request.method}</span>
-                                    <span class="path" title={request.path}><MiddleTruncate text={request.path} path /></span>
-                                    <span class="size">{bytes(request.bytes)}</span>
-                                </span>
-                            {/each}
-                            {#if statement.requests.length > shown}
-                                <button type="button" class="more" onclick={() => (allRequests[key] = !showAll)}>
-                                    {showAll ? 'Show less' : `Show ${statement.requests.length - shown} more`}
-                                </button>
-                            {/if}
-                        </span>
-                    </SignalLine>
-                {:else}
-                    <SignalLine text={statement.text} tone="info" detail={statement.detail} lead />
-                {/if}
+                <SignalLine text={statement.text} tone="info" detail={statement.detail} lead />
             {/each}
+            <!-- The sites with the most data, then one line for the others, which they follow when shown. -->
+            {#each sites.slice(0, shownSites) as sent (sent.key)}
+                {@render sentLine(script, sent)}
+            {/each}
+            {#if rest.length > 0}
+                <SignalLine text={sentSummary(rest)} tone="info" lead>
+                    <button type="button" class="more" class:open={showRest} onclick={() => (allSites[script.key] = !showRest)}>
+                        {showRest ? 'Hide them' : `Show ${rest.length} sites`}
+                    </button>
+                </SignalLine>
+                {#each showRest ? rest : [] as sent (sent.key)}
+                    {@render sentLine(script, sent)}
+                {/each}
+            {/if}
         </ul>
     </article>
 {/each}
+
+<!-- "Sent … to a site", with its requests: method | path | how much data. -->
+{#snippet sentLine(script: ScriptDetail, sent: SentSite)}
+    {@const key = `${script.key} ${sent.key}`}
+    {@const showAll = allRequests[key] ?? false}
+    {@const shown = shownWhileCollapsed(sent.requests.length)}
+    <SignalLine text={sent.text} tone="info" lead>
+        <span class="requests">
+            {#each showAll ? sent.requests : sent.requests.slice(0, shown) as request, i (i)}
+                <span class="request">
+                    <span class="method">{request.method}</span>
+                    <span class="path" title={request.path}><MiddleTruncate text={request.path} path /></span>
+                    <span class="size">{bytes(request.bytes)}</span>
+                </span>
+            {/each}
+            {#if sent.requests.length > shown}
+                <button type="button" class="more" class:open={showAll} onclick={() => (allRequests[key] = !showAll)}>
+                    {showAll ? 'Show less' : `Show ${sent.requests.length - shown} more`}
+                </button>
+            {/if}
+        </span>
+    </SignalLine>
+{/snippet}
 
 <style>
     /* The parts of a card are separated by space only. */
@@ -237,21 +275,43 @@
         white-space: nowrap;
     }
 
+    /* "Show N more" and the like: an action, not data, so in the accent color with a chevron
+       pointing where the list goes (down to expand, up to collapse), but small. */
     .more {
         grid-column: 1 / -1;
         justify-self: start;
         padding: 0;
         border: 0;
         background: none;
-        color: var(--muted);
+        /* Lightened toward the card, so it doesn't push; in full on hover. */
+        color: color-mix(in srgb, var(--info) 65%, var(--surface));
         font: inherit;
+        font-weight: 500;
         cursor: pointer;
     }
 
-    .more:hover {
-        color: var(--text);
+    .more::after {
+        content: '';
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        margin-left: 6px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        vertical-align: 3px;
+        transform: rotate(45deg);
     }
 
+    .more.open::after {
+        vertical-align: 0;
+        transform: rotate(-135deg);
+    }
+
+    .more:hover {
+        color: var(--info);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
     .empty {
         margin: 0;
         color: var(--muted);
