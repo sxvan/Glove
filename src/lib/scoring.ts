@@ -73,7 +73,6 @@ export const SIGNALS = {
             strength: 0.6,
         },
         strongestBurst: { label: 'Strongest burst', description: 'The score of its most suspicious burst of calls.', strength: 1 },
-        repeatedBursts: { label: 'Repeated bursts', description: 'How many of its bursts are rated likely on their own.', strength: 0 },
         generatedCode: {
             label: 'Fingerprinting APIs read by generated code',
             description:
@@ -131,7 +130,7 @@ export type SignalSource = ScoreLevel | 'apis';
 /** The signals made from another score or from the APIs read; the options page nests them. */
 export const SIGNAL_SOURCES: { [L in ScoreLevel]?: Partial<Record<SignalKey<L>, SignalSource>> } = {
     page: { strongestScript: 'script', strongestBurst: 'burst', identifying: 'apis', unusualApis: 'apis', generatedCode: 'apis' },
-    script: { strongestBurst: 'burst', repeatedBursts: 'burst', identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
+    script: { strongestBurst: 'burst', identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
     burst: { identifying: 'apis', unusualApis: 'apis', generatedCode: 'apis', onePlace: 'apis', dataSent: 'request' },
 };
 
@@ -233,7 +232,6 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
 // Where the other signals' values reach 1 ("full at"). Not user settings: they say what "a lot" means.
 
 export const LIMITS = {
-    script: { repeatedBursts: 3 },
     request: { parameters: 5, bodyBytes: 4096 },
 } as const;
 

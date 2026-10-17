@@ -126,7 +126,6 @@ function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: Scori
 function computeScriptFpScore(script: ScriptState, settings: ScoringSettings): ScoredParts {
     const metrics = script.fpMetrics!;
     const burstScores = script.fpSpikes.map((s) => s.fpMetrics?.score ?? 0);
-    const likelyBursts = burstScores.filter((score) => score >= settings.cutoffs.fingerprinting.likely).length;
 
     // As a fallback for collecting spread out, the script's own API signals count only the APIs its
     // strongest burst didn't read: that burst's APIs, their places and generated code are already
@@ -145,7 +144,6 @@ function computeScriptFpScore(script: ScriptState, settings: ScoringSettings): S
             ...apis.values,
             onePlace: onePlace.value,
             strongestBurst: Math.max(...burstScores, 0),
-            repeatedBursts: saturate(likelyBursts, LIMITS.script.repeatedBursts),
             generatedCode: generated.value,
         },
         settings,

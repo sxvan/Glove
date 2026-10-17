@@ -13,7 +13,6 @@ const SIGNAL_COLORS: Record<string, string> = {
     // Signals standing for a whole score: calmer slate tones, as they sum up the signals below them.
     strongestScript: '#94a3b8',
     strongestBurst: '#64748b',
-    repeatedBursts: '#475569',
 };
 
 /** The color of a node in a score tree; APIs and signals without their own color are grey. */
