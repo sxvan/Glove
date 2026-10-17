@@ -226,7 +226,7 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     },
     // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
     // page responsive; measured collections took 13–362 ms with pauses up to 190 ms.
-    bursts: { maxGapMs: 200, maxDurationMs: 1000, minDistinctApis: 4, requestWindowMs: 1000 },
+    bursts: { windowMs: 1000, minDistinctApis: 4, requestWindowMs: 1000 },
 };
 
 // ---------- limits ----------
@@ -239,10 +239,8 @@ export const LIMITS = {
 
 /** What counts as a burst of calls: one collection of details (see spike-detection). */
 export interface BurstDetection {
-    /** A burst goes on while calls are at most this many milliseconds apart. */
-    maxGapMs: number;
-    /** Longer runs are split, so code reading the same details over and over isn't one endless burst. */
-    maxDurationMs: number;
+    /** How long a burst is at most: the window that slides over the calls (see spike-detection). */
+    windowMs: number;
     /** Fewer different APIs are a couple of reads, not a collection. */
     minDistinctApis: number;
     /** Requests the script makes up to this many milliseconds after a burst count as sent right after it. */
@@ -252,15 +250,10 @@ export interface BurstDetection {
 /** The burst detection settings with their labels and explanations, in the order the options page lists them. */
 export const BURST_DETECTION_FIELDS: { key: keyof BurstDetection; label: string; description: string; unit: string }[] = [
     {
-        key: 'maxGapMs',
-        label: 'Pause between calls',
-        description: 'A burst goes on while calls are at most this far apart. Collectors pause for asynchronous APIs and to keep the page responsive: up to 190 ms measured.',
-        unit: 'ms',
-    },
-    {
-        key: 'maxDurationMs',
-        label: 'Longest burst',
-        description: "Longer runs are split, so code reading the same details over and over isn't one endless burst. Measured collections took 13 to 362 ms.",
+        key: 'windowMs',
+        label: 'Burst length',
+        description:
+            'A window of this length slides over the calls: the one reading the most unusual and identifying APIs is a burst, then the same with the calls left. Measured collections took 13 to 362 ms, pausing up to 190 ms for asynchronous APIs.',
         unit: 'ms',
     },
     {

@@ -6,6 +6,23 @@ import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns } from '.
 import { LIMITS, apisSums, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
 
+/**
+ * How much an API adds to a burst's API signals, to find the window reading the most (see
+ * detectSpikes): its entropy and its rarity to rarityPower, each relative to where its signal is
+ * full and weighed by the signal's strength. Close to the burst's score, and cheap to add up.
+ */
+function burstWeight(level: 'burst' | 'pageBurst', settings: ScoringSettings): (apiId: string) => number {
+    const { identifying, unusualApis } = settings.strengths.burst;
+    const fullAt = settings.fullAt[level];
+    return (id) => {
+        const traits = settings.apis[id];
+        if (!traits) return 0;
+        const information = fullAt.identifying > 0 ? (identifying * traits.entropy) / fullAt.identifying : 0;
+        const unusual = fullAt.unusual > 0 ? (unusualApis * traits.rarity ** Math.max(0, settings.rarityPower)) / fullAt.unusual : 0;
+        return information + unusual;
+    };
+}
+
 /** Scores the document's scripts, their bursts of calls and the requests right after (see scoring). */
 export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>, settings: ScoringSettings) {
     const documentFpEvents: FpMonkeyEvent[] = [];
@@ -28,7 +45,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         documentConsolidatedHttpEvents.push(...script.httpConsolidatedEvents);
 
-        script.fpSpikes = detectSpikes(script.fpEvents, settings.bursts);
+        script.fpSpikes = detectSpikes(script.fpEvents, settings.bursts, burstWeight('burst', settings));
 
         for (const spike of script.fpSpikes) {
             spike.httpCorrelations = getCorrelatedHttpCandidates(spike, script.httpConsolidatedEvents, settings.bursts.requestWindowMs);
@@ -44,7 +61,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
         }
     }
 
-    document.spikes = detectSpikes(documentFpEvents, settings.bursts);
+    document.spikes = detectSpikes(documentFpEvents, settings.bursts, burstWeight('pageBurst', settings));
     for (const spike of document.spikes) {
         spike.httpCorrelations = getCorrelatedHttpCandidates(spike, documentConsolidatedHttpEvents, settings.bursts.requestWindowMs);
         spike.fpMetrics = getFpMetrics(spike.events);
