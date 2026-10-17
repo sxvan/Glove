@@ -517,6 +517,59 @@ export function fingerprintingPage(snapshot: TabSnapshot): PageScore {
     return { score, likelihood: fpLikelihood(score, cutoffsOf(snapshot)), tree: document ? pageTree(document, score) : [] };
 }
 
+/**
+ * The page as a whole, shown like a script: its score, and what all its scripts (see
+ * fingerprintingDetails) read and sent together. Of the signs, each shows its strongest script's
+ * count, as APIs from different scripts don't add up to one place or one piece of generated code.
+ */
+export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptDetail[]): ScriptDetail {
+    const page = fingerprintingPage(snapshot);
+    const url = pageUrl(snapshot) ?? '';
+    // Named by its site, like a script's identity: "youtube.com" for www.youtube.com.
+    const host = pageHost(snapshot);
+    const site = (host && getEtld1(host)) || host || 'Whole page';
+
+    const calls = new Map<string, number | null>();
+    for (const script of scripts) {
+        for (const api of script.apis) {
+            const known = calls.get(api.id);
+            calls.set(api.id, api.calls === null && !known ? null : (known ?? 0) + (api.calls ?? 0));
+        }
+    }
+    const apis = [...calls.entries()]
+        .map(([id, count]) => ({ id, calls: count, positions: [] }))
+        .sort((a, b) => (b.calls ?? 0) - (a.calls ?? 0) || a.id.localeCompare(b.id));
+
+    const signals = (['generated-code', 'one-place'] as SignalId[])
+        .map((id) =>
+            scripts
+                .flatMap((script) => script.signals.filter((signal) => signal.id === id))
+                .sort((a, b) => b.count - a.count)[0]
+        )
+        .filter((signal) => signal !== undefined);
+
+    return {
+        key: 'page',
+        name: site,
+        path: false,
+        origin: 'All activity',
+        originTitle: url,
+        url,
+        viewer: null,
+        party: null,
+        aliasOf: null,
+        via: null,
+        likelihood: page.likelihood,
+        score: page.score,
+        tree: page.tree,
+        calls: scripts.reduce((sum, script) => sum + script.calls, 0),
+        learned: learnedKinds(apis.map((api) => api.id)),
+        signals,
+        apis,
+        sent: scripts.flatMap((script) => script.sent).sort((a, b) => b.bytes - a.bytes),
+    };
+}
+
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
     return scoreTree('page', document.fpMetrics, total, (key) => {
         if (key === 'strongestScript') {

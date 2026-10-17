@@ -5,7 +5,7 @@
     import type { TabSnapshot } from '@/types/snapshot';
     import CategoryCard from './components/CategoryCard.svelte';
     import DetailHeader from './components/DetailHeader.svelte';
-    import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPage, pageHost, pageUrl, type Category } from './model';
+    import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type Category } from './model';
     import CnameDetail from './screens/CnameDetail.svelte';
     import DnsDetail from './screens/DnsDetail.svelte';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
@@ -93,9 +93,10 @@
     {:else if status === 'unavailable'}
         <p class="state">No data for this tab yet. Reload the page to check it.</p>
     {:else if openCategory && snapshot}
-        <DetailHeader category={openCategory} onBack={() => openDetail(null)} />
+        <DetailHeader category={openCategory} onBack={() => openDetail(null)} backOnly={openCategory.id === 'fingerprinting'} />
         {#if openCategory.id === 'fingerprinting'}
-            <FingerprintingDetail page={fingerprintingPage(snapshot)} scripts={fingerprintingDetails(snapshot)} />
+            {@const scripts = fingerprintingDetails(snapshot)}
+            <FingerprintingDetail page={fingerprintingPageDetail(snapshot, scripts)} {scripts} />
         {:else if openCategory.id === 'cname'}
             <CnameDetail aliases={cnameDetails(snapshot)} />
         {:else}
