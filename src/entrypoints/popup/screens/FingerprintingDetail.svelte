@@ -275,18 +275,17 @@
         white-space: nowrap;
     }
 
-    /* "Show N more" and the like: an action, not data, so in the accent color with a chevron
-       pointing where the list goes (down to expand, up to collapse), but small. */
+    /* "Show N more" and the like: an action, not data, so tinted with the accent color and with a
+       chevron pointing where the list goes (down to expand, up to collapse), but quiet. */
     .more {
         grid-column: 1 / -1;
         justify-self: start;
         padding: 0;
         border: 0;
         background: none;
-        /* Lightened toward the card, so it doesn't push; in full on hover. */
-        color: color-mix(in srgb, var(--info) 65%, var(--surface));
+        /* Grey with a tint of the accent: set apart from the data without pushing; in full on hover. */
+        color: color-mix(in srgb, var(--info) 45%, var(--muted));
         font: inherit;
-        font-weight: 500;
         cursor: pointer;
     }
 
