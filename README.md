@@ -43,6 +43,16 @@ src/
   types/                      shared types
 ```
 
+## Limits of the measurement
+
+The extension sees fingerprinting by wrapping browser APIs in the page. Its wrappers take over the
+original functions' names and source text, but a page can still tell that APIs were wrapped, e.g.
+from a stack trace or another frame's untouched functions. Some scripts check for that and then
+behave differently: anti-cheat and bot-detection scripts may collect less or skip parts of their
+checks while the extension is installed. Their scores can then come out lower than what they do
+for other visitors. Scripts that wait for interaction, like reCAPTCHA before its checkbox is
+clicked, also show only part of their collection until the user acts.
+
 ## Privacy note
 
 To detect CNAME cloaking, the extension resolves the hostname of every request through Google's public DNS-over-HTTPS resolver (`dns.google`).

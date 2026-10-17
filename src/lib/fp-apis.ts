@@ -20,6 +20,9 @@ export type FpApiOwner =
     | 'Keyboard'
     | 'StorageManager'
     | 'NetworkInformation'
+    | 'Performance'
+    | 'HTMLMediaElement'
+    | 'MediaSource'
     | 'Date';
 
 /** Kinds of details, by the information they reveal rather than the object they come from. */
@@ -42,7 +45,8 @@ export type FpCategory =
     | 'Keyboard'
     | 'Storage'
     | 'Battery'
-    | 'Connection';
+    | 'Connection'
+    | 'Codecs';
 
 /** The kinds with the name the popup uses for what they reveal. */
 export const FP_CATEGORIES: Record<FpCategory, { name: string }> = {
@@ -65,6 +69,7 @@ export const FP_CATEGORIES: Record<FpCategory, { name: string }> = {
     Storage: { name: 'storage quota' },
     Battery: { name: 'battery' },
     Connection: { name: 'connection' },
+    Codecs: { name: 'media codecs' },
 };
 
 /** The popup's name for a category, e.g. "audio" for AudioContext; unknown ones keep their key. */
@@ -124,8 +129,10 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 // (0.93). Where a related counter is all there is, it is used: webgl2.getParameter and
 // getShaderPrecisionFormat from WebGL 1, speech.getVoices from reading speechSynthesis (an upper
 // bound), createDataChannel from creating an RTCPeerConnection, resolvedOptions from creating a
-// DateTimeFormat. Estimates without data: uadata.detailedHints, navigator.webdriver,
-// document.referrer, date.getTimezoneOffset, webgl readPixels, webgpu.adapterInfo, and the special
+// DateTimeFormat, mediasource.isTypeSupported from canPlayType, which answers the same question.
+// Estimates without data: uadata.detailedHints, navigator.webdriver,
+// document.referrer, date.getTimezoneOffset, webgl readPixels and getContextAttributes,
+// webgpu.adapterInfo, and the special
 // reads (hidden canvas, font probing, graphics card name), which are rarer than the API they use.
 export const FP_APIS: FpApi[] = [
     // Navigator
@@ -140,6 +147,9 @@ export const FP_APIS: FpApi[] = [
     { id: 'navigator.languages', owner: 'Navigator', prop: 'languages', category: 'Languages', reveals: 'languages', entropy: 0.3, rarity: 0.59 },
     { id: 'navigator.hardwareConcurrency', owner: 'Navigator', prop: 'hardwareConcurrency', category: 'Hardware', reveals: 'CPU cores', entropy: 0.25, rarity: 0.62 },
     { id: 'navigator.deviceMemory', owner: 'Navigator', prop: 'deviceMemory', category: 'Hardware', reveals: 'memory', entropy: 0.2, rarity: 0.57 },
+    // The JS heap's size limit, which depends on the device's memory and the browser's build; the
+    // used size changes all the time. Chrome only, read by bot detection like reCAPTCHA too.
+    { id: 'performance.memory', owner: 'Performance', prop: 'memory', category: 'Hardware', reveals: 'memory limits', entropy: 0.15, rarity: 0.58 },
     { id: 'navigator.maxTouchPoints', owner: 'Navigator', prop: 'maxTouchPoints', category: 'Hardware', reveals: 'touch support', entropy: 0.25, rarity: 0.48 },
     { id: 'navigator.vendor', owner: 'Navigator', prop: 'vendor', category: 'Browser', reveals: 'browser vendor', entropy: 0.15, rarity: 0.63 },
     // Says almost nothing about the device (false in practically every real browser), but checking
@@ -177,6 +187,10 @@ export const FP_APIS: FpApi[] = [
     { id: 'screen.colorDepth', owner: 'Screen', prop: 'colorDepth', category: 'ScreenSetup', reveals: 'color depth', entropy: 0.1, rarity: 0.65 },
     { id: 'screen.pixelDepth', owner: 'Screen', prop: 'pixelDepth', category: 'ScreenSetup', reveals: 'color depth', entropy: 0.1, rarity: 0.88, same: 'screen.colorDepth' },
     { id: 'screen.orientation', owner: 'Screen', prop: 'orientation', category: 'ScreenSetup', reveals: 'screen orientation', entropy: 0.15, rarity: 0.86 },
+    // Where the available space starts: the taskbar's or menu bar's side, and the screen's place
+    // among several.
+    { id: 'screen.availTop', owner: 'Screen', prop: 'availTop', category: 'ScreenSetup', reveals: 'screen position', entropy: 0.1, rarity: 0.83 },
+    { id: 'screen.availLeft', owner: 'Screen', prop: 'availLeft', category: 'ScreenSetup', reveals: 'screen position', entropy: 0.05, rarity: 0.85 },
 
     // Window: the inner size is everyday layout, the outer size and position rarely needed.
     { id: 'window.innerWidth', owner: 'Window', prop: 'innerWidth', category: 'ScreenSetup', reveals: 'window size', entropy: 0.6, rarity: 0.28 },
@@ -186,6 +200,9 @@ export const FP_APIS: FpApi[] = [
     { id: 'window.devicePixelRatio', owner: 'Window', prop: 'devicePixelRatio', category: 'ScreenSetup', reveals: 'pixel density', entropy: 0.3, rarity: 0.4 },
     { id: 'window.screenX', owner: 'Window', prop: 'screenX', category: 'ScreenSetup', reveals: 'window position', entropy: 0.35, rarity: 0.83 },
     { id: 'window.screenY', owner: 'Window', prop: 'screenY', category: 'ScreenSetup', reveals: 'window position', entropy: 0.15, rarity: 0.82 },
+    // Older names for screenX and screenY, with the same values.
+    { id: 'window.screenLeft', owner: 'Window', prop: 'screenLeft', category: 'ScreenSetup', reveals: 'window position', entropy: 0.35, rarity: 0.86, same: 'window.screenX' },
+    { id: 'window.screenTop', owner: 'Window', prop: 'screenTop', category: 'ScreenSetup', reveals: 'window position', entropy: 0.15, rarity: 0.86, same: 'window.screenY' },
 
     // Document: more tracking than fingerprinting, and read everywhere.
     { id: 'document.referrer', owner: 'Document', prop: 'referrer', category: 'Cookies', reveals: 'previous page', entropy: 0.05, rarity: 0.15 },
@@ -199,6 +216,9 @@ export const FP_APIS: FpApi[] = [
     { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' } },
     { id: 'canvas.getImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'canvas image', entropy: 1, rarity: 0.92, same: 'canvas.toDataURL' },
     { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' } },
+    // Whether a point lies in a path drawn with the even-odd rule: the same in practically every
+    // browser, but part of a canvas fingerprint (FingerprintJS's "winding"), and rare otherwise.
+    { id: 'canvas.isPointInPath', owner: 'CanvasRenderingContext2D', prop: 'isPointInPath', category: 'CanvasImage', reveals: 'canvas path handling', entropy: 0.05, rarity: 0.96 },
     // Measuring text is everyday; measuring it in many different fonts is finding out which are installed.
     { id: 'canvas.measureText', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'text measurements', entropy: 0.1, rarity: 0.92 },
     { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', entropy: 0.85, rarity: 1, readOf: { api: 'canvas.measureText', read: 'fontProbing' } },
@@ -214,6 +234,8 @@ export const FP_APIS: FpApi[] = [
     { id: 'webgl.readPixels', owner: 'WebGLRenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6 },
     // The precision of the graphics card's shaders: 3D engines ask when they start, fingerprinters always do.
     { id: 'webgl.getShaderPrecisionFormat', owner: 'WebGLRenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', entropy: 0.2, rarity: 0.94 },
+    // The context's settings (antialiasing and the like): mostly what was asked for, read back.
+    { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9 },
 
     { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', entropy: 0.35, rarity: 0.71, same: 'webgl.getParameter' },
     { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', entropy: 0.75, rarity: 1, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' } },
@@ -221,6 +243,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'webgl2.getSupportedExtensions', owner: 'WebGL2RenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', entropy: 0.55, rarity: 0.98, same: 'webgl.getSupportedExtensions' },
     { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6, same: 'webgl.readPixels' },
     { id: 'webgl2.getShaderPrecisionFormat', owner: 'WebGL2RenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', entropy: 0.2, rarity: 0.94, same: 'webgl.getShaderPrecisionFormat' },
+    { id: 'webgl2.getContextAttributes', owner: 'WebGL2RenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9, same: 'webgl.getContextAttributes' },
 
     // WebGPU: asking for an adapter is how WebGPU content starts; its info names the graphics card's
     // maker and architecture, which only fingerprinting needs.
@@ -233,6 +256,10 @@ export const FP_APIS: FpApi[] = [
     { id: 'offlineaudiocontext.startRendering', owner: 'OfflineAudioContext', prop: 'startRendering', category: 'Audio', reveals: 'rendered audio', entropy: 0.45, rarity: 0.93 },
     { id: 'audiobuffer.getChannelData', owner: 'AudioBuffer', prop: 'getChannelData', category: 'Audio', reveals: 'rendered audio', entropy: 0.45, rarity: 0.93, same: 'offlineaudiocontext.startRendering' },
 
+    // Codecs: which audio and video formats the browser plays, which depends on the browser, its
+    // build and the operating system. Video players ask too, for the formats they have.
+    { id: 'media.canPlayType', owner: 'HTMLMediaElement', prop: 'canPlayType', category: 'Codecs', reveals: 'supported media formats', entropy: 0.15, rarity: 0.77 },
+    { id: 'mediasource.isTypeSupported', owner: 'MediaSource', prop: 'isTypeSupported', category: 'Codecs', reveals: 'supported media formats', entropy: 0.15, rarity: 0.77, same: 'media.canPlayType' },
     // Media devices: the list of cameras and microphones is read silently; without permission it
     // only tells how many of each kind there are. getUserMedia asks first.
     { id: 'mediadevices.enumerateDevices', owner: 'MediaDevices', prop: 'enumerateDevices', category: 'MediaDevices', reveals: 'cameras and microphones', entropy: 0.15, rarity: 0.86 },

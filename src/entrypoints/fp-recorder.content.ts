@@ -89,6 +89,13 @@ function getProtoForOwner(owner: FpApiOwner): any {
             return (window as unknown as Record<string, { prototype: unknown } | undefined>)[owner]?.prototype ?? null;
         case 'Date':
             return Date.prototype;
+        case 'Performance':
+            return window.Performance?.prototype ?? null;
+        case 'HTMLMediaElement':
+            return window.HTMLMediaElement?.prototype ?? null;
+        case 'MediaSource':
+            // isTypeSupported is static: on the constructor, not its prototype.
+            return (window as { MediaSource?: unknown }).MediaSource ?? null;
         default:
             return null;
     }
