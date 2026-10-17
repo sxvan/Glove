@@ -28,22 +28,30 @@ export interface Segment {
 }
 
 /**
- * What a ring or bar is made of: its direct children's shares, each in its color. Only the direct
- * children, so a ring always matches the rows right below it. A signal made from APIs keeps its own
- * color instead, as its APIs would be too many to tell apart.
+ * What a ring or bar is made of: its direct children's shares, in their order and size, so a ring
+ * matches the rows right below it. A child standing for a whole score (e.g. the strongest burst) is
+ * drawn in the colors of what it is made of, so each color means the same signal at every level and
+ * expanding a row shows no colors that weren't in the ring above it. A signal made from APIs keeps
+ * its own color, as its APIs would be too many to tell apart.
  */
 export function shareSegments(nodes: ScoreNode[]): Segment[] {
-    const total = nodes.reduce((sum, node) => sum + node.share, 0);
+    const total = nodes.reduce((sum, node) => sum + Math.max(0, node.share), 0);
     if (total <= 0) return [];
 
     // Neighbours of the same color merge into one segment.
     const segments: Segment[] = [];
+    const add = (fraction: number, color: string) => {
+        const last = segments[segments.length - 1];
+        if (last && last.color === color) last.fraction += fraction;
+        else segments.push({ fraction, color });
+    };
     for (const node of nodes) {
         if (node.share <= 0) continue;
-        const color = nodeColor(node);
-        const last = segments[segments.length - 1];
-        if (last && last.color === color) last.fraction += node.share / total;
-        else segments.push({ fraction: node.share / total, color });
+        const fraction = node.share / total;
+        const signals = node.api ? [] : node.children.filter((child) => !child.api);
+        const parts = signals.length > 0 ? shareSegments(signals) : [];
+        if (parts.length > 0) for (const part of parts) add(part.fraction * fraction, part.color);
+        else add(fraction, nodeColor(node));
     }
     return segments;
 }
