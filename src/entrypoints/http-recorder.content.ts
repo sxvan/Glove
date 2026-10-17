@@ -1,8 +1,7 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { createStackReader } from '@/lib/call-stack';
+import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import type { HttpMonkeyEvent } from '@/types/events';
-
-type Hooked<T> = T & { __is_hooked__?: boolean };
 
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
 // XMLHttpRequest, beacons and image pixels.
@@ -16,6 +15,7 @@ export default defineContentScript({
 
     main() {
         readStack = createStackReader(STACK_FRAMES);
+        installDisguise();
         hookFetch();
         hookXHR();
         hookBeacon();
@@ -71,29 +71,28 @@ function isReplaced(current: () => unknown, hook: Function): boolean {
 }
 
 function hookFetch() {
-    const originalFetch: Hooked<typeof fetch> = window.fetch;
-    if (typeof originalFetch !== 'function') {
-        return;
-    }
-
-    if (originalFetch.__is_hooked__) {
+    const originalFetch = window.fetch;
+    if (typeof originalFetch !== 'function' || isDisguised(originalFetch)) {
         return;
     }
 
     const describe = createFetchDescriber();
 
-    const hookedFetch: Hooked<typeof fetch> = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
-        // Recording must never change what the page observes, so its errors are ignored.
-        try {
-            const { url, method, credentials } = describe(input, init);
-            recordHttpEvent('fetch', url, method, credentials, hookedFetch, isReplaced(() => window.fetch, hookedFetch));
-        } catch {}
+    // Method syntax, as for all hooks: no prototype and not callable with new, like the original
+    // (see disguise).
+    const hookedFetch = {
+        fetch(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+            // Recording must never change what the page observes, so its errors are ignored.
+            try {
+                const { url, method, credentials } = describe(input, init);
+                recordHttpEvent('fetch', url, method, credentials, hookedFetch, isReplaced(() => window.fetch, hookedFetch));
+            } catch {}
 
-        return Reflect.apply(originalFetch, this, arguments);
-    };
+            return Reflect.apply(originalFetch, this, arguments);
+        },
+    }.fetch;
 
-    hookedFetch.__is_hooked__ = true;
-    window.fetch = hookedFetch;
+    window.fetch = disguise(hookedFetch, originalFetch);
 }
 
 // Methods the Fetch standard normalizes to uppercase; others (e.g. "patch") are sent as written.
@@ -165,9 +164,9 @@ function hookXHR() {
         return;
     }
 
-    const originalOpen: Hooked<XMLHttpRequest['open']> = proto.open;
-    const originalSend: Hooked<XMLHttpRequest['send']> = proto.send;
-    if (originalOpen.__is_hooked__ || originalSend.__is_hooked__) {
+    const originalOpen = proto.open;
+    const originalSend = proto.send;
+    if (isDisguised(originalOpen) || isDisguised(originalSend)) {
         return;
     }
 
@@ -176,52 +175,55 @@ function hookXHR() {
     // A request is only tracked once the native open() has succeeded, which also proves `this`
     // is a real XHR. send() records only tracked requests, so invalid calls (non-XHR `this`,
     // send without open, repeated send) reach the native method untouched and emit no event.
-    const hookedOpen: Hooked<XMLHttpRequest['open']> = function (this: XMLHttpRequest, method: string, url: string | URL) {
-        const result = Reflect.apply(originalOpen, this, arguments);
+    const hookedOpen = {
+        open(this: XMLHttpRequest, method: string, url: string | URL) {
+            const result = Reflect.apply(originalOpen, this, arguments);
 
-        openedRequests.set(this, {
-            method: method ? String(method) : null,
-            url: url ? resolveUrl(String(url)) : null,
-        });
+            openedRequests.set(this, {
+                method: method ? String(method) : null,
+                url: url ? resolveUrl(String(url)) : null,
+            });
 
-        return result;
-    };
+            return result;
+        },
+    }.open;
 
-    const hookedSend: Hooked<XMLHttpRequest['send']> = function (this: XMLHttpRequest) {
-        const request = openedRequests.get(this);
-        if (request) {
-            openedRequests.delete(this);
-            const wrapped = isReplaced(() => proto.send, hookedSend) || isReplaced(() => proto.open, hookedOpen);
-            recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit', hookedSend, wrapped);
-        }
+    const hookedSend = {
+        send(this: XMLHttpRequest) {
+            const request = openedRequests.get(this);
+            if (request) {
+                openedRequests.delete(this);
+                const wrapped = isReplaced(() => proto.send, hookedSend) || isReplaced(() => proto.open, hookedOpen);
+                recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit', hookedSend, wrapped);
+            }
 
-        return Reflect.apply(originalSend, this, arguments);
-    };
+            return Reflect.apply(originalSend, this, arguments);
+        },
+    }.send;
 
-    hookedOpen.__is_hooked__ = true;
-    hookedSend.__is_hooked__ = true;
-    proto.open = hookedOpen;
-    proto.send = hookedSend;
+    proto.open = disguise(hookedOpen, originalOpen) as XMLHttpRequest['open'];
+    proto.send = disguise(hookedSend, originalSend);
 }
 
 /** navigator.sendBeacon: made for sending data, e.g. as the page is left. */
 function hookBeacon() {
     const proto = window.Navigator?.prototype;
-    const originalBeacon: Hooked<Navigator['sendBeacon']> | undefined = proto?.sendBeacon;
-    if (!proto || typeof originalBeacon !== 'function' || originalBeacon.__is_hooked__) {
+    const originalBeacon = proto?.sendBeacon;
+    if (!proto || typeof originalBeacon !== 'function' || isDisguised(originalBeacon)) {
         return;
     }
 
-    const hookedBeacon: Hooked<Navigator['sendBeacon']> = function (this: Navigator, url: string | URL) {
-        try {
-            recordHttpEvent('beacon', resolveUrl(String(url)), 'POST', 'include', hookedBeacon, isReplaced(() => navigator.sendBeacon, hookedBeacon));
-        } catch {}
+    const hookedBeacon = {
+        sendBeacon(this: Navigator, url: string | URL) {
+            try {
+                recordHttpEvent('beacon', resolveUrl(String(url)), 'POST', 'include', hookedBeacon, isReplaced(() => navigator.sendBeacon, hookedBeacon));
+            } catch {}
 
-        return Reflect.apply(originalBeacon, this, arguments);
-    };
+            return Reflect.apply(originalBeacon, this, arguments) as boolean;
+        },
+    }.sendBeacon;
 
-    hookedBeacon.__is_hooked__ = true;
-    proto.sendBeacon = hookedBeacon;
+    proto.sendBeacon = disguise(hookedBeacon, originalBeacon);
 }
 
 /**
@@ -231,20 +233,25 @@ function hookBeacon() {
  */
 function hookImagePixels() {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
-    const originalSet: Hooked<(this: HTMLImageElement, value: string) => void> | undefined = descriptor?.set;
-    if (!descriptor || !originalSet || originalSet.__is_hooked__) {
+    const originalSet = descriptor?.set;
+    if (!descriptor || typeof originalSet !== 'function' || isDisguised(originalSet)) {
         return;
     }
 
-    const hookedSet: Hooked<(this: HTMLImageElement, value: string) => void> = function (this: HTMLImageElement, value: string) {
-        try {
-            const url = resolveUrl(String(value));
-            if (url && url.includes('?')) recordHttpEvent('image', url, 'GET', 'include', hookedSet, false);
-        } catch {}
+    // A setter of an object literal, like the browser's own: named "set src", without prototype.
+    const hookedSet = Object.getOwnPropertyDescriptor(
+        {
+            set src(value: string) {
+                try {
+                    const url = resolveUrl(String(value));
+                    if (url && url.includes('?')) recordHttpEvent('image', url, 'GET', 'include', hookedSet, false);
+                } catch {}
 
-        return Reflect.apply(originalSet, this, arguments);
-    };
+                Reflect.apply(originalSet, this, [value]);
+            },
+        },
+        'src'
+    )!.set!;
 
-    hookedSet.__is_hooked__ = true;
-    Object.defineProperty(HTMLImageElement.prototype, 'src', { ...descriptor, set: hookedSet });
+    Object.defineProperty(HTMLImageElement.prototype, 'src', { ...descriptor, set: disguise(hookedSet, originalSet) });
 }

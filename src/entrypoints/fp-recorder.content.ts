@@ -1,9 +1,11 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { FP_APIS, type FpApiOwner, type SpecialRead } from '@/lib/fp-apis';
 import { createStackReader, type StackLocation } from '@/lib/call-stack';
+import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import type { FpMonkeyEvent } from '@/types/events';
 
-type HookableFn = ((...args: any[]) => any) & { __is_hooked__?: boolean };
+// Captured before page scripts run, so a page replacing it can't see the hooks' calls.
+const reflectApply = Reflect.apply;
 
 // Runs in the page's main world so it can wrap the page's own fingerprinting APIs.
 export default defineContentScript({
@@ -25,6 +27,7 @@ let nativeSetTimeout: (handler: () => void, timeout: number) => number;
 let readStack: (hook: Function) => StackLocation[];
 
 function installFpHooks() {
+    installDisguise();
     nativeSetTimeout = window.setTimeout.bind(window);
     readStack = createStackReader(STACK_FRAMES);
     isConnected = nativeGetter(Node.prototype, 'isConnected');
@@ -144,25 +147,23 @@ function hookAny(proto: any, prop: string, id: string) {
 }
 
 function hookMethod(proto: any, prop: string, id: string) {
-    const original: HookableFn | undefined = proto && proto[prop];
-    if (typeof original !== 'function') {
-        return;
-    }
-
-    if (original.__is_hooked__) {
+    const original: unknown = proto && proto[prop];
+    if (typeof original !== 'function' || isDisguised(original)) {
         return;
     }
 
     // Particular reads through this method, recorded under their own id (e.g. the GPU name).
     const reads = FP_APIS.filter((api) => api.readOf?.api === id);
 
-    const wrapped: HookableFn = function (this: unknown, ...args: unknown[]) {
-        recordFpEvent(reads.find((read) => isSpecialRead(read.readOf!.read, this, args))?.id ?? id, wrapped);
-        return original.apply(this, args);
-    };
+    // Method syntax: like the browser's own methods, it has no prototype and can't be called with new.
+    const wrapped = {
+        [prop](this: unknown, ...args: unknown[]) {
+            recordFpEvent(reads.find((read) => isSpecialRead(read.readOf!.read, this, args))?.id ?? id, wrapped);
+            return reflectApply(original, this, args);
+        },
+    }[prop]!;
 
-    wrapped.__is_hooked__ = true;
-    proto[prop] = wrapped;
+    proto[prop] = disguise(wrapped, original);
 }
 
 // ---------- particular reads (see SpecialRead) ----------
@@ -222,25 +223,25 @@ function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | 
 
 function hookGetter(proto: any, prop: string, id: string) {
     const descriptor = Object.getOwnPropertyDescriptor(proto, prop);
-    const original: HookableFn | undefined = descriptor?.get;
-    if (!original || typeof original !== 'function') {
+    const original = descriptor?.get;
+    if (typeof original !== 'function' || isDisguised(original)) {
         return;
     }
 
-    if (original.__is_hooked__) {
-        return;
-    }
-
-    const wrapped: HookableFn = function (this: unknown) {
-        recordFpEvent(id, wrapped);
-        return original.apply(this);
-    };
-
-    wrapped.__is_hooked__ = true;
+    // A getter of an object literal, like the browser's own: named "get width", without prototype.
+    const wrapped = Object.getOwnPropertyDescriptor(
+        {
+            get [prop]() {
+                recordFpEvent(id, wrapped);
+                return reflectApply(original, this, []);
+            },
+        },
+        prop
+    )!.get!;
 
     Object.defineProperty(proto, prop, {
         ...descriptor,
-        get: wrapped,
+        get: disguise(wrapped, original),
     });
 }
 
