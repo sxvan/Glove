@@ -5,7 +5,8 @@
 //    bridge (their events, counted by listening for them in the page).
 // 2. In the background: a CPU profile of the service worker while the sites load, its heaviest
 //    functions, and its heap. The profiles are saved to open in DevTools (Performance panel).
-// 3. Over time: one page left open for a few minutes, the background's heap sampled meanwhile.
+// 3. Over time: one site used for a few minutes (scrolling, following links), the background's
+//    heap sampled meanwhile and its CPU profiled.
 //
 // usage: node profile.mjs [--ext <build dir>] [--runs N] [--wait seconds] [--minutes M] [site ...]
 // Build first (pnpm run build here: unminified, into .output/profile); results go to results/<time>/.
@@ -147,25 +148,61 @@ function summarizeProfile(profile) {
     return { backgroundBusyMs: +busy.toFixed(1), backgroundTop: top };
 }
 
-/** One page open for `minutes`, sampling the background's and the page's heap every 30 seconds. */
+/**
+ * One site used for `minutes` like a visitor would: scrolling every 15 seconds and following a
+ * random link to the same site every 30, sampling the background's and the page's heap every 30
+ * seconds, with a CPU profile of the background over the whole run.
+ */
 async function memoryOverTime(site) {
     const { browser, worker } = await launch(true);
     const workerSession = await worker.createCDPSession();
+    await workerSession.send('Profiler.enable');
+    // Coarser sampling than for single loads: the run is long.
+    await workerSession.send('Profiler.setSamplingInterval', { interval: 1000 });
+    await workerSession.send('Profiler.start');
     const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
     await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    const pageSession = await page.createCDPSession();
-    await pageSession.send('Performance.enable');
+    const origin = new URL(page.url()).origin;
     const samples = [];
-    for (let t = 0; t <= minutes * 60; t += 30) {
-        if (t > 0) await new Promise((r) => setTimeout(r, 30000));
-        const { usedSize } = await workerSession.send('Runtime.getHeapUsage');
-        const { metrics } = await pageSession.send('Performance.getMetrics');
-        const pageHeap = metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0;
-        samples.push({ second: t, backgroundHeapMb: +(usedSize / 1e6).toFixed(2), pageHeapMb: +(pageHeap / 1e6).toFixed(2) });
-        console.log(`   ${String(t).padStart(4)} s  background ${samples.at(-1).backgroundHeapMb} MB  page ${samples.at(-1).pageHeapMb} MB`);
+    let clicks = 0;
+    const started = Date.now();
+    for (let tick = 0; tick <= minutes * 4; tick++) {
+        if (tick > 0) await new Promise((r) => setTimeout(r, 15000));
+        await page.mouse.wheel({ deltaY: 900 }).catch(() => {});
+        if (tick > 0 && tick % 2 === 0) {
+            // A random visible link to the same site, opened in this tab.
+            const followed = await page
+                .evaluate((origin) => {
+                    const links = [...document.querySelectorAll('a[href]')].filter((a) => {
+                        const box = a.getBoundingClientRect();
+                        return a.href.startsWith(origin) && box.width > 0 && box.height > 0 && box.top >= 0 && box.top < innerHeight;
+                    });
+                    const link = links[Math.floor(Math.random() * links.length)];
+                    if (!link) return null;
+                    link.removeAttribute('target');
+                    link.click();
+                    return link.href;
+                }, origin)
+                .catch(() => null);
+            if (followed) clicks += 1;
+        }
+        if (tick % 2 === 0) {
+            const { usedSize } = await workerSession.send('Runtime.getHeapUsage');
+            const pageHeap = await page.evaluate(() => performance.memory?.usedJSHeapSize ?? 0).catch(() => 0);
+            const second = Math.round((Date.now() - started) / 1000);
+            samples.push({ second, clicks, backgroundHeapMb: +(usedSize / 1e6).toFixed(2), pageHeapMb: +(pageHeap / 1e6).toFixed(2) });
+            console.log(`   ${String(second).padStart(4)} s  ${String(clicks).padStart(2)} clicks  background ${samples.at(-1).backgroundHeapMb} MB  page ${samples.at(-1).pageHeapMb} MB`);
+        }
     }
+    const { profile } = await workerSession.send('Profiler.stop');
+    const name = `long-${new URL(site).hostname}.cpuprofile`;
+    fs.writeFileSync(path.join(outDir, name), JSON.stringify(profile));
+    const summary = summarizeProfile(profile);
+    console.log(`   background busy ${summary.backgroundBusyMs} ms over ${Math.round((Date.now() - started) / 1000)} s`);
+    for (const { fn, ms } of summary.backgroundTop.slice(0, 6)) console.log(`      ${String(ms).padStart(7)} ms  ${fn}`);
     await browser.close();
-    return { site, samples };
+    return { site, samples, clicks, profileFile: name, ...summary };
 }
 
 const average = (list, key) => list.reduce((sum, r) => sum + (r[key] ?? 0), 0) / Math.max(1, list.length);
@@ -189,7 +226,7 @@ for (const site of sites) {
 
 let memory = null;
 if (minutes > 0) {
-    console.log(`== memory over ${minutes} minutes on ${sites[0]}`);
+    console.log(`== ${minutes} minutes of use on ${sites[0]}`);
     memory = await memoryOverTime(sites[0]);
 }
 

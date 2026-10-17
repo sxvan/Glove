@@ -22,7 +22,9 @@ What it measures:
 - **In the background**: a CPU profile of the service worker while each site loads, its busy time,
   its heaviest functions and its heap. The `.cpuprofile` files open in DevTools (Performance panel,
   "Load profile").
-- **Over time**: the first site left open, the background's and the page's heap every 30 seconds.
+- **Over time**: the first site used for `--minutes` like a visitor would (scrolling every 15 seconds,
+  following a random link to the same site every 30), the heaps every 30 seconds and a CPU profile of
+  the background over the whole run.
 
 Results go to `results/<time>/` (ignored by git). Single loads vary a lot between visits; compare
 averages over several runs, and the same sites before and after a change.
