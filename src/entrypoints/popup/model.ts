@@ -495,6 +495,8 @@ export interface ScoreNode {
     shareTo: string;
     /** What the node was made from, e.g. the strongest script's name; empty if nothing. */
     detail: string;
+    /** True when detail is a script's URL path, shortened keeping its file name (see MiddleTruncate). */
+    detailPath?: boolean;
     /** The tooltip: how the share came about. */
     note: string;
     /** An API id, shown in monospace. */
@@ -574,13 +576,15 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
     return scoreTree('page', document.fpMetrics, total, (key) => {
         if (key === 'strongestScript') {
             const script = [...document.scripts].sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
-            return script ? { detail: describeScript(script.name, document.url).name, children: scriptTree(script) } : null;
+            if (!script) return null;
+            const { name, path } = describeScript(script.name, document.url);
+            return { detail: name, detailPath: path, children: scriptTree(script) };
         }
         if (key === 'strongestBurst') {
             // An older background may not send the page's bursts.
             const burst = [...(document.spikes ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
             if (!burst) return null;
-            const detail = `${plural(burst.distinctFpApis.length, 'fingerprinting API')} within ${duration(burst.durationMs)}, all scripts together`;
+            const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}, all scripts together`;
             return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
         }
         return null;
@@ -593,7 +597,7 @@ function scriptTree(script: ScriptSnapshot): ScoreNode[] {
         if (key !== 'strongestBurst') return null;
         const burst = strongestSpike(script.fpSpikes);
         if (!burst) return null;
-        const detail = `${plural(burst.distinctFpApis.length, 'fingerprinting API')} within ${duration(burst.durationMs)}`;
+        const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}`;
         return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
     });
 }
@@ -612,7 +616,7 @@ function scoreTree(
     level: ScoreLevel,
     metrics: MetricsSnapshot | null | undefined,
     total: number,
-    expand: (key: string) => { detail: string; children: ScoreNode[] } | null = () => null
+    expand: (key: string) => { detail: string; detailPath?: boolean; children: ScoreNode[] } | null = () => null
 ): ScoreNode[] {
     const parts = metrics?.signals ?? {};
     const signals = Object.entries(SIGNALS[level]).flatMap(([key, signal]) => {
@@ -631,17 +635,18 @@ function scoreTree(
 
     const nodes = signals.map(({ key, signal, part, alone }): ScoreNode => {
         const share = reached > 0 ? total * (added.get(key)! / reached) : 0;
-        const source = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label) : expand(key);
+        const source: { detail: string; detailPath?: boolean; children: ScoreNode[] } | null = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label) : expand(key);
         return {
             key,
-            label: signal.label,
+            label: treeLabel(signal.label),
             value: part.value,
             points: part.apis ? { total: part.apis.total, fullAt: part.apis.fullAt } : undefined,
             share,
             shownShare: share,
             shareTo: level,
             detail: source?.detail ?? '',
-            note: `Accounts for ${share.toFixed(2)} of the ${total.toFixed(2)} above: what it adds on top of the stronger signals. Alone it would give ${alone.toFixed(2)}: up to ${Math.round(part.strength * 100)}% × ${part.value.toFixed(2)} observed.`,
+            detailPath: source?.detailPath,
+            note: `Accounts for ${score(share)} of the ${score(total)} above: what it adds on top of the stronger signals. Alone it would give ${score(alone)}: up to ${Math.round(part.strength * 100)}% × ${score(part.value)}% observed.`,
             children: source?.children ?? [],
         };
     });
@@ -668,6 +673,19 @@ function withShownShares(nodes: ScoreNode[], total: number): ScoreNode[] {
 }
 
 // Short names of the signals made from APIs, for "+0.10 to unusual" under an API's share.
+/** A score, share or signal value from 0 to 1 as shown, on the 0–100 scale of the score rings: 0.94 as 94. */
+function score(x: number): number {
+    return Math.round(x * 100);
+}
+
+/**
+ * A signal's name in the score tree: "fingerprinting" left out before APIs ("Unusual APIs", "APIs
+ * from one place"), as the tree is for those who look closer and has little room.
+ */
+function treeLabel(label: string): string {
+    return capitalize(label.replace(/fingerprinting APIs/i, 'APIs'));
+}
+
 const SHORT_NAMES: Record<string, string> = {
     identifying: 'identifying',
     unusualApis: 'unusual',
@@ -698,10 +716,10 @@ function apisSource(sum: ApisSum, total: number, signal: string): { detail: stri
         const share = shares.get(api.id) ?? 0;
         const adds =
             sum.measure === 'rarity' && api.amount !== api.basis ? `${measure} ${number(api.basis)}, counts ${number(api.amount)}` : `${measure} ${number(api.basis)}`;
-        let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} points that make it full: +${share.toFixed(2)}.`;
+        let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} points that make it full: +${score(share)}.`;
         if (api.countedWith) note = `Same information as ${api.countedWith}, which counts instead.`;
         else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)
-            note = `Adds ${number(api.amount)} points, but the APIs adding more already filled it up to full: +${share.toFixed(2)}.`;
+            note = `Adds ${number(api.amount)} points, but the APIs adding more already filled it up to full: +${score(share)}.`;
         return {
             key: api.id,
             label: api.id,
@@ -715,7 +733,7 @@ function apisSource(sum: ApisSum, total: number, signal: string): { detail: stri
             children: [],
         };
     });
-    return { detail: `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'fingerprinting API')}`, children: withShownShares(children, total) };
+    return { detail: `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'API')}`, children: withShownShares(children, total) };
 }
 
 export interface RequestLine {

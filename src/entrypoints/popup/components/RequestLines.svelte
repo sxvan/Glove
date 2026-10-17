@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { RequestLine } from '../model';
+    import MiddleTruncate from './MiddleTruncate.svelte';
 
     const SHOWN = 3;
 
@@ -8,7 +9,7 @@
 
 <ul>
     {#each requests.slice(0, SHOWN) as req, i (i)}
-        <li><span class="method">{req.method}</span> {req.path}</li>
+        <li title={req.path}><span class="method">{req.method}</span><MiddleTruncate text={req.path} path plain /></li>
     {/each}
     {#if requests.length > SHOWN}
         <li class="more">and {requests.length - SHOWN} more</li>
@@ -27,13 +28,16 @@
         color: var(--muted);
     }
 
+    /* Method, then the path shortened in the middle keeping its file name (see MiddleTruncate). */
     li {
-        overflow: hidden;
-        text-overflow: ellipsis;
+        display: flex;
+        gap: 1ch;
+        min-width: 0;
         white-space: nowrap;
     }
 
     .method {
+        flex-shrink: 0;
         color: var(--text);
     }
 

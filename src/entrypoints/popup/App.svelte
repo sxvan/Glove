@@ -5,6 +5,7 @@
     import type { TabSnapshot } from '@/types/snapshot';
     import CategoryCard from './components/CategoryCard.svelte';
     import DetailHeader from './components/DetailHeader.svelte';
+    import MiddleTruncate from './components/MiddleTruncate.svelte';
     import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type Category } from './model';
     import CnameDetail from './screens/CnameDetail.svelte';
     import DnsDetail from './screens/DnsDetail.svelte';
@@ -70,7 +71,7 @@
 </script>
 
 <header>
-    <h1 title={url ?? ''}>{host || 'Web Tracking Detector'}</h1>
+    <h1 title={url ?? ''}><MiddleTruncate text={host || 'Web Tracking Detector'} /></h1>
     <div class="actions">
         {#if status === 'ready'}<span class="live" title="Updates while the page is open">Live</span>{/if}
         <button class="settings" type="button" title="Scoring settings" aria-label="Scoring settings" onclick={() => browser.runtime.openOptionsPage()}>
@@ -130,12 +131,11 @@
         padding: 16px 16px 8px;
     }
 
+    /* One line, shortened in the middle when too long (see MiddleTruncate). */
     h1 {
+        min-width: 0;
         margin: 0;
         font-size: 16px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
 
     .actions {

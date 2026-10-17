@@ -23,7 +23,8 @@
     // - anything else keeps its last `tail` characters: "resources.digital-clo…medallia.com".
     // CSS has no ellipsis in the middle, and two boxes would leave a gap after it, so the text is
     // fitted to the width here.
-    let { text, path = false, tail = 12 }: { text: string; path?: boolean; tail?: number } = $props();
+    // `plain` keeps a path in one color, for text that is toned down as a whole.
+    let { text, path = false, tail = 12, plain = false }: { text: string; path?: boolean; tail?: number; plain?: boolean } = $props();
 
     let box = $state<HTMLElement>();
     let width = $state(0);
@@ -98,7 +99,7 @@
 
 <!-- A path's folders and parameters are toned down, so the file name stands out. -->
 <span class="truncate" bind:this={box} bind:clientWidth={width}
-    >{#if path && folders}<span class="folders">{folders}</span>{/if}{file}{#if params}<span class="folders">{params}</span>{/if}</span
+    >{#if path && folders}<span class="folders" class:plain>{folders}</span>{/if}{file}{#if params}<span class="folders" class:plain>{params}</span>{/if}</span
 >
 
 <style>
@@ -112,5 +113,9 @@
 
     .folders {
         color: var(--muted);
+    }
+
+    .folders.plain {
+        color: inherit;
     }
 </style>

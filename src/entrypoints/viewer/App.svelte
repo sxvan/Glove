@@ -2,6 +2,7 @@
     import { onMount, tick } from 'svelte';
     import { js_beautify } from 'js-beautify/js/lib/beautify.js';
     import { parseViewerQuery, type ViewerApi } from '@/lib/script-viewer';
+    import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
     import { plural } from '../popup/format';
     import { highlightWithLocations } from './highlight';
     import { inlineScripts } from './inline-scripts';
@@ -128,9 +129,11 @@
 
 <header>
     <div class="title">
-        <h1>{params?.name ?? 'Script viewer'}</h1>
+        <h1 title={params?.name}><MiddleTruncate text={params?.name ?? 'Script viewer'} path={!!params && !params.inline} /></h1>
         {#if params}
-            <a class="original" href={params.url} target="_blank" rel="noopener noreferrer">{params.url}&nbsp;↗</a>
+            <a class="original" href={params.url} title={params.url} target="_blank" rel="noopener noreferrer"
+                ><MiddleTruncate text={params.url} path plain /><span class="arrow">&nbsp;↗</span></a
+            >
         {/if}
     </div>
 
@@ -245,15 +248,19 @@
         font-size: 16px;
     }
 
+    /* The script's URL, shortened in the middle keeping its file name (see MiddleTruncate), then ↗. */
     .original {
-        display: block;
-        overflow: hidden;
+        display: flex;
+        min-width: 0;
         color: var(--muted);
         font-family: var(--mono);
         font-size: 12px;
         text-decoration: none;
-        text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .arrow {
+        flex-shrink: 0;
     }
 
     .original:hover {
