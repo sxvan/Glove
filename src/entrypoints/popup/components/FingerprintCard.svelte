@@ -34,7 +34,7 @@
         // The most identifying kinds first, so those named are the ones that matter most.
         const kinds = listWords(
             script.learned.map(({ kind }) => kind.toLowerCase()),
-            SHOWN_ITEMS
+            SHOWN_KINDS
         );
         const list: Statement[] = [
             {
@@ -59,13 +59,15 @@
         return list;
     }
 
-    // Items named in a list under a statement (kinds of detail, sites); the rest as "and N more".
-    const SHOWN_ITEMS = 6;
+    // Items named in a list under a statement, the rest as "and N more": kinds of detail are short
+    // words, sites long names, so fewer of them fit in about two lines.
+    const SHOWN_KINDS = 6;
+    const SHOWN_SITES = 3;
 
     /**
      * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to
      * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com", like "About …"
-     * under what it read; past SHOWN_ITEMS, "and N more". A single site is named in the line itself,
+     * under what it read; past SHOWN_SITES, "and N more". A single site is named in the line itself,
      * with the alias it went through, if any. Only requests from a burst until shortly after it count
      * (see fp-analysis); the requests themselves are for a screen of their own.
      */
@@ -95,7 +97,7 @@
             text: ['Sent ', { value: total }, ' to ', { value: plural(sites.length, 'site') }, ' right after reading'],
             detail: `To ${listWords(
                 sites.map(({ site }) => site),
-                SHOWN_ITEMS
+                SHOWN_SITES
             )}`,
         };
     }
