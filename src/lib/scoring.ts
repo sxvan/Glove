@@ -85,14 +85,14 @@ export const SIGNALS = {
         identifying: {
             label: 'Identifying information',
             description:
-                'How much identifying information the page (all scripts together) reads: the entropy of the different fingerprinting APIs it reads, added up. Those revealing the same information count once.',
-            strength: 0,
+                'How much identifying information the page reads beyond its strongest script: the entropy of the different fingerprinting APIs the other scripts read, added up. A weak fallback for collecting split over several scripts: ordinary pages also read a fair amount through their many scripts.',
+            strength: 0.15,
         },
         unusualApis: {
             label: 'Unusual fingerprinting APIs',
             description:
-                'How many fingerprinting APIs the page (all scripts together) reads that ordinary code rarely needs: their rarity added up, rare ones counting more. Reading them shows intent even when they reveal little.',
-            strength: 0,
+                'How many fingerprinting APIs the page reads beyond its strongest script that ordinary code rarely needs: their rarity added up, rare ones counting more. A fallback for collecting split over several scripts, each looking small on its own.',
+            strength: 0.3,
         },
         strongestScript: { label: 'Strongest script', description: 'The score of the most suspicious script.', strength: 1 },
         strongestBurst: { label: 'Strongest burst', description: 'The score of the most suspicious burst of calls on the page, across all its scripts: catches collecting split over several scripts.', strength: 0.3 },
@@ -149,8 +149,19 @@ export interface Cutoffs {
     likely: number;
 }
 
-/** The levels that score which fingerprinting APIs were read. */
-export type ApisLevel = 'burst' | 'script' | 'page';
+/**
+ * The levels that score which fingerprinting APIs were read. A page burst is a burst of calls
+ * across all of a page's scripts: scored like a script's burst, but full at more, as many scripts
+ * starting up together read more than one script does.
+ */
+export type ApisLevel = 'burst' | 'pageBurst' | 'script' | 'page';
+
+export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
+    page: 'Page',
+    script: 'Script',
+    pageBurst: 'Burst of calls across the page',
+    burst: 'Burst of calls in a script',
+};
 
 /** Where the API signals count as full (value 1): the added-up entropy and rarity. */
 export interface ApisFullAt {
@@ -177,6 +188,8 @@ export interface ScoringSettings {
     rarityPower: number;
     /** Per level, where the API signals count as full. */
     fullAt: Record<ApisLevel, ApisFullAt>;
+    /** What counts as a burst of calls, and which requests count as sent right after one. */
+    bursts: BurstDetection;
 }
 
 export const DEFAULT_SETTINGS: ScoringSettings = {
@@ -184,13 +197,20 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         Object.entries(SIGNALS).map(([level, signals]) => [level, Object.fromEntries(Object.entries(signals).map(([key, s]) => [key, s.strength]))])
     ) as ScoringSettings['strengths'],
     cutoffs: {
-        fingerprinting: { possible: 0.35, likely: 0.75 },
+        // From 30, analytics and bot checks collecting device details (Bing, Dynatrace, reCAPTCHA, about
+        // 34 to 37) are Possible together; known collectors score 80 and more, ordinary heavy scripts
+        // (YouTube, video players) up to 64.
+        fingerprinting: { possible: 0.3, likely: 0.75 },
         hostname: { possible: 0.3, likely: 0.6 },
     },
     apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { entropy: api.entropy, rarity: api.rarity }])),
     rarityPower: 4,
     fullAt: {
         burst: { identifying: 4.5, unusual: 5 },
+        // Many scripts starting up together read more than one script's burst: ordinary pages reach
+        // up to 5.1 identifying and 3.4 unusual (GitHub, from 20 APIs where its strongest script's
+        // burst read 4), a collection split over scripts in one go about 9 and 10.
+        pageBurst: { identifying: 9, unusual: 10 },
         // Higher than for bursts: over a whole script they are a fallback for collecting without
         // bursts, and ordinary scripts read far more over their lifetime than in one burst.
         // They count only what a script read beyond its strongest burst. Both are full at about what large
@@ -199,8 +219,14 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         // only the unusual APIs tell them apart. Together they stay just below Likely
         // (1 - 0.85 × 0.3): collecting spread out alone is Possible.
         script: { identifying: 10, unusual: 10 },
-        page: { identifying: 20, unusual: 22 },
+        // Beyond the strongest script: ordinary pages reach up to about 3 unusual (GitHub, from several
+        // of its own scripts) and 4.3 identifying (CNN, ESPN), a collection like FingerprintJS's
+        // split over three scripts about 10 and 9.
+        page: { identifying: 10, unusual: 12 },
     },
+    // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
+    // page responsive; measured collections took 13–362 ms with pauses up to 190 ms.
+    bursts: { maxGapMs: 200, maxDurationMs: 1000, minDistinctApis: 4, requestWindowMs: 1000 },
 };
 
 // ---------- limits ----------
@@ -211,24 +237,45 @@ export const LIMITS = {
     request: { parameters: 5, bodyBytes: 4096 },
 } as const;
 
-/**
- * What counts as a burst of calls: one collection of details (see spike-detection). Fingerprinters
- * collect early and at once, pausing only for asynchronous APIs or to keep the page responsive;
- * measured collections took 13–362 ms with pauses up to 190 ms.
- */
-export const BURST_DETECTION = {
+/** What counts as a burst of calls: one collection of details (see spike-detection). */
+export interface BurstDetection {
     /** A burst goes on while calls are at most this many milliseconds apart. */
-    maxGapMs: 200,
+    maxGapMs: number;
     /** Longer runs are split, so code reading the same details over and over isn't one endless burst. */
-    maxDurationMs: 1000,
+    maxDurationMs: number;
     /** Fewer different APIs are a couple of reads, not a collection. */
-    minDistinctApis: 4,
-    /**
-     * Requests the script makes up to this many milliseconds after a burst count as sent right after
-     * it; collected data is often sent only after processing (Kasada: 641 ms).
-     */
-    requestWindowMs: 1000,
-};
+    minDistinctApis: number;
+    /** Requests the script makes up to this many milliseconds after a burst count as sent right after it. */
+    requestWindowMs: number;
+}
+
+/** The burst detection settings with their labels and explanations, in the order the options page lists them. */
+export const BURST_DETECTION_FIELDS: { key: keyof BurstDetection; label: string; description: string; unit: string }[] = [
+    {
+        key: 'maxGapMs',
+        label: 'Pause between calls',
+        description: 'A burst goes on while calls are at most this far apart. Collectors pause for asynchronous APIs and to keep the page responsive: up to 190 ms measured.',
+        unit: 'ms',
+    },
+    {
+        key: 'maxDurationMs',
+        label: 'Longest burst',
+        description: "Longer runs are split, so code reading the same details over and over isn't one endless burst. Measured collections took 13 to 362 ms.",
+        unit: 'ms',
+    },
+    {
+        key: 'minDistinctApis',
+        label: 'Fewest APIs',
+        description: 'Runs reading fewer different fingerprinting APIs are a couple of reads, not a collection.',
+        unit: 'APIs',
+    },
+    {
+        key: 'requestWindowMs',
+        label: 'Requests right after',
+        description: 'Requests with data a script makes up to this long after a burst count as sent right after reading. Collected data is often sent only after processing it (Kasada: 641 ms).',
+        unit: 'ms',
+    },
+];
 
 // ---------- combining ----------
 
@@ -367,8 +414,25 @@ export async function loadScoringSettings(): Promise<ScoringSettings> {
     return withDefaults(stored);
 }
 
+/**
+ * Stores only what differs from the defaults, so a changed default (e.g. after recalibrating)
+ * still reaches everyone who didn't set that value themselves.
+ */
 export function saveScoringSettings(settings: ScoringSettings): Promise<void> {
-    return browser.storage.local.set({ [STORAGE_KEY]: settings });
+    return browser.storage.local.set({ [STORAGE_KEY]: changedFrom(DEFAULT_SETTINGS, settings) ?? {} });
+}
+
+/** The parts of `value` that differ from `base`, as a nested object; undefined if none do. */
+function changedFrom(base: unknown, value: unknown): unknown {
+    if (typeof value === 'object' && value !== null && typeof base === 'object' && base !== null) {
+        const changed: Record<string, unknown> = {};
+        for (const [key, inner] of Object.entries(value)) {
+            const difference = changedFrom((base as Record<string, unknown>)[key], inner);
+            if (difference !== undefined) changed[key] = difference;
+        }
+        return Object.keys(changed).length > 0 ? changed : undefined;
+    }
+    return value === base ? undefined : value;
 }
 
 export function resetScoringSettings(): Promise<void> {
@@ -403,8 +467,10 @@ function withDefaults(stored: Partial<ScoringSettings> | undefined): ScoringSett
         rarityPower: stored?.rarityPower ?? DEFAULT_SETTINGS.rarityPower,
         fullAt: {
             burst: { ...DEFAULT_SETTINGS.fullAt.burst, ...stored?.fullAt?.burst },
+            pageBurst: { ...DEFAULT_SETTINGS.fullAt.pageBurst, ...stored?.fullAt?.pageBurst },
             script: { ...DEFAULT_SETTINGS.fullAt.script, ...stored?.fullAt?.script },
             page: { ...DEFAULT_SETTINGS.fullAt.page, ...stored?.fullAt?.page },
         },
+        bursts: { ...DEFAULT_SETTINGS.bursts, ...stored?.bursts },
     };
 }

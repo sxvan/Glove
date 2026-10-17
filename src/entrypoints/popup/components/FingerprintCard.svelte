@@ -120,7 +120,8 @@
 
     <ul class="statements">
         {#each statements() as statement (statement.key)}
-            <SignalLine text={statement.text} tone="info" detail={statement.detail} lead />
+            <!-- Detail screens per statement are to come; the column is there already. -->
+            <SignalLine text={statement.text} tone="info" detail={statement.detail} lead details />
         {/each}
     </ul>
 </article>

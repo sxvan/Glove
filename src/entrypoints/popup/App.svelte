@@ -131,8 +131,10 @@
         padding: 16px 16px 8px;
     }
 
-    /* One line, shortened in the middle when too long (see MiddleTruncate). */
+    /* One line, taking the room the actions leave, shortened in the middle when too long (see
+       MiddleTruncate). */
     h1 {
+        flex: 1;
         min-width: 0;
         margin: 0;
         font-size: 16px;

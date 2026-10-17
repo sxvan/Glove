@@ -657,17 +657,24 @@ function scoreTree(
 /**
  * Rounds the shares of siblings to hundredths so that they add up to their parent's rounded value
  * (largest remainder): rounded one by one, 0.985 and 0.005 would show as 0.98 and 0.00 under 0.99.
+ * A share never shows above the node's own rounded ring when it isn't above it (a strongest script
+ * giving its whole 0.364 shows +36 under a ring of 36, not +37); others take the hundredth then.
  */
 function withShownShares(nodes: ScoreNode[], total: number): ScoreNode[] {
     const cents = nodes.map((node) => node.share * 100);
     const shown = cents.map(Math.floor);
+    const ceiling = nodes.map((node) => (node.share <= node.value ? Math.round(node.value * 100) : Infinity));
     let missing = Math.round(total * 100) - shown.reduce((sum, x) => sum + x, 0);
-    // The largest remainders get the missing hundredths.
+    // The largest remainders get the missing hundredths: first those staying within their ring,
+    // then, if some are still missing, any.
     const byRemainder = cents.map((x, i) => ({ i, rest: x - Math.floor(x) })).sort((a, b) => b.rest - a.rest);
-    for (const { i } of byRemainder) {
-        if (missing <= 0) break;
-        shown[i]! += 1;
-        missing -= 1;
+    for (const capped of [true, false]) {
+        for (const { i } of byRemainder) {
+            if (missing <= 0) break;
+            if (capped && shown[i]! + 1 > ceiling[i]!) continue;
+            shown[i]! += 1;
+            missing -= 1;
+        }
     }
     return nodes.map((node, i) => ({ ...node, shownShare: shown[i]! / 100 }));
 }

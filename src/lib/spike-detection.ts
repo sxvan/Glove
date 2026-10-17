@@ -1,14 +1,14 @@
 import type { FpSpike } from '@/types/analysis';
 import type { FpMonkeyEvent } from '@/types/events';
-import { BURST_DETECTION } from './scoring';
+import type { BurstDetection } from './scoring';
 
 /**
  * Finds bursts of fingerprinting calls: runs of calls at most `maxGapMs` apart, split after
- * `maxDurationMs`, that read at least `minDistinctApis` different APIs (see BURST_DETECTION). Sorts
+ * `maxDurationMs`, that read at least `minDistinctApis` different APIs (see BurstDetection). Sorts
  * `events` in place by timestamp.
  */
-export function detectSpikes(events: FpMonkeyEvent[]): FpSpike[] {
-    const { maxGapMs, maxDurationMs, minDistinctApis } = BURST_DETECTION;
+export function detectSpikes(events: FpMonkeyEvent[], detection: BurstDetection): FpSpike[] {
+    const { maxGapMs, maxDurationMs, minDistinctApis } = detection;
     events.sort((a, b) => a.timeStamp - b.timeStamp);
 
     const spikes: FpSpike[] = [];

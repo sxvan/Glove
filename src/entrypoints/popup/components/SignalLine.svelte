@@ -2,7 +2,9 @@
     // A line in a card's list of statements, with an icon for its tone: an info icon for a plain
     // fact ("Read 40 fingerprinting APIs"), a warning triangle for a sign of fingerprinting. With a
     // detail (text, or content such as a list of requests) below it. As `lead`, it is one of a card's
-    // main statements: it stands out a little, also without a detail.
+    // main statements: it stands out a little, also without a detail. With `onDetails`, a column on
+    // the right holds "Details ›", leading to a screen about the statement; `details` reserves that
+    // column, so lines with and without it keep the same width.
     import type { Snippet } from 'svelte';
     import type { TextPart } from '../text-parts';
 
@@ -11,13 +13,23 @@
         tone = 'warning',
         detail = '',
         lead = false,
+        details = false,
+        onDetails,
         children,
-    }: { text: string | TextPart[]; tone?: 'info' | 'warning'; detail?: string; lead?: boolean; children?: Snippet } = $props();
+    }: {
+        text: string | TextPart[];
+        tone?: 'info' | 'warning';
+        detail?: string;
+        lead?: boolean;
+        details?: boolean;
+        onDetails?: () => void;
+        children?: Snippet;
+    } = $props();
 
     const parts = $derived(typeof text === 'string' ? [text] : text);
 </script>
 
-<li class="signal tone-{tone}" class:lead>
+<li class="signal tone-{tone}" class:lead class:details>
     {#if tone === 'info'}
         <svg viewBox="0 0 16 16" width="14" height="14" aria-label="Info">
             <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" />
@@ -36,12 +48,15 @@
         {#if detail}<span class="detail">{detail}</span>{/if}
         {#if children}<span class="detail">{@render children()}</span>{/if}
     </span>
+    {#if details}
+        <button type="button" class="open" onclick={onDetails}>Details</button>
+    {/if}
 </li>
 
 <style>
     .signal {
         display: grid;
-        grid-template-columns: auto 1fr;
+        grid-template-columns: auto minmax(0, 1fr);
         align-items: start;
         gap: 8px;
         font-size: 12px;
@@ -83,5 +98,43 @@
 
     .tone-info svg {
         color: var(--info);
+    }
+
+    /* Icon | text | "Details ›". */
+    .details {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    /* Leads to another screen: quiet like "Show N more" (grey with a tint of the accent, in full on
+       hover), with a chevron pointing on. On the first row, level with the statement. */
+    .open {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: color-mix(in srgb, var(--info) 45%, var(--muted));
+        font: inherit;
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 20px;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .open::after {
+        content: '';
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        margin-left: 4px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        vertical-align: 1px;
+        transform: rotate(-45deg);
+    }
+
+    .open:hover {
+        color: var(--info);
+        text-decoration: underline;
+        text-underline-offset: 2px;
     }
 </style>

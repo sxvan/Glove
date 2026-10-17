@@ -2,6 +2,9 @@
     import { onMount } from 'svelte';
     import {
         DEFAULT_SETTINGS,
+        APIS_LEVEL_LABELS,
+        BURST_DETECTION_FIELDS,
+        type BurstDetection,
         LEVEL_LABELS,
         loadScoringSettings,
         resetScoringSettings,
@@ -47,6 +50,13 @@
         scheduleSave();
     }
 
+    function setBurstDetection(key: keyof BurstDetection, event: Event) {
+        const value = positiveFromInput(event);
+        if (!settings || value === null) return;
+        settings.bursts[key] = value;
+        scheduleSave();
+    }
+
     function setRarityPower(event: Event) {
         const value = positiveFromInput(event);
         if (!settings || value === null) return;
@@ -69,7 +79,7 @@
         { level: 'request', note: 'A request a script makes right after a burst of calls.' },
         { level: 'hostname', note: 'How much a hostname looks like it carries an ID.' },
     ];
-    const APIS_LEVELS: ApisLevel[] = ['page', 'script', 'burst'];
+    const APIS_LEVELS: ApisLevel[] = ['page', 'script', 'pageBurst', 'burst'];
 
     // The APIs grouped by category, in the order of the API list.
     const API_GROUPS = Object.entries(Object.groupBy(FP_APIS, (api) => api.category)) as [FpCategory, FpApi[]][];
@@ -135,6 +145,28 @@
             {/if}
         </section>
 
+        <section class="squircle" id="bursts">
+            <h2>Bursts of calls</h2>
+            <p class="section-note">
+                What counts as a burst: fingerprinting APIs read in quick succession, one collection of details. Bursts are found in
+                each script and across the page, all scripts together.
+            </p>
+            {#each BURST_DETECTION_FIELDS as field (field.key)}
+                {@const changed = settings.bursts[field.key] !== DEFAULT_SETTINGS.bursts[field.key]}
+                <div class="row">
+                    <div>
+                        <div class="name">{field.label}</div>
+                        <div class="description">{field.description}</div>
+                    </div>
+                    <label class="field" class:changed>
+                        <input type="number" min="0" step="1" value={settings.bursts[field.key]} oninput={(e) => setBurstDetection(field.key, e)} />
+                        <span class="unit">{field.unit}</span>
+                    </label>
+                    <span class="default" class:changed>default {DEFAULT_SETTINGS.bursts[field.key]} {field.unit}</span>
+                </div>
+            {/each}
+        </section>
+
         {#each LEVELS as { level, note } (level)}
             <section class="squircle" id={sectionId(level)}>
                 <h2>{LEVEL_LABELS[level]}</h2>
@@ -177,7 +209,7 @@
                 {@const fullAt = settings.fullAt[level]}
                 {@const defaults = DEFAULT_SETTINGS.fullAt[level]}
                 <div class="row cutoffs">
-                    <div class="name">{LEVEL_LABELS[level]}</div>
+                    <div class="name">{APIS_LEVEL_LABELS[level]}</div>
                     <label class="field" class:changed={fullAt.identifying !== defaults.identifying} title="Default {defaults.identifying}">
                         Identifying full at
                         <input type="number" min="0" step="0.5" value={fullAt.identifying} oninput={(e) => setFullAt(level, 'identifying', e)} />
@@ -292,6 +324,11 @@
     .section-note a {
         color: var(--info);
         text-underline-offset: 2px;
+    }
+
+    /* Room for the widest unit ("APIs"), so the fields line up whatever their unit. */
+    .unit {
+        width: 3ch;
     }
 
     .row.cutoffs + .row.cutoffs {
