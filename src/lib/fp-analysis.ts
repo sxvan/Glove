@@ -2,7 +2,7 @@ import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/typ
 import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
 import { FP_APIS_BY_ID } from './fp-apis';
-import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns } from './http-analysis';
+import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { LIMITS, apisSums, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
 
@@ -29,6 +29,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
     const documentConsolidatedHttpEvents: HttpConsolidatedEvent[] = [];
 
     enrichHttpRequestsWithDns(document, dnsResults);
+    const requestIndex = requestIndexOf(document);
 
     for (const [url, script] of Object.entries(document.scripts)) {
         if (script.fpEvents.length === 0) {
@@ -37,10 +38,10 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         documentFpEvents.push(...script.fpEvents);
 
-        script.httpConsolidatedEvents = consolidateHttpEvents(script.httpEvents, document.httpRequests);
+        script.httpConsolidatedEvents = consolidateHttpEvents(script.httpEvents, document.httpRequests, requestIndex);
 
         for (const consolidatedHttp of script.httpConsolidatedEvents) {
-            consolidatedHttp.suspicionScore = computeHttpFpScore(consolidatedHttp, settings);
+            consolidatedHttp.suspicionScore = httpFpScore(consolidatedHttp, settings);
         }
 
         documentConsolidatedHttpEvents.push(...script.httpConsolidatedEvents);
@@ -263,6 +264,20 @@ function getCorrelatedHttpCandidates(fpSpike: FpSpike, consolidatedHttps: HttpCo
     const end = fpSpike.events[fpSpike.events.length - 1]!.timeStamp + windowMs;
 
     return consolidatedHttps.filter((c) => c.httpEvent.timeStamp >= start && c.httpEvent.timeStamp <= end && carriesData(c));
+}
+
+// A recorded request's score, worked out again only when what it depends on changes: the request
+// it's matched to, the settings, or the request's DNS fields arriving.
+const httpScores = new WeakMap<object, { request: object; settings: ScoringSettings; enriched: boolean; score: number }>();
+
+function httpFpScore(consolidatedHttp: HttpConsolidatedEvent, settings: ScoringSettings): number {
+    const { httpEvent, httpRequest } = consolidatedHttp;
+    const enriched = httpRequest.cNameDepth !== undefined;
+    const known = httpScores.get(httpEvent);
+    if (known && known.request === httpRequest && known.settings === settings && known.enriched === enriched) return known.score;
+    const score = computeHttpFpScore(consolidatedHttp, settings);
+    httpScores.set(httpEvent, { request: httpRequest, settings, enriched, score });
+    return score;
 }
 
 function computeHttpFpScore(consolidatedHttp: HttpConsolidatedEvent, settings: ScoringSettings): number {

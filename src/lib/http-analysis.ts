@@ -9,11 +9,13 @@ function isCnameCloaked(httpRequest: HttpRequest): boolean {
 
 /**
  * Adds DNS-based fields to the document's requests whose lookup has finished. Requests still
- * waiting for (or without) a DNS result are kept unchanged and enriched by a later analysis.
+ * waiting for (or without) a DNS result are kept unchanged and enriched by a later analysis; those
+ * already enriched are skipped, as their DNS result doesn't change.
  */
 export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>) {
     for (const httpRequest of document.httpRequests) {
         const enrichedHttpRequest = httpRequest;
+        if (enrichedHttpRequest.cNameDepth !== undefined) continue;
         const dnsEntry = enrichedHttpRequest.hostname ? dnsResults.get(enrichedHttpRequest.hostname) : undefined;
         if (!dnsEntry) {
             continue;
@@ -38,14 +40,46 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
     }
 }
 
+const withoutFragment = (url: string) => url.split('#')[0]!;
+
+/** The document's requests by URL without fragment, as indexes into httpRequests in time order. */
+export interface RequestIndex {
+    byUrl: Map<string, number[]>;
+    /** How many of the document's requests it holds; newer ones are added on the next use. */
+    count: number;
+}
+
+const requestIndexes = new WeakMap<DocumentState, RequestIndex>();
+
+/**
+ * The index of the document's requests by URL, kept between analyses and extended with the
+ * requests added since: requests are only ever appended.
+ */
+export function requestIndexOf(document: DocumentState): RequestIndex {
+    let index = requestIndexes.get(document);
+    if (!index) {
+        index = { byUrl: new Map(), count: 0 };
+        requestIndexes.set(document, index);
+    }
+    const requests = document.httpRequests;
+    for (; index.count < requests.length; index.count++) {
+        const url = withoutFragment(requests[index.count]!.url);
+        const list = index.byUrl.get(url);
+        if (list) list.push(index.count);
+        else index.byUrl.set(url, [index.count]);
+    }
+    return index;
+}
+
 /**
  * Matches the requests scripts made (as recorded in the page) to the requests the browser saw, by
  * exact URL (the recorder resolves them; fragments aren't sent) and method, the closest in time.
+ * `index` looks the requests up by URL (see requestIndexOf), so a match costs only the requests
+ * to the same URL rather than all of them.
  */
-export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequests: HttpRequest[], maxDeltaMs = 1000): HttpConsolidatedEvent[] {
+export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequests: HttpRequest[], index: RequestIndex, maxDeltaMs = 1000): HttpConsolidatedEvent[] {
     const correlations: HttpConsolidatedEvent[] = [];
     const used = new Set<number>();
-    const withoutFragment = (url: string) => url.split('#')[0];
 
     for (const httpEvent of httpEvents) {
         // An XHR sent before open() has no URL and cannot be matched.
@@ -55,12 +89,10 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
         let bestIndex = -1;
         let bestDelta = maxDeltaMs + 1;
 
-        for (let i = 0; i < httpRequests.length; i++) {
+        for (const i of index.byUrl.get(eventUrl) ?? []) {
             if (used.has(i)) continue;
 
             const req = httpRequests[i]!;
-
-            if (withoutFragment(req.url) !== eventUrl) continue;
 
             if (req.method && httpEvent.method && req.method !== httpEvent.method) continue;
 
@@ -100,7 +132,18 @@ const PIXEL_MIN_PARAMETERS = 3;
  * static file. Images loaded by scripts often carry a query too (lazy loading, image sizes), so a
  * file name like ".jpg" only counts as a pixel with several parameters.
  */
-export function carriesData({ httpEvent, httpRequest }: HttpConsolidatedEvent): boolean {
+export function carriesData(consolidated: HttpConsolidatedEvent): boolean {
+    const known = carriesDataOf.get(consolidated.httpEvent);
+    if (known && known.request === consolidated.httpRequest) return known.value;
+    const value = computeCarriesData(consolidated);
+    carriesDataOf.set(consolidated.httpEvent, { request: consolidated.httpRequest, value });
+    return value;
+}
+
+// Whether a recorded request carries data, worked out once per request it's matched to.
+const carriesDataOf = new WeakMap<HttpMonkeyEvent, { request: HttpRequest; value: boolean }>();
+
+function computeCarriesData({ httpEvent, httpRequest }: HttpConsolidatedEvent): boolean {
     const method = (httpEvent.method ?? httpRequest.method ?? 'GET').toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') return true;
 
