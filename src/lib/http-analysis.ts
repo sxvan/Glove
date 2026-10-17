@@ -19,18 +19,20 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
             continue;
         }
 
-        const documentHost = getHostname(enrichedHttpRequest.documentUrl);
+        // Cloaking is judged against the tab's page: a host of an ad frame's own domain isn't hiding
+        // behind the site the user visits. Older requests without pageUrl use their document.
+        const pageHost = getHostname(enrichedHttpRequest.pageUrl ?? enrichedHttpRequest.documentUrl);
 
-        const documentHostEtld1 = getEtld1(documentHost);
+        const pageHostEtld1 = getEtld1(pageHost);
         const requestHostEtld1 = getEtld1(enrichedHttpRequest.hostname);
 
-        enrichedHttpRequest.looksFirstParty = documentHostEtld1 === requestHostEtld1;
-        enrichedHttpRequest.endsThirdParty = documentHostEtld1 !== dnsEntry.finalEtld1;
+        enrichedHttpRequest.looksFirstParty = pageHostEtld1 === requestHostEtld1;
+        enrichedHttpRequest.endsThirdParty = pageHostEtld1 !== dnsEntry.finalEtld1;
 
         enrichedHttpRequest.isCrossOrigin = isCrossOrigin(enrichedHttpRequest.documentUrl, enrichedHttpRequest.url);
         enrichedHttpRequest.cNameDepth = dnsEntry.cNameDepth;
         enrichedHttpRequest.cRecords = dnsEntry.cRecords;
-        enrichedHttpRequest.isCrossHost = documentHost !== enrichedHttpRequest.hostname;
+        enrichedHttpRequest.isCrossHost = pageHost !== enrichedHttpRequest.hostname;
 
         enrichedHttpRequest.isCnameCloaked = isCnameCloaked(enrichedHttpRequest);
     }

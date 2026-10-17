@@ -27,6 +27,12 @@ export interface DnsResult {
 export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
     hostname: string | null;
     documentUrl: string | null;
+    /**
+     * The URL of the tab's page (its top frame) when the request was made; the same as documentUrl
+     * for the page's own requests. CNAME cloaking is judged against it: hiding behind the name of
+     * the site the user visits, not an ad frame's own domain.
+     */
+    pageUrl: string | null;
     /** The size of the request's body in bytes; 0 without one. */
     bodyBytes: number;
     looksFirstParty?: boolean;

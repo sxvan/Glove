@@ -2,7 +2,7 @@
     // A card for a script, or for the page as a whole (all its scripts together): its name and who
     // serves it beside the score, then what it read, signs of fingerprinting, and where it sent data.
     import { viewerUrl } from '@/lib/script-viewer';
-    import { bytes, plural } from '../format';
+    import { bytes, listWords, plural } from '../format';
     import type { ScriptDetail } from '../model';
     import type { TextPart } from '../text-parts';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
@@ -26,11 +26,16 @@
     }
 
     /**
-     * What the card says about a script, as a list of statements: what is always there (what it
-     * read, and about what), then signs of fingerprinting, then where it sent data right after.
+     * What the card says about a script, as a list of statements: what it read (always there, and
+     * always first), how (signs of fingerprinting), who is behind it if that is hidden, and where
+     * it sent data right after.
      */
     function statements(): Statement[] {
-        const kinds = script.learned.map(({ kind }) => kind.toLowerCase()).join(', ');
+        // The most identifying kinds first, so those named are the ones that matter most.
+        const kinds = listWords(
+            script.learned.map(({ kind }) => kind.toLowerCase()),
+            SHOWN_ITEMS
+        );
         const list: Statement[] = [
             {
                 key: 'read',
@@ -41,33 +46,45 @@
         for (const signal of script.signals) {
             list.push({ key: signal.id, text: [{ value: plural(signal.count, 'API') }, ` ${signal.rest}`] });
         }
+        // A CNAME-cloaked script: served from an address of the site that is an alias for another company.
+        if (script.via) {
+            list.push({
+                key: 'cloaked',
+                text: ['Served by ', { value: script.origin }, ' through ', { value: script.via }],
+                detail: script.aliasOf ? `${script.via} is an alias for ${script.aliasOf}` : '',
+            });
+        }
         const sent = sentStatement();
         if (sent) list.push(sent);
         return list;
     }
 
+    // Items named in a list under a statement (kinds of detail, sites); the rest as "and N more".
+    const SHOWN_ITEMS = 6;
+
     /**
      * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to
      * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com", like "About …"
-     * under what it read. A single site is
-     * named in the line itself. Only requests from a burst until shortly after it count (see
-     * fp-analysis); the requests themselves are for a screen of their own.
+     * under what it read; past SHOWN_ITEMS, "and N more". A single site is named in the line itself,
+     * with the alias it went through, if any. Only requests from a burst until shortly after it count
+     * (see fp-analysis); the requests themselves are for a screen of their own.
      */
     function sentStatement(): Statement | null {
-        // Requests that went through a CNAME alias stay apart from direct ones to the same site.
-        const bySite = new Map<string, { name: string; total: number; site: string; via: string | null }>();
+        const bySite = new Map<string, { total: number; vias: Set<string | null> }>();
         for (const { site, via, bytes } of script.sent) {
-            const key = `${site} ${via ?? ''}`;
-            const entry = bySite.get(key) ?? { name: via ? `${site} through ${via}` : site, total: 0, site, via };
+            const entry = bySite.get(site) ?? { total: 0, vias: new Set() };
             entry.total += bytes;
-            bySite.set(key, entry);
+            entry.vias.add(via);
+            bySite.set(site, entry);
         }
-        const sites = [...bySite.values()].sort((a, b) => b.total - a.total);
+        const sites = [...bySite.entries()].map(([site, entry]) => ({ site, ...entry })).sort((a, b) => b.total - a.total);
         if (sites.length === 0) return null;
 
         const total = bytes(sites.reduce((sum, site) => sum + site.total, 0));
         if (sites.length === 1) {
-            const { site, via } = sites[0]!;
+            const { site, vias } = sites[0]!;
+            // Through an alias only when all its requests went through the same one.
+            const via = vias.size === 1 ? [...vias][0] : null;
             const text: TextPart[] = ['Sent ', { value: total }, ' to ', { value: site }];
             if (via) text.push(' through ', { value: via });
             text.push(' right after reading');
@@ -76,7 +93,10 @@
         return {
             key: 'sent',
             text: ['Sent ', { value: total }, ' to ', { value: plural(sites.length, 'site') }, ' right after reading'],
-            detail: `To ${sites.map((site) => site.name).join(', ')}`,
+            detail: `To ${listWords(
+                sites.map(({ site }) => site),
+                SHOWN_ITEMS
+            )}`,
         };
     }
 </script>

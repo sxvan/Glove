@@ -30,7 +30,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
     enrichHttpRequestsWithDns(document, dnsResults);
 
-    for (const script of Object.values(document.scripts)) {
+    for (const [url, script] of Object.entries(document.scripts)) {
         if (script.fpEvents.length === 0) {
             continue;
         }
@@ -57,7 +57,7 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         script.fpMetrics = getFpMetrics(script.fpEvents);
         if (script.fpMetrics) {
-            setScore(script.fpMetrics, computeScriptFpScore(script, settings));
+            setScore(script.fpMetrics, computeScriptFpScore(script, url, document, settings));
         }
     }
 
@@ -123,7 +123,18 @@ function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: Scori
     );
 }
 
-function computeScriptFpScore(script: ScriptState, settings: ScoringSettings): ScoredParts {
+/** True when the host of the script at `url` is a CNAME alias for another site, as seen in the document's requests. */
+function servedThroughAlias(url: string, document: DocumentState): boolean {
+    let host: string;
+    try {
+        host = new URL(url).hostname;
+    } catch {
+        return false;
+    }
+    return document.httpRequests.some((request) => request.hostname === host && request.isCnameCloaked);
+}
+
+function computeScriptFpScore(script: ScriptState, url: string, document: DocumentState, settings: ScoringSettings): ScoredParts {
     const metrics = script.fpMetrics!;
     const burstScores = script.fpSpikes.map((s) => s.fpMetrics?.score ?? 0);
 
@@ -144,6 +155,7 @@ function computeScriptFpScore(script: ScriptState, settings: ScoringSettings): S
             ...apis.values,
             onePlace: onePlace.value,
             strongestBurst: Math.max(...burstScores, 0),
+            cnameCloaked: servedThroughAlias(url, document) ? 1 : 0,
             generatedCode: generated.value,
         },
         settings,

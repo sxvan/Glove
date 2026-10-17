@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, SIGNALS, type ApisSum, type ScoreLevel, type ScoringS
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
-import { duration, plural } from './format';
+import { duration, listWords, plural } from './format';
 
 export type Likelihood = 'unlikely' | 'possible' | 'likely';
 
@@ -932,7 +932,3 @@ function unique<T>(items: T[]): T[] {
     return [...new Set(items)];
 }
 
-function listWords(items: string[]): string {
-    if (items.length <= 1) return items[0] ?? '';
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-}

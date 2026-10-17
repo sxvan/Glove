@@ -88,7 +88,10 @@ export default defineBackground(() => {
         }
 
         const hostname = getHostname(details.url);
-        const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, hostname, bodyBytes: bodySize(details.requestBody) };
+        const top = session.tabs[tabId]?.frames['0'];
+        const page = top?.currentDocumentId ? top.documents[top.currentDocumentId] : undefined;
+        const pageUrl = page?.currentUrl ?? document.currentUrl;
+        const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, pageUrl, hostname, bodyBytes: bodySize(details.requestBody) };
         document.httpRequests.push(httpEvent);
 
         scheduleAnalysis(document, tabId);
@@ -192,20 +195,25 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
 
 function broadcastTabSnapshot(session: Session, tabId: number) {
     const snapshot = buildTabSnapshot(session, tabId);
+    if (!snapshot) return;
     console.log('Broadcasting snapshot for tab', tabId, snapshot);
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
     // Rejects when no popup is open to receive it, which is the usual case.
     browser.runtime.sendMessage(message).catch(() => {});
 }
 
-function buildTabSnapshot(session: Session, tabId: number): TabSnapshot {
+/**
+ * What the popup shows for a tab; undefined for a tab without recorded data, e.g. one opened before
+ * the extension was (re)loaded, which the popup asks to reload.
+ */
+function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefined {
     const tabState = session.tabs[tabId];
+    if (!tabState) return undefined;
 
     const tabSnapshot: TabSnapshot = {
         cNameRequests: collectCnameCloakedRequestsForTab(session, tabId),
         dnsTrackingRequests: collectDnsTrackingRequestsForTab(session, tabId),
-        // TODO(bug): tabState is undefined for tabs without recorded data, which throws here.
-        frames: Object.entries(tabState!.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
+        frames: Object.entries(tabState.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
         cutoffs: settings.cutoffs,
     };
 

@@ -79,6 +79,12 @@ export const SIGNALS = {
                 'How many unusual fingerprinting APIs beyond its strongest burst the script reads in code it generates at runtime (new Function, eval), which hides what it does.',
             strength: 0.5,
         },
+        cnameCloaked: {
+            label: 'Served through a CNAME alias',
+            description:
+                "The script comes from an address of the site that is an alias (CNAME) for another site, which hides who really serves it from blockers. A small extra: sites also serve their own scripts through CDNs this way.",
+            strength: 0.15,
+        },
     },
     page: {
         identifying: {

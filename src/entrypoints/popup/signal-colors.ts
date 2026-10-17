@@ -10,6 +10,7 @@ const SIGNAL_COLORS: Record<string, string> = {
     generatedCode: '#14b8a6',
     onePlace: '#ec4899',
     dataSent: '#d4a106',
+    cnameCloaked: '#0ea5e9',
     // Signals standing for a whole score: calmer slate tones, as they sum up the signals below them.
     strongestScript: '#94a3b8',
     strongestBurst: '#64748b',
