@@ -170,8 +170,9 @@ export interface ScoringSettings {
     apis: Record<string, ApiTraits>;
     /**
      * How much more rare APIs count than everyday ones in the unusual APIs signals: each API counts
-     * its rarity to this power. 1 counts rarity as it is; at 2, rarity 0.2 counts 0.04 and 0.9
-     * counts 0.81, so the many everyday reads of ordinary code add up to little.
+     * its rarity to this power. 1 counts rarity as it is; at 4, rarity 0.6 (read on 40% of page
+     * loads) counts 0.13 and 0.93 counts 0.75, so the many everyday reads of ordinary code add up to
+     * little. Calibrated with the rarities from Chrome's usage data (see FP_APIS).
      */
     rarityPower: number;
     /** Per level, where the API signals count as full. */
@@ -187,9 +188,9 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         hostname: { possible: 0.3, likely: 0.6 },
     },
     apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { entropy: api.entropy, rarity: api.rarity }])),
-    rarityPower: 2,
+    rarityPower: 4,
     fullAt: {
-        burst: { identifying: 4.5, unusual: 4.5 },
+        burst: { identifying: 4.5, unusual: 5 },
         // Higher than for bursts: over a whole script they are a fallback for collecting without
         // bursts, and ordinary scripts read far more over their lifetime than in one burst.
         // They count only what a script read beyond its strongest burst. Both are full at about what large

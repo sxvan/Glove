@@ -147,8 +147,11 @@
             <h2>Fingerprinting APIs</h2>
             <p class="section-note">
                 Each fingerprinting API has two values between 0 and 1. <strong>Entropy</strong> is how much lasting identifying information it
-                reveals: its bits divided by 8, so 1 means one browser in 256 or rarer. <strong>Rarity</strong> is how rarely
-                ordinary code needs it: 0 if almost every site reads it, 1 if practically only fingerprinting does. They make two
+                reveals: its bits divided by 8, so 1 means one browser in 256 or rarer, from a study of 4 million fingerprints
+                (<a href="https://arxiv.org/abs/2006.09511" target="_blank" rel="noopener noreferrer">Andriamilanto et al.</a>).
+                <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
+                Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
+                October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. They make two
                 independent signals: "Identifying information" adds up the entropy of the different fingerprinting APIs read,
                 how much they reveal; "Unusual fingerprinting APIs" adds up their rarity, rare ones counting more (see below), as reading rare ones shows
                 intent even when they reveal little. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions
@@ -160,7 +163,7 @@
                     <div class="name">Rare APIs count more</div>
                     <div class="description">
                         Each API counts its rarity to this power in the unusual fingerprinting APIs signals. 1 counts rarity as it is;
-                        at 2, rarity 0.2 counts 0.04 and 0.9 counts 0.81, so everyday reads add up to little.
+                        at 4, rarity 0.6 counts 0.13 and 0.93 counts 0.75, so everyday reads add up to little.
                     </div>
                 </div>
                 <label class="field">
@@ -283,6 +286,12 @@
         margin: 0 0 6px;
         color: var(--muted);
         font-size: 12px;
+    }
+
+    /* Sources of the default values. */
+    .section-note a {
+        color: var(--info);
+        text-underline-offset: 2px;
     }
 
     .row.cutoffs + .row.cutoffs {
