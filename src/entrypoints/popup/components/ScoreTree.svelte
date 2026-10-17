@@ -41,7 +41,7 @@
             {#snippet row()}
                 <span class="toggle" class:open={open[node.key]} aria-hidden="true"></span>
                 <span class="text">
-                    <span class="label" class:api={node.api} title={node.label}>{node.label}</span>
+                    <span class="label" class:api={node.api} class:wrap={!node.detail} title={node.label}>{node.label}</span>
                     {#if node.detailPath}
                         <span class="detail" title={node.detail}><MiddleTruncate text={node.detail} path plain /></span>
                     {:else if node.detail}
@@ -162,6 +162,16 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    /* Without a detail below it, a label may take two lines, shortened after the second. */
+    .label.wrap {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        line-height: 1.3;
+        white-space: normal;
     }
 
     /* Like a card's statements: in the body size, toned down between the text and the grey of a

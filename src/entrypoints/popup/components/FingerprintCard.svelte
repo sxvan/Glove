@@ -11,7 +11,9 @@
     import ScoreTree from './ScoreTree.svelte';
     import SignalLine from './SignalLine.svelte';
 
-    let { script }: { script: ScriptDetail } = $props();
+    // With `onOpen`, the whole card opens a screen about it and nothing in it is clickable on its
+    // own: on the overview, the page's card leads to the fingerprinting screen.
+    let { script, onOpen }: { script: ScriptDetail; onOpen?: () => void } = $props();
 
     // Whether the signals the score was combined from show.
     let breakdown = $state(false);
@@ -51,46 +53,38 @@
             list.push({
                 key: 'cloaked',
                 text: ['Served by ', { value: script.origin }, ' through ', { value: script.via }],
-                detail: script.aliasOf ? `${script.via} is an alias for ${script.aliasOf}` : '',
+                detail: script.aliasOf ? `${script.via} alias for ${script.aliasOf}` : '',
             });
         }
         const sent = sentStatement();
         if (sent) list.push(sent);
+        const alias = sentThroughAliasStatement();
+        if (alias) list.push(alias);
         return list;
     }
 
     // Items named in a list under a statement, the rest as "and N more": kinds of detail are short
     // words, sites long names, so fewer of them fit in about two lines.
     const SHOWN_KINDS = 6;
-    const SHOWN_SITES = 3;
+    const SHOWN_SITES = 4;
 
     /**
      * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to
      * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com", like "About …"
-     * under what it read; past SHOWN_SITES, "and N more". A single site is named in the line itself,
-     * with the alias it went through, if any. Only requests from a burst until shortly after it count
-     * (see fp-analysis); the requests themselves are for a screen of their own.
+     * under what it read; past SHOWN_SITES, "and N more". A single site is named in the line itself.
+     * Aliases the data went through have a line of their own (see sentThroughAliasStatement). Only
+     * requests from a burst until shortly after it count (see fp-analysis); the requests themselves
+     * are for a screen of their own.
      */
     function sentStatement(): Statement | null {
-        const bySite = new Map<string, { total: number; vias: Set<string | null> }>();
-        for (const { site, via, bytes } of script.sent) {
-            const entry = bySite.get(site) ?? { total: 0, vias: new Set() };
-            entry.total += bytes;
-            entry.vias.add(via);
-            bySite.set(site, entry);
-        }
-        const sites = [...bySite.entries()].map(([site, entry]) => ({ site, ...entry })).sort((a, b) => b.total - a.total);
+        const bySite = new Map<string, number>();
+        for (const { site, bytes } of script.sent) bySite.set(site, (bySite.get(site) ?? 0) + bytes);
+        const sites = [...bySite.entries()].map(([site, total]) => ({ site, total })).sort((a, b) => b.total - a.total);
         if (sites.length === 0) return null;
 
         const total = bytes(sites.reduce((sum, site) => sum + site.total, 0));
         if (sites.length === 1) {
-            const { site, vias } = sites[0]!;
-            // Through an alias only when all its requests went through the same one.
-            const via = vias.size === 1 ? [...vias][0] : null;
-            const text: TextPart[] = ['Sent ', { value: total }, ' to ', { value: site }];
-            if (via) text.push(' through ', { value: via });
-            text.push(' right after reading');
-            return { key: 'sent', text };
+            return { key: 'sent', text: ['Sent ', { value: total }, ' to ', { value: sites[0]!.site }, ' right after reading'] };
         }
         return {
             key: 'sent',
@@ -101,13 +95,58 @@
             )}`,
         };
     }
+
+    /**
+     * The site's own addresses that data went through to another site, as CNAME aliases, written like
+     * the sites under "Sent …": "Sent data through smetrics.walgreens.com alias" over "To omtrdc.net
+     * (through smetrics.walgreens.com)", several as "Sent data through 2 aliases" over "To omtrdc.net
+     * (through smetrics.walgreens.com and target.walgreens.com)", the rest as "and N more". Cookies
+     * sent there count as the site's own (see the sentThroughAlias signal).
+     */
+    function sentThroughAliasStatement(): Statement | null {
+        // The aliases by the site they lead to.
+        const bySite = new Map<string, string[]>();
+        for (const { site, via } of script.sent) {
+            if (!via) continue;
+            const vias = bySite.get(site) ?? [];
+            if (!vias.includes(via)) vias.push(via);
+            bySite.set(site, vias);
+        }
+        const aliases = [...bySite.values()].flat();
+        if (aliases.length === 0) return null;
+
+        const detail = `To ${listWords(
+            [...bySite].map(([site, vias]) => `${site} (through ${listWords(vias, SHOWN_SITES)})`),
+            SHOWN_SITES
+        )}`;
+        const text: TextPart[] =
+            aliases.length === 1
+                ? ['Sent data through ', { value: aliases[0]! }, ' alias']
+                : ['Sent data through ', { value: plural(aliases.length, 'alias', 'aliases') }];
+        return { key: 'sent-alias', text, detail };
+    }
 </script>
 
-<article class="card sleek">
+<svelte:element
+    this={onOpen ? 'div' : 'article'}
+    class="card sleek"
+    class:opens={onOpen}
+    role={onOpen ? 'button' : undefined}
+    tabindex={onOpen ? 0 : undefined}
+    onclick={onOpen}
+    onkeydown={(event: KeyboardEvent) => {
+        if (onOpen && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            onOpen();
+        }
+    }}
+>
     <!-- The name over who serves it, beside the score ring over the likelihood. -->
     <div class="head">
         <div class="who">
-            {#if script.viewer}
+            {#if onOpen}
+                <span class="name">{script.name}</span>
+            {:else if script.viewer}
                 <a class="name link" href={viewerUrl(script.viewer)} target="_blank" rel="noopener noreferrer" title="View {script.url} in the script viewer">
                     <MiddleTruncate text={script.name} path={script.path} />
                 </a>
@@ -117,6 +156,14 @@
             <!-- Who really serves it; how a CNAME-cloaked script hides is an info line, and the tooltip. -->
             <span class="origin" title={script.originTitle}>{script.origin}</span>
         </div>
+        {#if onOpen}
+            <div class="rating">
+                <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} title="Score {Math.round(script.score * 100)}" />
+                <LikelihoodLabel likelihood={script.likelihood} />
+            </div>
+            <!-- Like the overview's other cards: the card leads on to a screen. -->
+            <span class="opens-chevron" aria-hidden="true"></span>
+        {:else}
         <!-- Opens what the score was combined from (the chevron after the likelihood says it can). -->
         <button
             type="button"
@@ -132,6 +179,7 @@
                 {#if script.tree.length > 0}<span class="chevron" class:open={breakdown} aria-hidden="true"></span>{/if}
             </span>
         </button>
+        {/if}
     </div>
 
     {#if breakdown}
@@ -141,10 +189,10 @@
     <ul class="statements">
         {#each statements() as statement (statement.key)}
             <!-- Detail screens per statement are to come; the column is there already. -->
-            <SignalLine text={statement.text} tone="info" detail={statement.detail} lead details />
+            <SignalLine text={statement.text} tone="info" detail={statement.detail} lead details={!onOpen} />
         {/each}
     </ul>
-</article>
+</svelte:element>
 
 <style>
     /* The parts of a card are separated by space only. */
@@ -228,6 +276,30 @@
 
     .link:hover {
         text-decoration: underline;
+    }
+
+    /* A card opening a screen as a whole: like the overview's other cards, hovering lightens it. */
+    .opens {
+        cursor: pointer;
+    }
+
+    .opens:hover {
+        background: color-mix(in srgb, var(--surface), var(--text) 4%);
+    }
+
+    /* The head gets a column for the chevron, after the rating. */
+    .opens .head {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    /* The same chevron as the overview's other cards. */
+    .opens-chevron {
+        width: 7px;
+        height: 7px;
+        margin-left: -4px;
+        border-right: 2px solid var(--muted);
+        border-bottom: 2px solid var(--muted);
+        transform: rotate(-45deg);
     }
 
     /* The script's identity, next to its file name: in the text color, not toned down. */

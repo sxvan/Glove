@@ -5,6 +5,7 @@
     import type { TabSnapshot } from '@/types/snapshot';
     import CategoryCard from './components/CategoryCard.svelte';
     import DetailHeader from './components/DetailHeader.svelte';
+    import FingerprintCard from './components/FingerprintCard.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
     import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type Category } from './model';
     import CnameDetail from './screens/CnameDetail.svelte';
@@ -117,7 +118,13 @@
             </div>
         {/if}
         {#each categories as category, i (category.id)}
-            <CategoryCard {category} tipAbove={i > 0} onOpen={() => openDetail(category.id)} />
+            {#if category.id === 'fingerprinting'}
+                <!-- The page's card from the fingerprinting screen, titled by what it is about. -->
+                {@const page = fingerprintingPageDetail(snapshot!, fingerprintingDetails(snapshot!))}
+                <FingerprintCard script={{ ...page, name: category.title }} onOpen={() => openDetail(category.id)} />
+            {:else}
+                <CategoryCard {category} tipAbove={i > 0} onOpen={() => openDetail(category.id)} />
+            {/if}
         {/each}
     {/if}
 </main>
