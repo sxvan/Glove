@@ -30,11 +30,24 @@ const STACK_FRAMES = 30;
 
 let readStack: ReturnType<typeof createStackReader>;
 
+// Captured before page scripts run, so a page replacing it can't see or break the check.
+const startsWith = String.prototype.startsWith;
+
+/**
+ * Whether a request goes over the network: only those can be matched to what the browser saw
+ * (see consolidateHttpEvents). data: and blob: addresses never reach it, and a data: address can
+ * hold a whole embedded response (YouTube's: 350 KB), which would only be copied around.
+ */
+function isNetworkUrl(url: string | null): url is string {
+    return url !== null && (Reflect.apply(startsWith, url, ['https:']) || Reflect.apply(startsWith, url, ['http:']));
+}
+
 /**
  * @param hook our wrapper that was called; stack frames from it inward are skipped
  * @param wrapped whether a page script has replaced our wrapper with its own (see scriptsOnStack)
  */
 function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: string | null, credentials: string, hook: Function, wrapped: boolean) {
+    if (!isNetworkUrl(url)) return;
     const scriptUrls = scriptsOnStack(hook, wrapped);
     const httpMonkeyEvent: HttpMonkeyEvent = {
         id: id,
