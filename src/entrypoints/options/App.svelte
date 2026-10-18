@@ -75,8 +75,11 @@
 
     // The levels in the order they are listed: from the overall score down to its parts.
     const LEVELS: { level: ScoreLevel; note: string }[] = [
-        { level: 'page', note: 'The fingerprinting score of a page.' },
-        { level: 'script', note: 'The fingerprinting score of a script.' },
+        { level: 'page', note: 'The fingerprinting score of a page: its strongest script in full, and the other scripts on top of it.' },
+        { level: 'otherScripts', note: "The page's other scripts, on top of the strongest one: scored like a script, from their strongest burst and what they read beyond it." },
+        { level: 'otherScriptsBeyondBurst', note: 'What the other scripts read outside their strongest burst, on top of the strongest script and the burst.' },
+        { level: 'script', note: 'The fingerprinting score of a script: its strongest burst, and what it read outside it.' },
+        { level: 'scriptBeyondBurst', note: 'What a script read outside its strongest burst, on top of what the burst read.' },
         { level: 'burst', note: 'A burst of calls: one collection of details, read in quick succession.' },
         { level: 'request', note: 'A request a script makes right after a burst of calls.' },
         { level: 'hostname', note: 'How much a hostname looks like it carries an ID.' },
@@ -202,7 +205,7 @@
                 what they add. <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
                 Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
                 October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. They make two
-                independent signals: "Identifying information" adds up the bits of the different fingerprinting APIs read,
+                independent signals: "Identifying fingerprinting APIs" adds up the bits of the different fingerprinting APIs read,
                 how much they reveal; "Unusual fingerprinting APIs" adds up their rarity, rare ones counting more (see below), as reading rare ones shows
                 intent even when they reveal little. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions
                 of a call or a canvas exported in two formats, count once.

@@ -12,11 +12,11 @@ export interface ApiCalls {
 }
 
 export interface ScriptState {
-    /** Its raw calls, thinned out for long-lived documents (see thinning). */
+    /** Its raw calls. */
     fpEvents: FpMonkeyEvent[];
-    /** Its calls per API, counted as they arrive: exact also once fpEvents are thinned out. */
+    /** Its calls per API, counted as they arrive. */
     calls: Record<string, ApiCalls>;
-    /** How many calls it made, thinned-out ones included. */
+    /** How many calls it made, counted as they arrive. */
     callCount: number;
     httpEvents: HttpMonkeyEvent[];
     httpConsolidatedEvents: HttpConsolidatedEvent[];

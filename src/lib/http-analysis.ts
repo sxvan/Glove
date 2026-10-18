@@ -45,7 +45,7 @@ const withoutFragment = (url: string) => url.split('#')[0]!;
 /** The document's requests by URL without fragment, as indexes into httpRequests in time order. */
 export interface RequestIndex {
     byUrl: Map<string, number[]>;
-    /** The array indexed: a new one (thinned out, see thinning) is indexed anew. */
+    /** The array indexed: a new one is indexed anew. */
     requests: HttpRequest[];
     /** How many of the document's requests it holds; newer ones are added on the next use. */
     count: number;

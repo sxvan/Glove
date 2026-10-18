@@ -2,7 +2,7 @@
 // key numbers and the strongest evidence.
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_SETTINGS, SIGNALS, identifyingBits as addedUpBits, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
+import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
@@ -428,7 +428,7 @@ function pageSignals(scripts: ScriptDetail[]): string[] {
     const occurs = (id: SignalId) => scripts.some((s) => s.signals.some((signal) => signal.id === id));
 
     return [
-        occurs('generated-code') ? 'Fingerprinting APIs read by code generated at runtime' : '',
+        occurs('generated-code') ? 'Fingerprinting APIs read from generated code' : '',
         occurs('one-place') ? 'Fingerprinting APIs read from one place in the code' : '',
     ].filter(Boolean);
 }
@@ -451,7 +451,7 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
         signals.push({
             id: 'generated-code',
             count: generated.length,
-            rest: 'read by code generated at runtime',
+            rest: 'read from generated code',
             apis: generated,
             kinds: kindsOf(generated),
             explanation: 'Code created while the page runs (eval, new Function) is hidden from the script file, which hides what it does.',
@@ -673,7 +673,7 @@ function apiDetails(script: ScriptSnapshot, startTime: number | undefined, trait
 
 /**
  * The page's APIs in detail, all its scripts together: calls and places added up, the earliest
- * first call and latest last call; in the strongest burst means the page's, across its scripts.
+ * first call and latest last call; in the strongest burst means the page's, that of the other scripts beside the strongest one.
  */
 function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDetail[] {
     const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
@@ -726,12 +726,23 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
             const { name, path } = describeScript(script.name, document.url);
             return { detail: name, detailPath: path, children: scriptTree(script) };
         }
-        if (key === 'strongestBurst') {
-            // An older background may not send the page's bursts.
-            const burst = [...(document.spikes ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
-            if (!burst) return null;
-            const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}, all activity`;
-            return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
+        if (key === 'otherScripts') {
+            // Made from their own signals, sent along with the page's (see computeDocumentFpScore).
+            const other = document.fpMetrics?.signals?.otherScripts;
+            if (!other?.parts) return null;
+            const metrics = { ...document.fpMetrics!, score: other.value, signals: other.parts };
+            const scripts = document.scripts.filter((script) => (script.fpMetrics?.intensity ?? 0) > 0).length - 1;
+            return {
+                detail: scripts > 0 ? `${plural(scripts, 'script')}, on top of the strongest` : '',
+                children: scoreTree('otherScripts', metrics, other.value, (inner) => {
+                    if (inner !== 'strongestBurst') return null;
+                    // An older background may not send the page's bursts.
+                    const burst = [...(document.spikes ?? [])].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
+                    if (!burst) return null;
+                    const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}`;
+                    return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
+                }),
+            };
         }
         return null;
     });
@@ -781,7 +792,8 @@ function scoreTree(
 
     const nodes = signals.map(({ key, signal, part, alone }): ScoreNode => {
         const share = reached > 0 ? total * (added.get(key)! / reached) : 0;
-        const source: { detail: string; detailPath?: boolean; children: ScoreNode[] } | null = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label, level) : expand(key);
+        const source: { detail: string; detailPath?: boolean; children: ScoreNode[] } | null =
+            part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label, level) : (expand(key) ?? partsSource(level, key, part, expand));
         return {
             key,
             label: treeLabel(signal.label),
@@ -790,7 +802,7 @@ function scoreTree(
             points: part.apis ? { total: part.apis.known === undefined ? part.apis.total : part.value * part.apis.fullAt, fullAt: part.apis.fullAt } : undefined,
             share,
             shownShare: share,
-            shareTo: level,
+            shareTo: SHARE_TO[level] ?? level,
             detail: source?.detail ?? '',
             detailPath: source?.detailPath,
             note: `Accounts for ${score(share)} of the ${score(total)} above: what it adds on top of the stronger signals. Alone it would give ${score(alone)}: up to ${Math.round(part.strength * 100)}% × ${score(part.value)}% observed.`,
@@ -833,7 +845,7 @@ function score(x: number): number {
 }
 
 /**
- * A signal's name in the score tree: "fingerprinting" left out before APIs ("Unusual APIs", "APIs
+ * A signal's name in the score tree: "fingerprinting" left out before APIs ("Identifying APIs", "Unusual APIs", "APIs
  * from one place"), as the tree is for those who look closer and has little room.
  */
 function treeLabel(label: string): string {
@@ -853,8 +865,31 @@ const SHORT_NAMES: Record<string, string> = {
  * (1 of 10 points is +0.10) until the signal is full; later ones add nothing beyond full. An API
  * whose information another API already counted adds nothing.
  */
+/** Whose score a signal's share goes to, in a word or two: "+6 to other scripts". */
+const SHARE_TO: Partial<Record<ScoreLevel, string>> = { otherScripts: 'other scripts', otherScriptsBeyondBurst: 'outside burst', scriptBeyondBurst: 'outside burst' };
+
+/**
+ * A signal that is the score of a part made from its own signals (see SignalPart.parts), such as
+ * what a script read outside its burst: opens into those, which `expand` can open further.
+ */
+function partsSource(
+    level: ScoreLevel,
+    key: string,
+    part: SignalPart,
+    expand: (key: string) => { detail: string; detailPath?: boolean; children: ScoreNode[] } | null
+): { detail: string; children: ScoreNode[] } | null {
+    const source = (SIGNAL_SOURCES[level] as Record<string, string> | undefined)?.[key];
+    if (!part.parts || !source || source === 'apis' || !(source in SIGNALS)) return null;
+    return { detail: '', children: scoreTree(source as ScoreLevel, { signals: part.parts } as MetricsSnapshot, part.value, expand) };
+}
+
 /** Where the APIs a sum beyond is measured on were read (see apisSumsBeyond). */
-const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = { script: 'read in the strongest burst', page: 'read by the strongest script' };
+// Only page bursts are measured on top of something among bursts: the strongest script.
+const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = {
+    scriptBeyondBurst: 'read in the strongest burst',
+    otherScriptsBeyondBurst: 'read by the strongest script or in the burst',
+    burst: 'read by the strongest script',
+};
 
 function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: ScoreLevel): { detail: string; children: ScoreNode[] } {
     const number = (x: number) => +x.toFixed(2);

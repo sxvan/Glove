@@ -24,7 +24,7 @@ export interface SignalDefinition {
 export const SIGNALS = {
     burst: {
         identifying: {
-            label: 'Identifying information',
+            label: 'Identifying fingerprinting APIs',
             description:
                 'How much identifying information the burst reads: the bits of the different fingerprinting APIs it reads, added up. Those revealing the same information count once, and of those that overlap, such as screen and window sizes, the strongest counts fully and the others what they add.',
             strength: 0.3,
@@ -36,7 +36,7 @@ export const SIGNALS = {
             strength: 0.85,
         },
         generatedCode: {
-            label: 'Fingerprinting APIs read by generated code',
+            label: 'Fingerprinting APIs from generated code',
             description:
                 'How many unusual fingerprinting APIs the burst reads in code generated at runtime (new Function, eval), which hides what it does.',
             strength: 0.5,
@@ -54,8 +54,30 @@ export const SIGNALS = {
         },
     },
     script: {
+        strongestBurst: { label: 'Strongest burst', description: 'The score of its most suspicious burst of calls.', strength: 1 },
+        beyondBurst: {
+            label: 'Outside the burst',
+            description:
+                'What the script read outside its strongest burst, on top of what the burst read: a fallback for collecting spread out or split into several bursts.',
+            strength: 1,
+        },
+        cnameCloaked: {
+            label: 'Served through a CNAME alias',
+            description:
+                "The script comes from an address of the site that is an alias (CNAME) for another site, which hides who really serves it from blockers. A small extra: sites also serve their own scripts through CDNs this way.",
+            strength: 0.15,
+        },
+        sentThroughAlias: {
+            label: 'Sent data through a CNAME alias',
+            description:
+                "Right after reading, the script sent data to an address of the site that is an alias (CNAME) for another site. Cookies sent with it count as the site's own, which gets around limits on third-party cookies, and blockers that only know the other site miss it.",
+            strength: 0.15,
+        },
+    },
+    // A script outside its strongest burst: only APIs the burst didn't read (see computeScriptFpScore).
+    scriptBeyondBurst: {
         identifying: {
-            label: 'Identifying information',
+            label: 'Identifying fingerprinting APIs',
             description:
                 'How much identifying information the script adds beyond its strongest burst, on top of what that burst revealed: the APIs it read outside the burst, each counting what it reveals beyond what is already known (nothing for a value already read, what it adds beside an overlapping API). Measured as how much of the way to the full 33 bits it covers, so once the burst reached them nothing adds. A fallback for collecting spread out or split into several bursts.',
             strength: 0.15,
@@ -72,44 +94,62 @@ export const SIGNALS = {
                 'How many unusual fingerprinting APIs beyond its strongest burst it reads from a single place in the code, counted like "Unusual fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
             strength: 0.6,
         },
-        strongestBurst: { label: 'Strongest burst', description: 'The score of its most suspicious burst of calls.', strength: 1 },
         generatedCode: {
-            label: 'Fingerprinting APIs read by generated code',
+            label: 'Fingerprinting APIs from generated code',
             description:
                 'How many unusual fingerprinting APIs beyond its strongest burst the script reads in code it generates at runtime (new Function, eval), which hides what it does.',
             strength: 0.5,
         },
-        cnameCloaked: {
-            label: 'Served through a CNAME alias',
-            description:
-                "The script comes from an address of the site that is an alias (CNAME) for another site, which hides who really serves it from blockers. A small extra: sites also serve their own scripts through CDNs this way.",
-            strength: 0.15,
-        },
-        sentThroughAlias: {
-            label: 'Sent data through a CNAME alias',
-            description:
-                "Right after reading, the script sent data to an address of the site that is an alias (CNAME) for another site. Cookies sent with it count as the site's own, which gets around limits on third-party cookies, and blockers that only know the other site miss it.",
-            strength: 0.15,
+    },
+    // The page in two parts, each API counted in one only: its strongest script in full, and the
+    // other scripts on top of it, scored like a script: their strongest burst, and what they read
+    // beyond it (see computeDocumentFpScore).
+    page: {
+        strongestScript: { label: 'Strongest script', description: 'The score of the most suspicious script, counted in full.', strength: 1 },
+        otherScripts: {
+            label: 'Other scripts',
+            description: 'What the other scripts read, on top of the strongest script: catches collecting split over several scripts.',
+            strength: 1,
         },
     },
-    page: {
-        identifying: {
-            label: 'Identifying information',
+    otherScripts: {
+        strongestBurst: {
+            label: 'Strongest burst',
             description:
-                'How much identifying information the other scripts add beyond the strongest script, on top of what that script revealed, counted as for a script (nothing for a value already read, what it adds beside an overlapping API, toward the full 33 bits). A weak fallback for collecting split over several scripts: ordinary pages also read a fair amount through their many scripts.',
+                'The score of the most suspicious burst of calls of the other scripts, on top of the strongest script: what they read together in one go beyond what it read.',
+            strength: 0.3,
+        },
+        beyondBurst: {
+            label: 'Outside the burst',
+            description:
+                'What the other scripts read outside their strongest burst, on top of what the strongest script and the burst read: a weak fallback for collecting spread over several scripts and over time.',
+            strength: 1,
+        },
+    },
+    // The other scripts outside their strongest burst: only APIs neither the strongest script nor the
+    // burst read (see computeDocumentFpScore).
+    otherScriptsBeyondBurst: {
+        identifying: {
+            label: 'Identifying fingerprinting APIs',
+            description:
+                'How much identifying information the other scripts add outside their strongest burst, on top of what the strongest script and the burst revealed, counted as for a script (nothing for a value already read, what it adds beside an overlapping API, toward the full 33 bits). Weak: ordinary pages also read a fair amount through their many scripts.',
             strength: 0.15,
         },
         unusualApis: {
             label: 'Unusual fingerprinting APIs',
             description:
-                'How many fingerprinting APIs the page reads beyond its strongest script that ordinary code rarely needs: their rarity added up, rare ones counting more. A fallback for collecting split over several scripts, each looking small on its own.',
+                'How many fingerprinting APIs the other scripts read outside their strongest burst that ordinary code rarely needs, beyond those the strongest script and the burst read: their rarity added up, rare ones counting more.',
             strength: 0.3,
         },
-        strongestScript: { label: 'Strongest script', description: 'The score of the most suspicious script.', strength: 1 },
-        strongestBurst: { label: 'Strongest burst', description: 'The score of the most suspicious burst of calls on the page, across all its scripts: catches collecting split over several scripts.', strength: 0.3 },
+        onePlace: {
+            label: 'Fingerprinting APIs from one place',
+            description:
+                'How many unusual fingerprinting APIs one of the other scripts reads from a single place in its code outside their strongest burst, beyond those the strongest script and the burst read, counted like "Unusual fingerprinting APIs".',
+            strength: 0.6,
+        },
         generatedCode: {
-            label: 'Fingerprinting APIs read by generated code',
-            description: 'The most unusual fingerprinting APIs a script on the page reads in code generated at runtime (new Function, eval).',
+            label: 'Fingerprinting APIs from generated code',
+            description: 'The most unusual fingerprinting APIs one of the other scripts reads outside their strongest burst in code generated at runtime (new Function, eval).',
             strength: 0,
         },
     },
@@ -141,14 +181,20 @@ export type SignalSource = ScoreLevel | 'apis';
 
 /** The signals made from another score or from the APIs read; the options page nests them. */
 export const SIGNAL_SOURCES: { [L in ScoreLevel]?: Partial<Record<SignalKey<L>, SignalSource>> } = {
-    page: { strongestScript: 'script', strongestBurst: 'burst', identifying: 'apis', unusualApis: 'apis', generatedCode: 'apis' },
-    script: { strongestBurst: 'burst', identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
+    page: { strongestScript: 'script', otherScripts: 'otherScripts' },
+    otherScripts: { strongestBurst: 'burst', beyondBurst: 'otherScriptsBeyondBurst' },
+    otherScriptsBeyondBurst: { identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
+    script: { strongestBurst: 'burst', beyondBurst: 'scriptBeyondBurst' },
+    scriptBeyondBurst: { identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
     burst: { identifying: 'apis', unusualApis: 'apis', generatedCode: 'apis', onePlace: 'apis', dataSent: 'request' },
 };
 
 export const LEVEL_LABELS: Record<ScoreLevel, string> = {
     page: 'Page',
+    otherScripts: 'Other scripts',
+    otherScriptsBeyondBurst: 'Other scripts outside their burst',
     script: 'Script',
+    scriptBeyondBurst: 'Script outside its burst',
     burst: 'Burst of calls',
     request: 'Request after a burst',
     hostname: 'ID-like hostname',
@@ -168,9 +214,9 @@ export interface Cutoffs {
 export type ApisLevel = 'burst' | 'pageBurst' | 'script' | 'page';
 
 export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
-    page: 'Page',
+    page: 'Other scripts beyond their burst',
     script: 'Script',
-    pageBurst: 'Burst of calls across the page',
+    pageBurst: 'Burst of the other scripts',
     burst: 'Burst of calls in a script',
 };
 
@@ -310,6 +356,8 @@ export interface SignalPart {
     strength: number;
     /** For a signal made from the APIs read: what each of them added (see apisSums). */
     apis?: ApisSum;
+    /** For a signal that is the score of a part made from its own signals (the rest of a page): those. */
+    parts?: Record<string, SignalPart>;
 }
 
 /** A score and the parts it was combined from, by signal key (see combine). */
@@ -612,12 +660,28 @@ export function watchScoringSettings(onChange: (settings: ScoringSettings) => vo
     return () => browser.storage.onChanged.removeListener(listener);
 }
 
+/**
+ * Strengths set for signals that have moved since, under their new level: the page's strongest
+ * burst to the other scripts; the page's and the other scripts' API signals to the other scripts
+ * outside their burst; a script's API signals to the script outside its burst.
+ */
+function movedStrengths(stored: StoredSettings | undefined, level: ScoreLevel): Record<string, number> {
+    const strengths = (stored?.strengths ?? {}) as Partial<Record<string, Partial<Record<string, number>>>>;
+    const pick = (from: string, keys: readonly string[]) =>
+        Object.fromEntries(keys.filter((key) => strengths[from]?.[key] !== undefined).map((key) => [key, strengths[from]![key]!]));
+    const API_SIGNALS = ['identifying', 'unusualApis', 'onePlace', 'generatedCode'] as const;
+    if (level === 'otherScripts') return pick('page', ['strongestBurst']);
+    if (level === 'otherScriptsBeyondBurst') return { ...pick('page', API_SIGNALS), ...pick('otherScripts', API_SIGNALS) };
+    if (level === 'scriptBeyondBurst') return pick('script', API_SIGNALS);
+    return {};
+}
+
 function withDefaults(storedAsIs: StoredSettings | undefined): ScoringSettings {
     const stored = migrated(storedAsIs);
     const strengths = Object.fromEntries(
         (Object.keys(DEFAULT_SETTINGS.strengths) as ScoreLevel[]).map((level) => [
             level,
-            { ...DEFAULT_SETTINGS.strengths[level], ...stored?.strengths?.[level] },
+            { ...DEFAULT_SETTINGS.strengths[level], ...movedStrengths(stored, level), ...stored?.strengths?.[level] },
         ])
     ) as ScoringSettings['strengths'];
     return {

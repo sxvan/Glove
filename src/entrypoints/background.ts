@@ -284,7 +284,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
 }
 
 function scriptSnapshotFromScript(script: ScriptState, scriptName: string): ScriptSnapshot {
-    // Counted as the calls arrived (see storeFpEvent), so also exact once they were thinned out.
+    // Counted as the calls arrived (see storeFpEvent).
     const apiCounts: Record<string, number> = {};
     const apiLocations: Record<string, CallLocation[]> = {};
     const apiTimes: Record<string, { first: number; last: number }> = {};

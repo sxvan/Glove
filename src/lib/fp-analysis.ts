@@ -5,7 +5,6 @@ import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { LIMITS, apisSums, apisSumsBeyond, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
-import { thinDocument } from './thinning';
 
 /**
  * How much an API adds to a burst's API signals, to find the window reading the most (see
@@ -27,7 +26,6 @@ function burstWeight(level: 'burst' | 'pageBurst', settings: ScoringSettings): (
 /** Scores the document's scripts, their bursts of calls and the requests right after (see scoring). */
 export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>, settings: ScoringSettings) {
     const documentFpEvents: FpMonkeyEvent[] = [];
-    const documentConsolidatedHttpEvents: HttpConsolidatedEvent[] = [];
 
     enrichHttpRequestsWithDns(document, dnsResults);
     const requestIndex = requestIndexOf(document);
@@ -45,8 +43,6 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
             consolidatedHttp.suspicionScore = httpFpScore(consolidatedHttp, settings);
         }
 
-        documentConsolidatedHttpEvents.push(...script.httpConsolidatedEvents);
-
         script.fpSpikes = detectSpikes(script.fpEvents, settings.bursts, burstWeight('burst', settings));
 
         for (const spike of script.fpSpikes) {
@@ -59,18 +55,32 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         script.fpMetrics = getFpMetrics(script.fpEvents);
         if (script.fpMetrics) {
-            // Thinned-out calls count too (see thinning).
+            // Its calls as counted when they arrived (see storeFpEvent).
             script.fpMetrics.intensity = Math.max(script.fpMetrics.intensity, script.callCount);
             setScore(script.fpMetrics, computeScriptFpScore(script, url, document, settings));
         }
     }
 
-    document.spikes = detectSpikes(documentFpEvents, settings.bursts, burstWeight('pageBurst', settings));
+    // Page bursts: the other scripts reading together, on top of the strongest script, which the
+    // page score counts in full. Found in their calls only, so the window isn't the strongest
+    // script's own burst again; APIs it read weigh nothing in finding them, and count only for what
+    // they reveal more (see apisSumsBeyond).
+    const strongest = strongestScript(document);
+    const known = new Set(strongest?.fpMetrics?.distinctFpApis ?? []);
+    // Scripts without calls were skipped above, so they have no requests matched either.
+    const others = Object.values(document.scripts).filter((script) => script !== strongest && script.fpEvents.length > 0);
+    const weight = burstWeight('pageBurst', settings);
+    document.spikes = detectSpikes(
+        others.flatMap((script) => script.fpEvents),
+        settings.bursts,
+        (id) => (known.has(id) ? 0 : weight(id))
+    );
+    const othersHttpEvents = others.flatMap((script) => script.httpConsolidatedEvents);
     for (const spike of document.spikes) {
-        spike.httpCorrelations = getCorrelatedHttpCandidates(spike, documentConsolidatedHttpEvents, settings.bursts.requestWindowMs);
+        spike.httpCorrelations = getCorrelatedHttpCandidates(spike, othersHttpEvents, settings.bursts.requestWindowMs);
         spike.fpMetrics = getFpMetrics(spike.events);
         if (spike.fpMetrics) {
-            setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings, 'pageBurst'));
+            setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings, 'pageBurst', known));
         }
     }
 
@@ -82,9 +92,6 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
         );
         setScore(document.fpMetrics, computeDocumentFpScore(document, settings));
     }
-
-    // Long-lived documents keep only what the analysis still needs (see thinning).
-    thinDocument(document, settings.bursts.requestWindowMs);
 }
 
 function setScore(metrics: FpMetrics, scored: ScoredParts) {
@@ -115,16 +122,19 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
 }
 
 /**
- * A burst's score; `apisLevel` is 'pageBurst' for a burst across all of a page's scripts, whose API
- * signals are full at more. One place and generated code keep the burst's: a place in the code
- * belongs to one script, so they don't add up over scripts like the APIs read do.
+ * A burst's score; `apisLevel` is 'pageBurst' for a burst of the page's other scripts, whose
+ * signals count on top of the APIs `known` (the strongest script's): what they reveal beyond them
+ * (see apisSumsBeyond), and of one place and generated code only the APIs not known. One place and
+ * generated code keep the burst's level: a place in the code belongs to one script, so they don't
+ * add up over scripts like the APIs read do.
  */
-function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: ScoringSettings, apisLevel: ApisLevel = 'burst'): ScoredParts {
+function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: ScoringSettings, apisLevel: ApisLevel = 'burst', known?: Set<string>): ScoredParts {
     const maxRequestScore = Math.max(...(spike.httpCorrelations ?? []).map((corr) => corr.suspicionScore || 0), 0);
 
-    const apis = apiSignals(metrics.distinctFpApis, apisLevel, settings);
-    const onePlace = onePlaceSum(spike.events, 'burst', settings);
-    const generated = generatedCodeSum(spike.events, 'burst', settings);
+    const apis = known ? apiSignalsBeyond(known, metrics.distinctFpApis, apisLevel, settings) : apiSignals(metrics.distinctFpApis, apisLevel, settings);
+    const events = known ? spike.events.filter((event) => !known.has(event.id)) : spike.events;
+    const onePlace = onePlaceSum(events, 'burst', settings);
+    const generated = generatedCodeSum(events, 'burst', settings);
 
     return combineParts(
         'burst',
@@ -161,48 +171,70 @@ function computeScriptFpScore(script: ScriptState, url: string, document: Docume
     const onePlace = onePlaceSum(beyond, 'script', settings);
     const generated = generatedCodeSum(beyond, 'script', settings);
 
-    return combineParts(
-        'script',
-        {
-            ...apis.values,
-            onePlace: onePlace.value,
-            strongestBurst: Math.max(...burstScores, 0),
-            cnameCloaked: servedThroughAlias(url, document) ? 1 : 0,
-            sentThroughAlias: script.fpSpikes.some((spike) => spike.httpCorrelations?.some((c) => c.httpRequest?.isCnameCloaked)) ? 1 : 0,
-            generatedCode: generated.value,
-        },
+    const beyondBurst = combineParts(
+        'scriptBeyondBurst',
+        { ...apis.values, onePlace: onePlace.value, generatedCode: generated.value },
         settings,
         { ...apis.sums, onePlace, generatedCode: generated }
     );
+    return withParts(
+        combineParts(
+            'script',
+            {
+                strongestBurst: Math.max(...burstScores, 0),
+                beyondBurst: beyondBurst.score,
+                cnameCloaked: servedThroughAlias(url, document) ? 1 : 0,
+                sentThroughAlias: script.fpSpikes.some((spike) => spike.httpCorrelations?.some((c) => c.httpRequest?.isCnameCloaked)) ? 1 : 0,
+            },
+            settings
+        ),
+        { beyondBurst }
+    );
+}
+
+/** `scored` with the parts of the signals that are scores of their own (see SignalPart.parts). */
+function withParts(scored: ScoredParts, parts: Record<string, ScoredParts>): ScoredParts {
+    for (const [key, part] of Object.entries(parts)) scored.parts[key]!.parts = part.parts;
+    return scored;
+}
+
+/** The script with the highest score, which the page score counts in full; null without scored scripts. */
+function strongestScript(document: DocumentState): ScriptState | null {
+    return Object.values(document.scripts)
+        .filter((s) => s.fpMetrics)
+        .reduce<ScriptState | null>((best, s) => ((s.fpMetrics!.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? s : best), null);
 }
 
 function computeDocumentFpScore(document: DocumentState, settings: ScoringSettings): ScoredParts {
     const metrics = document.fpMetrics!;
-    const scripts = Object.values(document.scripts).filter((s) => s.fpMetrics);
 
-    // As a fallback for collecting split over scripts, the page's own API signals count only what
-    // the other scripts read beyond the strongest one, which is already counted through it,
-    // measured on top of what that script revealed (see apisSumsBeyond). A page with one collector
-    // adds nothing; one whose scripts each collect a part shows the rest here.
-    const strongest = scripts.reduce<ScriptState | null>((best, s) => ((s.fpMetrics!.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? s : best), null);
-    const counted = new Set(strongest?.fpMetrics?.distinctFpApis ?? []);
-    const apis = apiSignalsBeyond(counted, metrics.distinctFpApis, 'page', settings);
-    // The script reading the most unusual APIs through generated code.
-    const generated = scripts
-        .map((s) => generatedCodeSum(s.fpEvents, 'page', settings))
+    // The page in two parts, each API in one only: the strongest script in full, and the other
+    // scripts on top of it, scored like a script: their strongest burst (see analyzeDocumentFp),
+    // and what they read outside it, on top of the strongest script and the burst (see
+    // apisSumsBeyond). A page with one collector adds nothing; one whose scripts each collect a
+    // part shows it here.
+    const strongest = strongestScript(document);
+    const burst = document.spikes.reduce<FpSpike | null>((best, spike) => ((spike.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? spike : best), null);
+    const known = new Set([...(strongest?.fpMetrics?.distinctFpApis ?? []), ...(burst?.fpMetrics?.distinctFpApis ?? [])]);
+    const others = Object.values(document.scripts).filter((s) => s.fpMetrics && s !== strongest);
+    const apis = apiSignalsBeyond(known, metrics.distinctFpApis, 'page', settings);
+    // Like a script's beyond its burst: one place and generated code only for the APIs not known,
+    // which leaves the burst's calls out too. A place belongs to one script; generated code counts
+    // for the other script reading the most unusual APIs through it.
+    const beyond = others.map((s) => s.fpEvents.filter((event) => !known.has(event.id)));
+    const onePlace = onePlaceSum(beyond.flat(), 'page', settings);
+    const generated = beyond
+        .map((events) => generatedCodeSum(events, 'page', settings))
         .reduce((most, sum) => (sum.value > most.value ? sum : most), generatedCodeSum([], 'page', settings));
-
-    return combineParts(
-        'page',
-        {
-            ...apis.values,
-            strongestScript: Math.max(...scripts.map((s) => s.fpMetrics!.score ?? 0), 0),
-            strongestBurst: Math.max(...document.spikes.map((s) => s.fpMetrics?.score ?? 0), 0),
-            generatedCode: generated.value,
-        },
+    const beyondBurst = combineParts(
+        'otherScriptsBeyondBurst',
+        { ...apis.values, onePlace: onePlace.value, generatedCode: generated.value },
         settings,
-        { ...apis.sums, generatedCode: generated }
+        { ...apis.sums, onePlace, generatedCode: generated }
     );
+    const other = withParts(combineParts('otherScripts', { strongestBurst: burst?.fpMetrics?.score ?? 0, beyondBurst: beyondBurst.score }, settings), { beyondBurst });
+
+    return withParts(combineParts('page', { strongestScript: strongest?.fpMetrics?.score ?? 0, otherScripts: other.score }, settings), { otherScripts: other });
 }
 
 // Fewer different APIs at a place are just a read, not a collection.
