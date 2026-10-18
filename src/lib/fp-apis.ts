@@ -115,9 +115,11 @@ export interface FpApi {
     rarity: number;
     /**
      * Where its rarity comes from: Chrome's use counter for it unless said otherwise; a counter of a
-     * related feature ("related"), or an estimate without data ("estimate").
+     * related feature ("related"), how often DuckDuckGo's Tracker Radar saw third-party scripts read
+     * it compared with APIs that have a counter ("trackerRadar", see FP_APIS), or an estimate without
+     * data ("estimate").
      */
-    rarityBasis?: 'related' | 'estimate';
+    rarityBasis?: 'related' | 'trackerRadar' | 'estimate';
     /**
      * The id of an API that reveals the same value (e.g. webgl2.readPixels and webgl.readPixels, or
      * screen.pixelDepth and screen.colorDepth): they count once together, as the highest of them.
@@ -162,7 +164,13 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 // getShaderPrecisionFormat from WebGL 1, speech.getVoices from reading speechSynthesis (an upper
 // bound), createDataChannel from creating an RTCPeerConnection, resolvedOptions from creating a
 // DateTimeFormat, mediasource.isTypeSupported from canPlayType, which answers the same question.
-// Rarity estimates without data: uadata.detailedHints, navigator.webdriver,
+// Chrome counts no use of navigator.webdriver (its IDL has no MeasureAs). DuckDuckGo's Tracker
+// Radar (github.com/duckduckgo/tracker-radar, US crawl) saw third-party scripts read it on 118,868
+// sites, about as often as deviceMemory (116,222; 43% of page loads in Chrome) and languages
+// (128,367; 41%): across such APIs with a counter, a page load share of about 3.4e-6 per site,
+// which makes webdriver about 40% (0.6). Probably rather less, as mostly third parties (bot
+// detection) read it, which the crawl sees all of, while first-party code reads the others too.
+// Rarity estimates without data: uadata.detailedHints,
 // document.referrer, date.getTimezoneOffset, webgl readPixels and getContextAttributes,
 // webgpu.adapterInfo, and the special
 // reads (hidden canvas, font probing, graphics card name), which are rarer than the API they use.
@@ -184,9 +192,10 @@ export const FP_APIS: FpApi[] = [
     { id: 'performance.memory', owner: 'Performance', prop: 'memory', category: 'Hardware', reveals: 'memory limits', bits: 1.8, rarity: 0.58, overlap: { group: 'memory', adds: 0.05 } },
     { id: 'navigator.maxTouchPoints', owner: 'Navigator', prop: 'maxTouchPoints', category: 'Hardware', reveals: 'touch support', bits: 2.2, rarity: 0.48 },
     { id: 'navigator.vendor', owner: 'Navigator', prop: 'vendor', category: 'Browser', reveals: 'browser vendor', bits: 1.4, rarity: 0.63, overlap: { group: 'browser', adds: 0 } },
-    // Says almost nothing about the device (false in practically every real browser), but checking
-    // for automation is what bot detection does.
-    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', bits: 0.4, rarity: 1, rarityBasis: 'estimate', bitsBasis: 'adjusted' },
+    // Says almost nothing about the device (false in practically every real browser). Checking for
+    // automation is what bot detection does, and that runs on a large part of the web: read about
+    // as often as deviceMemory.
+    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', bits: 0.4, rarity: 0.6, rarityBasis: 'trackerRadar', bitsBasis: 'adjusted' },
     // The same fixed list in modern Chrome, so it tells little about the device, but it's read
     // almost only by fingerprinting.
     { id: 'navigator.plugins', owner: 'Navigator', prop: 'plugins', category: 'Plugins', reveals: 'plugins', bits: 0.8, rarity: 0.68, bitsBasis: 'adjusted' },

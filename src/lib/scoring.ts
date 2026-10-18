@@ -211,9 +211,10 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         Object.entries(SIGNALS).map(([level, signals]) => [level, Object.fromEntries(Object.entries(signals).map(([key, s]) => [key, s.strength]))])
     ) as ScoringSettings['strengths'],
     cutoffs: {
-        // From 30, analytics and bot checks collecting device details (Bing, Dynatrace, reCAPTCHA, about
-        // 34 to 37) are Possible together; known collectors score 80 and more, ordinary heavy scripts
-        // (YouTube, video players) up to 64.
+        // From 30, analytics and bot checks collecting device details (Dynatrace, reCAPTCHA, about 35 to
+        // 39) are Possible together; known collectors score 80 and more, ordinary heavy scripts
+        // (YouTube, video players) up to 64. Bing's ad tag (24) reads device details and the
+        // automation check, which a large part of the web reads (see navigator.webdriver).
         fingerprinting: { possible: 0.3, likely: 0.75 },
         hostname: { possible: 0.3, likely: 0.6 },
     },
