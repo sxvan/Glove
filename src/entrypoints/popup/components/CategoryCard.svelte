@@ -5,8 +5,9 @@
     import LikelihoodLabel from './LikelihoodLabel.svelte';
     import SignalLine from './SignalLine.svelte';
 
-    // tipAbove opens the explanation upwards, so it stays inside the popup for lower cards.
-    let { category, tipAbove = false, onOpen }: { category: Category; tipAbove?: boolean; onOpen: () => void } = $props();
+    // tipAbove opens the explanation upwards, so it stays inside the popup for lower cards. Without
+    // `onOpen` (nothing recorded yet) the card has nothing to open.
+    let { category, tipAbove = false, onOpen }: { category: Category; tipAbove?: boolean; onOpen?: () => void } = $props();
 </script>
 
 <!-- The open button stretches over the whole card; the info icon and score bars sit above it,
@@ -15,7 +16,11 @@
     <div class="head">
         <span class="dot" aria-hidden="true"></span>
         <div class="title">
-            <button class="open" type="button" onclick={onOpen}>{category.title}</button>
+            {#if onOpen}
+                <button class="open" type="button" onclick={onOpen}>{category.title}</button>
+            {:else}
+                <span class="open">{category.title}</span>
+            {/if}
             <InfoTip label="What is {category.title}?" text={category.explanation} above={tipAbove} />
         </div>
         <!-- The page's score, like the scripts' bars below; empty for categories without one. -->
@@ -36,7 +41,7 @@
             <span></span>
         {/if}
         <LikelihoodLabel likelihood={category.likelihood} />
-        <span class="chevron" aria-hidden="true"></span>
+        {#if onOpen}<span class="chevron" aria-hidden="true"></span>{:else}<span></span>{/if}
     </div>
 
     <p class="line">{category.summary}</p>

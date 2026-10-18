@@ -24,6 +24,8 @@
     --unlikely: #1a8f4c;
     --possible: #c96512;
     --likely: #e0433c;
+    /* Nothing recorded yet: no judgment, so no colour of its own. */
+    --unknown: var(--muted);
 
     /* Plain facts, e.g. the info icon in front of a statement */
     --info: #2f6fde;
@@ -108,4 +110,8 @@ button {
 }
 .tone-likely {
     --color: var(--likely);
+}
+
+.tone-unknown {
+    --color: var(--unknown);
 }

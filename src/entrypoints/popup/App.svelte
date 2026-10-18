@@ -6,7 +6,19 @@
     import DetailHeader from './components/DetailHeader.svelte';
     import FingerprintCard from './components/FingerprintCard.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
-    import { buildCategories, buildSummary, cnameDetails, dnsDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type Category } from './model';
+    import {
+        buildCategories,
+        buildSummary,
+        cnameDetails,
+        dnsDetails,
+        fingerprintingDetails,
+        fingerprintingPageDetail,
+        pageHost,
+        pageUrl,
+        unknownCategories,
+        unknownPageDetail,
+        type Category,
+    } from './model';
     import CnameDetail from './screens/CnameDetail.svelte';
     import DnsDetail from './screens/DnsDetail.svelte';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
@@ -23,7 +35,8 @@
     // The category whose detail screen is open; null shows the overview.
     let openCategoryId = $state<Category['id'] | null>(null);
 
-    const categories = $derived(snapshot ? buildCategories(snapshot) : []);
+    // Without a recording the categories still show, as not checked yet.
+    const categories = $derived(snapshot ? buildCategories(snapshot) : unknownCategories());
     const openCategory = $derived(categories.find((c) => c.id === openCategoryId));
 
     // A script's page within the fingerprinting screen, and where that screen was scrolled to, to
@@ -114,11 +127,7 @@
 </header>
 
 <main>
-    {#if status === 'loading'}
-        <p class="state">Checking this page…</p>
-    {:else if status === 'unavailable'}
-        <p class="state">No data for this tab yet. Reload the page to check it.</p>
-    {:else if openCategory && snapshot}
+    {#if openCategory && snapshot}
         {@const scripts = openCategory.id === 'fingerprinting' ? fingerprintingDetails(snapshot) : []}
         {@const page = openCategory.id === 'fingerprinting' ? fingerprintingPageDetail(snapshot, scripts) : null}
         {@const shownScript = openScript ? [page, ...scripts].find((s) => s?.key === openScript?.key) : undefined}
@@ -139,7 +148,11 @@
             <DnsDetail hosts={dnsDetails(snapshot)} />
         {/if}
     {:else}
-        {#if summary}
+        {#if status === 'loading'}
+            <p class="state">Checking this page…</p>
+        {:else if status === 'unavailable'}
+            <p class="state">No data for this tab yet. Reload the page to check it.</p>
+        {:else if summary}
             <div class="summary">
                 <p class="headline">{summary.headline}</p>
                 {#if summary.parties.length > 0}
@@ -154,10 +167,10 @@
         {#each categories as category, i (category.id)}
             {#if category.id === 'fingerprinting'}
                 <!-- The page's card from the fingerprinting screen, titled by what it is about. -->
-                {@const page = fingerprintingPageDetail(snapshot!, fingerprintingDetails(snapshot!))}
-                <FingerprintCard script={{ ...page, name: category.title }} onOpen={() => openDetail(category.id)} />
+                {@const page = snapshot ? fingerprintingPageDetail(snapshot, fingerprintingDetails(snapshot)) : unknownPageDetail()}
+                <FingerprintCard script={{ ...page, name: category.title }} onOpen={snapshot ? () => openDetail(category.id) : undefined} />
             {:else}
-                <CategoryCard {category} tipAbove={i > 0} onOpen={() => openDetail(category.id)} />
+                <CategoryCard {category} tipAbove={i > 0} onOpen={snapshot ? () => openDetail(category.id) : undefined} />
             {/if}
         {/each}
     {/if}

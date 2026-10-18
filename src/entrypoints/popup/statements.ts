@@ -19,6 +19,10 @@ export interface Statement {
  * it sent data right after.
  */
 export function statements(script: ScriptDetail): Statement[] {
+    // Nothing to tell yet: not recorded, or recorded without any fingerprinting API read.
+    if (script.apis.length === 0) {
+        return [{ key: 'read', text: [script.likelihood === 'unknown' ? 'Not checked yet' : 'No fingerprinting APIs read so far'] }];
+    }
     // The most identifying kinds first, so those named are the ones that matter most.
     const kinds = listWords(
         script.learned.map(({ kind }) => kind.toLowerCase()),

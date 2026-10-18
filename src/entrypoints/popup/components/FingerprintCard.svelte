@@ -57,7 +57,7 @@
         </div>
         {#if onOpen}
             <div class="rating">
-                <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} title="Score {Math.round(script.score * 100)}" />
+                <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
                 <LikelihoodLabel likelihood={script.likelihood} />
             </div>
             <!-- Like the overview's other cards: the card leads on to a screen. -->
@@ -72,7 +72,7 @@
             title={breakdown ? 'Hide how the score came about' : 'Show how the score came about'}
             onclick={() => (breakdown = !breakdown)}
         >
-            <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} title="Score {Math.round(script.score * 100)}" />
+            <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
             <span class="likelihood">
                 <LikelihoodLabel likelihood={script.likelihood} />
                 {#if script.tree.length > 0}<span class="chevron" class:open={breakdown} aria-hidden="true"></span>{/if}
@@ -93,7 +93,7 @@
                 tone="info"
                 detail={statement.detail}
                 lead
-                details={!onOpen}
+                details={!onOpen && !!onDetails}
                 onDetails={onDetails ? () => onDetails(statement.key) : undefined}
             />
         {/each}

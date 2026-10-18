@@ -8,9 +8,11 @@ import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 import { duration, listWords, plural } from './format';
 
-export type Likelihood = 'unlikely' | 'possible' | 'likely';
+/** How likely tracking is; "unknown" while nothing was recorded for the tab yet. */
+export type Likelihood = 'unknown' | 'unlikely' | 'possible' | 'likely';
 
 export const LIKELIHOOD_LABELS: Record<Likelihood, string> = {
+    unknown: 'Unknown',
     unlikely: 'Unlikely',
     possible: 'Possible',
     likely: 'Likely',
@@ -79,6 +81,19 @@ export function pageHost(snapshot: TabSnapshot): string {
 
 export function buildCategories(snapshot: TabSnapshot): Category[] {
     return [fingerprinting(snapshot), cnameCloaking(snapshot), dnsTracking(snapshot)];
+}
+
+/** A snapshot of a tab with nothing recorded, for showing the categories before there is data. */
+export const EMPTY_SNAPSHOT: TabSnapshot = { cNameRequests: [], dnsTrackingRequests: [], frames: [], cutoffs: DEFAULT_SETTINGS.cutoffs };
+
+/** The categories while nothing was recorded for the tab: each unknown, not checked yet. */
+export function unknownCategories(): Category[] {
+    return buildCategories(EMPTY_SNAPSHOT).map((category) => ({ ...category, likelihood: 'unknown', score: null, summary: 'Not checked yet', rows: [], signals: [] }));
+}
+
+/** The page's fingerprinting card while nothing was recorded for the tab. */
+export function unknownPageDetail(): ScriptDetail {
+    return { ...fingerprintingPageDetail(EMPTY_SNAPSHOT, []), name: '', likelihood: 'unknown' };
 }
 
 export interface Summary {
