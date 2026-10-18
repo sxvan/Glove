@@ -5,8 +5,8 @@ import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
-import { showScoreIcon } from '@/lib/toolbar-icon';
-import { createSession, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
+import { forgetTabIcon, showScoreIcon } from '@/lib/toolbar-icon';
+import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
@@ -182,6 +182,12 @@ export default defineBackground(() => {
         updateCurrentDocument(session, tabId, frameId, documentId, url);
         if (frameId === 0) dropPreviousPageFrames(session, tabId, details.timeStamp);
     });
+
+    // A closed tab's recording is of no more use.
+    browser.tabs.onRemoved.addListener((tabId) => {
+        dropTab(session, tabId);
+        forgetTabIcon(tabId);
+    });
 });
 
 /** The size of a request's body in bytes: raw data, or form fields as sent. */
@@ -276,27 +282,13 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
 }
 
 function scriptSnapshotFromScript(script: ScriptState, scriptName: string): ScriptSnapshot {
+    // Counted as the calls arrived (see storeFpEvent), so also exact once they were thinned out.
     const apiCounts: Record<string, number> = {};
-    // Per API, the positions it was called from: "line:column" -> location with call count.
-    const positions = new Map<string, Map<string, CallLocation>>();
-
-    for (const event of script.fpEvents) {
-        apiCounts[event.id] = (apiCounts[event.id] ?? 0) + 1;
-
-        // == null also skips events from an older recorder, which don't have the fields at all.
-        if (event.line == null || event.column == null) continue;
-        const byPosition = positions.get(event.id) ?? new Map<string, CallLocation>();
-        const key = `${event.line}:${event.column}`;
-        const location = byPosition.get(key) ?? { line: event.line, column: event.column, generated: false, calls: 0 };
-        location.calls++;
-        location.generated ||= event.generated === true;
-        byPosition.set(key, location);
-        positions.set(event.id, byPosition);
-    }
-
     const apiLocations: Record<string, CallLocation[]> = {};
-    for (const [api, byPosition] of positions) {
-        apiLocations[api] = [...byPosition.values()].sort((a, b) => b.calls - a.calls);
+    for (const [api, calls] of Object.entries(script.calls)) {
+        apiCounts[api] = calls.count;
+        const locations = Object.values(calls.locations);
+        if (locations.length > 0) apiLocations[api] = locations.map((location) => ({ ...location })).sort((a, b) => b.calls - a.calls);
     }
 
     return {
@@ -354,8 +346,6 @@ function collectDnsTrackingRequestsForTab(session: Session, tabId: number): Http
     }
 
     results.sort((a, b) => (b.subdomainScore || 0) - (a.subdomainScore || 0));
-
-    console.log(results);
 
     return results;
 }

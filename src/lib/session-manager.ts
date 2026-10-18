@@ -84,6 +84,8 @@ export function ensureScript(
     if (!document.scripts[scriptKey]) {
         document.scripts[scriptKey] = {
             fpEvents: [],
+            calls: {},
+            callCount: 0,
             httpEvents: [],
             httpConsolidatedEvents: [],
             fpSpikes: [],
@@ -113,11 +115,29 @@ export function updateCurrentDocument(session: Session, tabId: number, frameId: 
     }
 
     if (previousDocumentId !== documentId) {
-        const previousDocument = frame.documents[previousDocumentId]!;
-        previousDocument.endTime = Date.now();
+        const previousDocument = frame.documents[previousDocumentId];
+        if (previousDocument) previousDocument.endTime = Date.now();
     }
 
     frame.currentDocumentId = documentId;
+    dropEndedDocuments(frame, documentId);
+}
+
+// How long a frame's previous document is kept after another replaced it: its last events can
+// still arrive. Kept longer it would only add up, page after page.
+const ENDED_DOCUMENT_MS = 30_000;
+
+/** Forgets the frame's documents that ended a while ago, other than `currentId`. */
+function dropEndedDocuments(frame: FrameState, currentId: string) {
+    const now = Date.now();
+    for (const [id, document] of Object.entries(frame.documents)) {
+        if (id !== currentId && document.endTime !== null && now - document.endTime > ENDED_DOCUMENT_MS) delete frame.documents[id];
+    }
+}
+
+/** Forgets all a closed tab recorded. */
+export function dropTab(session: Session, tabId: number) {
+    delete session.tabs[tabId];
 }
 
 /**
@@ -140,6 +160,15 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
 
     script.fpEvents.push(event);
+    script.callCount += 1;
+    const calls = (script.calls[event.id] ??= { count: 0, locations: {} });
+    calls.count += 1;
+    // == null also skips events from an older recorder, which don't have the fields at all.
+    if (event.line != null && event.column != null) {
+        const location = (calls.locations[`${event.line}:${event.column}`] ??= { line: event.line, column: event.column, generated: false, calls: 0 });
+        location.calls += 1;
+        location.generated ||= event.generated === true;
+    }
 }
 
 /**

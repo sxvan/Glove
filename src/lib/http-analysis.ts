@@ -45,6 +45,8 @@ const withoutFragment = (url: string) => url.split('#')[0]!;
 /** The document's requests by URL without fragment, as indexes into httpRequests in time order. */
 export interface RequestIndex {
     byUrl: Map<string, number[]>;
+    /** The array indexed: a new one (thinned out, see thinning) is indexed anew. */
+    requests: HttpRequest[];
     /** How many of the document's requests it holds; newer ones are added on the next use. */
     count: number;
 }
@@ -57,8 +59,8 @@ const requestIndexes = new WeakMap<DocumentState, RequestIndex>();
  */
 export function requestIndexOf(document: DocumentState): RequestIndex {
     let index = requestIndexes.get(document);
-    if (!index) {
-        index = { byUrl: new Map(), count: 0 };
+    if (!index || index.requests !== document.httpRequests) {
+        index = { byUrl: new Map(), requests: document.httpRequests, count: 0 };
         requestIndexes.set(document, index);
     }
     const requests = document.httpRequests;

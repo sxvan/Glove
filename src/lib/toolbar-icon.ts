@@ -32,6 +32,11 @@ export function showScoreIcon(tabId: number, pageId: string, score: number, cuto
     browser.action.setIcon({ tabId, imageData }).catch(() => shown.delete(tabId));
 }
 
+/** Forgets what a closed tab's icon showed. */
+export function forgetTabIcon(tabId: number) {
+    shown.delete(tabId);
+}
+
 /** The ring for `percent` at `size` pixels, drawn the first time it's needed. */
 function ring(size: number, percent: number, color: string): ImageData {
     const key = `${size}|${color}|${percent}`;

@@ -5,6 +5,7 @@ import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { LIMITS, apisSums, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
+import { thinDocument } from './thinning';
 
 /**
  * How much an API adds to a burst's API signals, to find the window reading the most (see
@@ -58,6 +59,8 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         script.fpMetrics = getFpMetrics(script.fpEvents);
         if (script.fpMetrics) {
+            // Thinned-out calls count too (see thinning).
+            script.fpMetrics.intensity = Math.max(script.fpMetrics.intensity, script.callCount);
             setScore(script.fpMetrics, computeScriptFpScore(script, url, document, settings));
         }
     }
@@ -73,8 +76,15 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
     document.fpMetrics = getFpMetrics(documentFpEvents);
     if (document.fpMetrics) {
+        document.fpMetrics.intensity = Math.max(
+            document.fpMetrics.intensity,
+            Object.values(document.scripts).reduce((sum, script) => sum + script.callCount, 0)
+        );
         setScore(document.fpMetrics, computeDocumentFpScore(document, settings));
     }
+
+    // Long-lived documents keep only what the analysis still needs (see thinning).
+    thinDocument(document, settings.bursts.requestWindowMs);
 }
 
 function setScore(metrics: FpMetrics, scored: ScoredParts) {
