@@ -33,6 +33,10 @@ function installFpHooks() {
     isConnected = nativeGetter(Node.prototype, 'isConnected');
     contextCanvas = nativeGetter(CanvasRenderingContext2D.prototype, 'canvas');
     contextFont = nativeGetter(CanvasRenderingContext2D.prototype, 'font');
+    createElement = Document.prototype.createElement;
+    canvasWidth = nativeGetter(HTMLCanvasElement.prototype, 'width');
+    canvasHeight = nativeGetter(HTMLCanvasElement.prototype, 'height');
+    canvasSize = nativeSetters(HTMLCanvasElement.prototype, ['width', 'height']);
 
     for (const target of FP_APIS) {
         // Particular reads through another API are recognized by that API's hook.
@@ -164,15 +168,69 @@ function hookMethod(proto: any, prop: string, id: string) {
     // Particular reads through this method, recorded under their own id (e.g. the GPU name).
     const reads = FP_APIS.filter((api) => api.readOf?.api === id);
 
+    const revealsNothing = REVEALS_NOTHING[id];
+
     // Method syntax: like the browser's own methods, it has no prototype and can't be called with new.
+    // Recorded once the call returned, as whether it revealed anything can depend on the result; a
+    // call that threw is recorded as made.
     const wrapped = {
         [prop](this: unknown, ...args: unknown[]) {
-            recordFpEvent(reads.find((read) => isSpecialRead(read.readOf!.read, this, args))?.id ?? id, wrapped);
-            return reflectApply(original, this, args);
+            let result: unknown;
+            let threw = true;
+            try {
+                result = reflectApply(original, this, args);
+                threw = false;
+                return result;
+            } finally {
+                if (threw || !revealsNothing?.(this, args, result, original)) {
+                    recordFpEvent(reads.find((read) => isSpecialRead(read.readOf!.read, this, args))?.id ?? id, wrapped);
+                }
+            }
         },
     }[prop]!;
 
     proto[prop] = disguise(wrapped, original);
+}
+
+// ---------- calls that reveal nothing ----------
+// Exporting a canvas nothing was drawn on reads nothing about the device, and isn't recorded:
+// players and image code do it to check which formats the browser can encode (toDataURL("image/webp")
+// on a new canvas, often after getContext("2d") to see that canvases work). Fingerprinting has to
+// draw first, as a blank canvas looks the same everywhere, so comparing the export with a blank
+// canvas's of the same size and format tells. Large canvases, beyond what fingerprinting or a format
+// check uses, aren't compared, so an image editor's exports cost no extra blank one.
+
+// Canvas pixels up to which an export is compared with a blank canvas's.
+const BLANK_COMPARE_MAX_PIXELS = 1_000_000;
+
+let createElement: typeof Document.prototype.createElement;
+let canvasWidth: (canvas: unknown) => number | undefined;
+let canvasHeight: (canvas: unknown) => number | undefined;
+let canvasSize: (canvas: unknown, values: number[]) => void;
+
+/** Whether a call (`self`, `args`) that returned `result` revealed nothing; `original` is the native method. */
+const REVEALS_NOTHING: Record<string, (self: unknown, args: unknown[], result: unknown, original: Function) => boolean> = {
+    'canvas.toDataURL': (canvas, args, result, original) => isBlankExport(canvas, args, result, original),
+};
+
+// What a blank canvas exports, by size and format: computed once each.
+const blankExports = new Map<string, unknown>();
+
+/** Whether toDataURL returned what a blank canvas of the same size and format does. Never throws. */
+function isBlankExport(canvas: unknown, args: unknown[], result: unknown, toDataURL: Function): boolean {
+    try {
+        const [width, height] = [canvasWidth(canvas), canvasHeight(canvas)];
+        if (typeof result !== 'string' || width === undefined || height === undefined || width * height > BLANK_COMPARE_MAX_PIXELS) return false;
+        const key = `${width}x${height} ${String(args[0])} ${String(args[1])}`;
+        if (!blankExports.has(key)) {
+            const blank = reflectApply(createElement, document, ['canvas']);
+            canvasSize(blank, [width, height]);
+            blankExports.set(key, reflectApply(toDataURL, blank, args));
+        }
+        return blankExports.get(key) === result;
+    } catch {
+        return false;
+    }
 }
 
 // ---------- particular reads (see SpecialRead) ----------
@@ -215,6 +273,12 @@ function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boole
     } catch {
         return false;
     }
+}
+
+/** Sets properties through their native setters, in order (e.g. width and height); throws if that fails. */
+function nativeSetters(proto: object, props: string[]): (target: unknown, values: unknown[]) => void {
+    const setters = props.map((prop) => Object.getOwnPropertyDescriptor(proto, prop)?.set);
+    return (target, values) => setters.forEach((set, i) => Reflect.apply(set!, target, [values[i]]));
 }
 
 /** Reads a property through its native getter, so a page can't fake it; undefined if that fails. */

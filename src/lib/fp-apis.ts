@@ -260,6 +260,7 @@ export const FP_APIS: FpApi[] = [
 
     // Canvas: reading back what was drawn shows how this device renders. Exporting or editing a
     // visible canvas is common; reading back a canvas that isn't on the page is canvas fingerprinting.
+    // Exporting a canvas nothing was drawn on (checking which formats can be encoded) isn't recorded.
     { id: 'canvas.toDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.86 },
     { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.9, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     { id: 'canvas.toBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.99, same: 'canvas.toDataURL' },

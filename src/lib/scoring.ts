@@ -33,13 +33,13 @@ export const SIGNALS = {
             label: 'Fingerprinting APIs from generated code',
             description:
                 'How many rare identifying fingerprinting APIs the burst reads in code generated at runtime (new Function, eval), which hides what it does, counted like "Rare identifying fingerprinting APIs".',
-            strength: 0.5,
+            strength: 0.25,
         },
         onePlace: {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
-            strength: 0.5,
+            strength: 0.25,
         },
         dataSent: {
             label: 'Data sent right after',
@@ -80,13 +80,13 @@ export const SIGNALS = {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs beyond its strongest burst it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs".',
-            strength: 0.5,
+            strength: 0.25,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
             description:
                 'How many rare identifying fingerprinting APIs beyond its strongest burst the script reads in code it generates at runtime (new Function, eval), which hides what it does.',
-            strength: 0.5,
+            strength: 0.25,
         },
     },
     // The page in two parts, each API counted in one only: its strongest script in full, and the
@@ -127,13 +127,13 @@ export const SIGNALS = {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs one of the other scripts reads from a single place in its code outside their strongest burst, beyond those the strongest script and the burst read.',
-            strength: 0.5,
+            strength: 0.25,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
             description:
                 'The most rare identifying fingerprinting APIs one of the other scripts reads outside their strongest burst in code generated at runtime (new Function, eval).',
-            strength: 0.5,
+            strength: 0.25,
         },
     },
     request: {
