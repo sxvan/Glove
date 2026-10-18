@@ -51,7 +51,7 @@ export function statements(script: ScriptDetail): Statement[] {
         list.push({
             key: 'cloaked',
             text: ['Served by ', { value: script.origin }, ' through ', { value: script.via }],
-            detail: script.aliasOf ? `${script.via} alias for ${script.aliasOf}` : '',
+            detail: script.via ? `${script.via} is an address of the site that is an alias (CNAME) for it` : '',
         });
     }
     const sent = sentStatement(script);

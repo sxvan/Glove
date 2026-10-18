@@ -294,8 +294,9 @@ export interface ScriptDetail {
     /** True when the name is a URL path: its file name (from the last "/") always shows. */
     path: boolean;
     /**
-     * Who serves the script: the site its requests really end on (for a CNAME-cloaked host the site
-     * the alias points to), or a description such as "Embedded in example.com".
+     * Who serves the script: the host it really comes from (for a CNAME-cloaked host the server the
+     * alias points to, as the alias is a first-party name), or a description such as "Embedded in
+     * example.com".
      */
     origin: string;
     /** The full host behind origin, and the alias it went through, for the tooltip. */
@@ -405,7 +406,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         key: `${frame.frameId}|${script.name}`,
                         name,
                         path,
-                        origin: path && site ? site : origin,
+                        origin: path && host ? realHost(host, aliases) : origin,
                         originTitle: originTitle(host, aliases) || origin,
                         viewer: viewerSource ? { url: viewerSource, name, apis, inline } : null,
                         url: script.name,
@@ -635,9 +636,8 @@ export function fingerprintingPage(snapshot: TabSnapshot): PageScore {
 export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptDetail[]): ScriptDetail {
     const page = fingerprintingPage(snapshot);
     const url = pageUrl(snapshot) ?? '';
-    // Named by its site, like a script's identity: "youtube.com" for www.youtube.com.
-    const host = pageHost(snapshot);
-    const site = (host && getEtld1(host)) || host || 'Whole page';
+    // Named by its full host, like the popup's header: "accounts.google.com" is not all of google.com.
+    const host = pageHost(snapshot) || 'Whole page';
 
     const calls = new Map<string, number | null>();
     for (const script of scripts) {
@@ -660,7 +660,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
 
     return {
         key: 'page',
-        name: site,
+        name: host,
         path: false,
         origin: 'All activity',
         originTitle: url,
@@ -1222,6 +1222,11 @@ function originTitle(host: string | null, aliases: Map<string, string>): string 
     if (!host) return '';
     const target = aliases.get(host);
     return target ? `${host}, an alias (CNAME) for ${target}` : host;
+}
+
+/** The host a script really comes from: for a CNAME-cloaked host the server it points to, otherwise itself. */
+function realHost(host: string, aliases: Map<string, string>): string {
+    return (aliases.get(host) ?? host).replace(/\.$/, '');
 }
 
 /**

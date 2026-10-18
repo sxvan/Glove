@@ -53,7 +53,8 @@
                 <span class="name" title={script.url}><MiddleTruncate text={script.name} path={script.path} /></span>
             {/if}
             <!-- Who really serves it; how a CNAME-cloaked script hides is an info line, and the tooltip. -->
-            <span class="origin" title={script.originTitle}>{script.origin}</span>
+            <!-- A host, when too long, is shortened in the middle, keeping its site at the end. -->
+            <span class="origin" title={script.originTitle}>{#if script.path}<MiddleTruncate text={script.origin} />{:else}{script.origin}{/if}</span>
         </div>
         {#if onOpen}
             <div class="rating">
