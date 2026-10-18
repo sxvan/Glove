@@ -243,7 +243,7 @@
 
     /* Every second row on a slightly lighter surface: the rows are told apart without lines. */
     .row:nth-child(even) {
-        background: color-mix(in srgb, var(--surface), var(--text) 4%);
+        background: var(--fill);
     }
 
     /* How identifying and how common it is, in the two columns like the lines above. */

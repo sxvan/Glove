@@ -185,13 +185,9 @@
         text-decoration: underline;
     }
 
-    /* A card opening a screen as a whole: like the overview's other cards, hovering lightens it. */
+    /* A card opening a screen as a whole. */
     .opens {
         cursor: pointer;
-    }
-
-    .opens:hover {
-        background: color-mix(in srgb, var(--surface), var(--text) 4%);
     }
 
     /* The head gets a column for the chevron, after the rating. */

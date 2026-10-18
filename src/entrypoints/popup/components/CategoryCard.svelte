@@ -88,11 +88,6 @@
         gap: 12px;
     }
 
-    /* Without a border, hovering lightens the surface a little. */
-    .category:hover {
-        background: color-mix(in srgb, var(--surface), var(--text) 4%);
-    }
-
     .head {
         display: grid;
         grid-template-columns: auto 1fr 48px auto auto;
