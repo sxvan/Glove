@@ -74,23 +74,16 @@ export const EVERYONE_BITS = 33;
 /**
  * How identifying all it read is together, in bits (see identifyingBits): "Up to 18 bits of
  * identifying information" over "One browser in about 260,000". "Up to", as details still overlap
- * beyond what the sum takes into account; from EVERYONE_BITS on, enough to single out anyone instead of a count past
- * the people online. None under a bit: hardly anything to tell.
+ * beyond what the sum takes into account. From EVERYONE_BITS on, enough to single out anyone instead
+ * of a count past the people online. None under a bit: hardly anything to tell.
  */
 function identifyingStatement(script: ScriptDetail): Statement | null {
     const bits = Math.round(identifyingBits(script.apiDetails));
     if (bits < 1) return null;
-    if (bits >= EVERYONE_BITS) {
-        return {
-            key: 'identifying',
-            text: ['Up to ', { value: `${EVERYONE_BITS} bits or more` }, ' of identifying information'],
-            detail: 'Enough to single out one browser among everyone online',
-        };
-    }
     return {
         key: 'identifying',
         text: ['Up to ', { value: plural(bits, 'bit') }, ' of identifying information'],
-        detail: `One browser in about ${roughCount(2 ** bits)}`,
+        detail: bits >= EVERYONE_BITS ? 'Enough to single out one browser among everyone online' : `One browser in about ${roughCount(2 ** bits)}`,
     };
 }
 

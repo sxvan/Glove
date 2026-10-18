@@ -40,15 +40,19 @@
         <li class:idle={node.shownShare === 0}>
             {#snippet row()}
                 <span class="toggle" class:open={open[node.key]} aria-hidden="true"></span>
-                <span class="text">
-                    <span class="label" class:api={node.api} class:wrap={!node.detail} title={node.label}>{node.label}</span>
+                <span class="text" title={node.api ? node.note : undefined}>
+                    <span class="label" class:api={node.api} class:wrap={!node.detail} title={node.api ? undefined : node.label}>{node.label}</span>
                     {#if node.detailPath}
                         <span class="detail" title={node.detail}><MiddleTruncate text={node.detail} path plain /></span>
                     {:else if node.detail}
                         <span class="detail" title={node.detail}>{node.detail}</span>
                     {/if}
                 </span>
-                <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} title={ringTitle(node)} />
+                <!-- An API says what it adds in its detail (its bits or rarity); a ring would measure it
+                     differently from the signals' rings, so its text takes the ring's place. -->
+                {#if !node.api}
+                    <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} title={ringTitle(node)} />
+                {/if}
                 <span class="share" class:none={node.shownShare === 0} title="What it adds to the {node.shareTo}'s score">
                     +{Math.round(node.shownShare * 100)}
                     <span class="to">to {node.shareTo}</span>
@@ -63,7 +67,7 @@
                     <div class="children"><ScoreTree nodes={node.children} /></div>
                 {/if}
             {:else}
-                <div class="row leaf">{@render row()}</div>
+                <div class="row leaf" class:api={node.api}>{@render row()}</div>
             {/if}
         </li>
     {/each}
@@ -192,6 +196,13 @@
         font-family: var(--mono);
         font-size: 12px;
         font-weight: 400;
+    }
+
+    /* An API's row has no ring: its name and detail run on into the ring's column. As tall as a
+       row with a ring, so the tree lines meet it in the middle. */
+    .row.api {
+        grid-template-columns: 12px minmax(0, 1fr) 78px;
+        min-height: 60px;
     }
 
     /* Its share of the score above: secondary to how strongly it was observed. */

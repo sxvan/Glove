@@ -858,6 +858,8 @@ const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = { script: 'read in the 
 
 function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: ScoreLevel): { detail: string; children: ScoreNode[] } {
     const number = (x: number) => +x.toFixed(2);
+    // What the sum counts: bits of identifying information, or points of rarity.
+    const unit = sum.measure === 'bits' ? 'bits' : 'points';
     // An API's own value: "5.9 bits", or "rarity 0.93".
     const own = (basis: number) => (sum.measure === 'bits' ? `${number(basis)} bits` : `rarity ${number(basis)}`);
 
@@ -877,14 +879,14 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
             : sum.measure === 'rarity' && api.amount !== api.basis
               ? `${own(api.basis)}, counts ${number(api.amount)}`
               : own(api.basis);
-        let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} points that make it full: +${score(share)}.`;
+        let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} ${unit} that make it full: +${score(share)}.`;
         // A sum beyond what is already counted names that as such: "read in the burst".
         const where = api.withKnown ? `, ${KNOWN_WHERE[signalLevel]}` : '';
         if (api.countedWith) note = `Same information as ${api.countedWith}${where}, which counts instead.`;
         else if (api.overlapsWith)
             note = `Overlaps with ${api.overlapsWith}${where}, which counts all its bits: this one adds only the ${number(api.amount)} bits it tells beyond it, +${score(share)}.`;
         else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)
-            note = `Adds ${number(api.amount)} points, but the APIs adding more already filled it up to full: +${score(share)}.`;
+            note = `Adds ${number(api.amount)} ${unit}, but the APIs adding more already filled it up to full: +${score(share)}.`;
         return {
             key: api.id,
             label: api.id,
@@ -903,7 +905,7 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
     const detail =
         sum.known !== undefined && sum.measure === 'bits'
             ? `${number(sum.total)} bits on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
-            : `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'API')}`;
+            : `${number(sum.total)} of ${number(sum.fullAt)}${sum.measure === 'bits' ? ' bits' : ''} from ${plural(sum.apis.length, 'API')}`;
     return { detail, children: withShownShares(children, total) };
 }
 
