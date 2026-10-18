@@ -4,8 +4,8 @@
 import { browser } from 'wxt/browser';
 import type { Cutoffs } from './scoring';
 
-// The likelihood colors of the popup (see theme.css).
-const COLORS = { unlikely: '#1a8f4c', possible: '#c96512', likely: '#d12f2f' };
+// The likelihood colors of the popup, the same in both its palettes (see theme.css).
+const COLORS = { unlikely: '#1a8f4c', possible: '#c96512', likely: '#e0433c' };
 // The empty part of the ring: grey with some transparency, readable on light and dark toolbars.
 const TRACK: [number, number, number, number] = [128, 128, 128, 115];
 // Toolbar icons are 16 pixels, 32 on high-resolution screens.

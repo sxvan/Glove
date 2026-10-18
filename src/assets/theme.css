@@ -1,20 +1,25 @@
 /* Theme tokens and base styles shared by the extension's pages (popup, options, script viewer).
-   Always light, independent of the system theme: white cards on a light grey background, in the
-   manner of Apple's light appearance. Component styles are scoped. */
+   Two palettes in the manner of Apple's appearances: light (white cards on light grey) and dark
+   (dark grey cards on near black). Which one shows is chosen on the options page (see theme.ts):
+   the root's data-theme is "light" or "dark", or missing to follow the system. Component styles
+   are scoped. */
 
 :root {
     color-scheme: light;
-    --bg: #f2f2f7;
+    /* Twice the step to the white cards of Apple's #f2f2f7 (1.22:1), which was hard to see on bright screens. */
+    --bg: #e8e8ed;
     --surface: #ffffff;
     --border: #e3e3e8;
     --text: #1d1d1f;
     --muted: #6e6e73;
     --tooltip-bg: #ffffff;
+    --shadow: rgb(0 0 0 / 0.12);
 
-    /* Likelihood colours, dark enough to read on white */
+    /* Likelihood colours, the same in both palettes and on the toolbar ring (see toolbar-icon):
+       each reads at about 4:1 on the white and the dark cards, and on Chrome's light and dark toolbars. */
     --unlikely: #1a8f4c;
     --possible: #c96512;
-    --likely: #d12f2f;
+    --likely: #e0433c;
 
     /* Plain facts, e.g. the info icon in front of a statement */
     --info: #2f6fde;
@@ -22,6 +27,33 @@
     /* Inter, bundled with the extension (each page's main.ts imports it); the system font until it loads. */
     --font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/* The dark palette: chosen, or the system's while following it. */
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --bg: #111113;
+    --surface: #1e1e21;
+    --border: #2e2e33;
+    --text: #f5f5f7;
+    --muted: #98989f;
+    --tooltip-bg: #2a2a2e;
+    --shadow: rgb(0 0 0 / 0.45);
+    --info: #0a84ff;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        color-scheme: dark;
+        --bg: #111113;
+        --surface: #1e1e21;
+        --border: #2e2e33;
+        --text: #f5f5f7;
+        --muted: #98989f;
+        --tooltip-bg: #2a2a2e;
+        --shadow: rgb(0 0 0 / 0.45);
+        --info: #0a84ff;
+    }
 }
 
 * {

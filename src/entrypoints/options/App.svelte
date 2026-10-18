@@ -18,6 +18,7 @@
     import { FP_APIS, FP_CATEGORIES, type FpApi, type FpCategory } from '@/lib/fp-apis';
     import { percent, percentFromInput, positiveFromInput, unitFromInput } from './inputs';
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
+    import ThemeSwitch from './ThemeSwitch.svelte';
 
     // Saves after typing pauses, so every keystroke doesn't re-score all open pages.
     const SAVE_DELAY_MS = 400;
@@ -120,6 +121,18 @@
         "made from" links to the settings that go into it.
     </p>
     <p class="status" role="status">{status}</p>
+
+    <!-- Not a scoring setting: kept apart from them, and not reset with them. -->
+    <section class="squircle">
+        <h2>Appearance</h2>
+        <div class="row">
+            <div>
+                <div class="name">Theme</div>
+                <div class="description">The extension's pages in light or dark, or as the system is set.</div>
+            </div>
+            <ThemeSwitch />
+        </div>
+    </section>
 
     {#if settings}
         <section class="squircle">
