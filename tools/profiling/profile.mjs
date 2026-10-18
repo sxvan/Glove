@@ -7,8 +7,10 @@
 //    functions, and its heap. The profiles are saved to open in DevTools (Performance panel).
 // 3. Over time: one site used for a few minutes (scrolling, following links), the background's
 //    heap sampled meanwhile and its CPU profiled.
+// 4. Many tabs (--tabs N): N tabs of the sites open at once for --minutes, half of them closed
+//    halfway, the background's heap sampled and its CPU profiled; replaces 1 to 3.
 //
-// usage: node profile.mjs [--ext <build dir>] [--runs N] [--wait seconds] [--minutes M] [site ...]
+// usage: node profile.mjs [--ext <build dir>] [--runs N] [--wait seconds] [--minutes M] [--tabs N] [site ...]
 // Build first (pnpm run build here: unminified, into .output/profile); results go to results/<time>/.
 
 import fs from 'node:fs';
@@ -36,6 +38,7 @@ const extPath = path.resolve(here, option('ext', '../../.output/profile/chrome-m
 const runs = Number(option('runs', 2));
 const waitMs = Number(option('wait', 12)) * 1000;
 const minutes = Number(option('minutes', 3));
+const tabs = Number(option('tabs', 0));
 const sites = args.length > 0 ? args : DEFAULT_SITES;
 const outDir = path.join(here, 'results', new Date().toISOString().replace(/[:.]/g, '-'));
 
@@ -203,6 +206,58 @@ async function memoryOverTime(site) {
     for (const { fn, ms } of summary.backgroundTop.slice(0, 6)) console.log(`      ${String(ms).padStart(7)} ms  ${fn}`);
     await browser.close();
     return { site, samples, clicks, profileFile: name, ...summary };
+}
+
+/**
+ * `tabs` tabs of the sites (taking turns) open at once for `minutes`, each scrolled now and then;
+ * half of them closed halfway, to see their recording let go. Samples the background's heap every
+ * 30 seconds and profiles its CPU over the whole run.
+ */
+async function manyTabs() {
+    const { browser, worker } = await launch(true);
+    const workerSession = await worker.createCDPSession();
+    await workerSession.send('Profiler.enable');
+    await workerSession.send('Profiler.setSamplingInterval', { interval: 1000 });
+    await workerSession.send('Profiler.start');
+    const started = Date.now();
+    const pages = [];
+    for (let i = 0; i < tabs; i++) {
+        const page = await browser.newPage();
+        page.goto(sites[i % sites.length], { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        pages.push(page);
+        // A little apart, as people open tabs; and Chrome loads them more evenly.
+        await new Promise((r) => setTimeout(r, 1000));
+    }
+    const samples = [];
+    let closed = 0;
+    for (let tick = 0; tick <= minutes * 2; tick++) {
+        if (tick > 0) await new Promise((r) => setTimeout(r, 30000));
+        for (const page of pages) if (!page.isClosed()) page.mouse.wheel({ deltaY: 600 }).catch(() => {});
+        if (tick === minutes && closed === 0) {
+            for (const page of pages.slice(0, Math.floor(tabs / 2))) await page.close().catch(() => {});
+            closed = Math.floor(tabs / 2);
+        }
+        const { usedSize } = await workerSession.send('Runtime.getHeapUsage');
+        const second = Math.round((Date.now() - started) / 1000);
+        samples.push({ second, open: tabs - closed, backgroundHeapMb: +(usedSize / 1e6).toFixed(2) });
+        console.log(`   ${String(second).padStart(4)} s  ${String(tabs - closed).padStart(2)} tabs  background ${samples.at(-1).backgroundHeapMb} MB`);
+    }
+    const { profile } = await workerSession.send('Profiler.stop');
+    const name = `tabs-${tabs}.cpuprofile`;
+    fs.writeFileSync(path.join(outDir, name), JSON.stringify(profile));
+    const summary = summarizeProfile(profile);
+    console.log(`   background busy ${summary.backgroundBusyMs} ms over ${Math.round((Date.now() - started) / 1000)} s`);
+    for (const { fn, ms } of summary.backgroundTop.slice(0, 6)) console.log(`      ${String(ms).padStart(7)} ms  ${fn}`);
+    await browser.close();
+    return { tabs, samples, profileFile: name, ...summary };
+}
+
+if (tabs > 0) {
+    console.log(`== ${tabs} tabs for ${minutes} minutes, half closed halfway`);
+    const result = await manyTabs();
+    fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify({ extPath, tabs: result }, null, 1));
+    console.log(`\nResults and CPU profile in ${outDir}`);
+    process.exit(0);
 }
 
 const average = (list, key) => list.reduce((sum, r) => sum + (r[key] ?? 0), 0) / Math.max(1, list.length);
