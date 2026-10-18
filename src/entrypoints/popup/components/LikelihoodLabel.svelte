@@ -7,8 +7,10 @@
 <span class="label tone-{likelihood}">{LIKELIHOOD_LABELS[likelihood]}</span>
 
 <style>
+    /* The size of a card's info lines. */
     .label {
         color: var(--color);
+        font-size: 14px;
         font-weight: 600;
         white-space: nowrap;
     }

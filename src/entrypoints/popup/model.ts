@@ -3,7 +3,7 @@
 import { placeKey } from '@/lib/call-stack';
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
+import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
@@ -65,6 +65,20 @@ function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
  */
 function traitsOf(snapshot: TabSnapshot): Record<string, ApiTraits> {
     return snapshot.apis ?? DEFAULT_SETTINGS.apis;
+}
+
+/** The exponent rarity counts with, likewise. */
+function rarityPowerOf(snapshot: TabSnapshot): number {
+    return snapshot.rarityPower ?? DEFAULT_SETTINGS.rarityPower;
+}
+
+/**
+ * Each API's rare bits read alone: its bits times its rarity to the exponent, what it counts toward
+ * the score. For listing kinds of detail by what makes a script suspicious, not by what reveals most.
+ */
+function rareBitsOf(snapshot: TabSnapshot): Record<string, number> {
+    const power = Math.max(0, rarityPowerOf(snapshot));
+    return Object.fromEntries(Object.entries(traitsOf(snapshot)).map(([id, traits]) => [id, Math.max(0, traits.bits) * Math.min(1, Math.max(0, traits.rarity)) ** power]));
 }
 
 /** Evidence rows per category on the overview. */
@@ -142,7 +156,7 @@ function fingerprinting(snapshot: TabSnapshot): Category {
             .flatMap((d) => d.scripts)
             .filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
             .flatMap((s) => s.fpMetrics?.distinctFpCategories ?? []);
-        const techniques = techniqueWords(categories, traitsOf(snapshot));
+        const techniques = techniqueWords(categories, rareBitsOf(snapshot));
         const shown = techniques.length <= 3 ? techniques : [...techniques.slice(0, 2), `${techniques.length - 2} other details`];
 
         const thirdParty = scripts.filter((s) => s.party === 'third').length;
@@ -257,19 +271,17 @@ function dnsLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Like
     return score >= cutoffs.hostname.likely ? 'likely' : 'possible';
 }
 
-/** API categories as words, most identifying first (e.g. canvas before screen size). */
-function techniqueWords(categories: string[], traits: Record<string, ApiTraits>): string[] {
-    const entropy = categoryEntropy(traits);
-    const sorted = unique(categories).sort((a, b) => (entropy[b] ?? 0) - (entropy[a] ?? 0));
+/** API categories as words, those counting most toward the score first (e.g. canvas before screen size). */
+function techniqueWords(categories: string[], rare: Record<string, number>): string[] {
+    const counts = categoryRareBits(rare);
+    const sorted = unique(categories).sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
     return unique(sorted.map(fpCategoryName));
 }
 
-/** The average bits of each kind's APIs: how identifying the kind is, for listing kinds in order. */
-function categoryEntropy(traits: Record<string, ApiTraits>): Record<string, number> {
+/** The average rare bits of each kind's APIs (see rareBitsOf), for listing kinds in order. */
+function categoryRareBits(rare: Record<string, number>): Record<string, number> {
     const byCategory = Object.groupBy(FP_APIS, (api) => api.category);
-    return Object.fromEntries(
-        Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (traits[api.id]?.bits ?? 0), 0) / apis!.length])
-    );
+    return Object.fromEntries(Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (rare[api.id] ?? 0), 0) / apis!.length]));
 }
 
 // ---------- detail screens ----------
@@ -336,6 +348,12 @@ export interface ApiDetail {
     generated: boolean;
     /** Whether it was read in the strongest burst, the one its score comes from. */
     inStrongestBurst: boolean;
+    /**
+     * What it counts toward the score among everything the script (or the page) read: the bits it
+     * counted (all of them, what it adds beside an overlapping API, or none for a value another API
+     * counted), times its rarity weight (its rarity to the exponent), its rare bits.
+     */
+    counted: { bits: number; weight: number; rareBits: number; overlapsWith?: string; countedWith?: string };
 }
 
 /** A kind of detail a script read, e.g. "Graphics card", with what it learned: "name, rendered 3D image". */
@@ -364,6 +382,8 @@ export interface SentRequest {
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
     const cutoffs = cutoffsOf(snapshot);
     const traits = traitsOf(snapshot);
+    const power = rarityPowerOf(snapshot);
+    const rare = rareBitsOf(snapshot);
     const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
     const aliases = cloakedHosts(snapshot);
 
@@ -396,11 +416,11 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         score,
                         tree: scriptTree(script),
                         calls: script.fpMetrics?.intensity ?? 0,
-                        learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? [], traits),
-                        signals: scriptSignals(script.apiLocations, traits),
+                        learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? [], rare),
+                        signals: scriptSignals(script.apiLocations, traits, power, rare),
                         apis,
                         sent: sentRequests(correlations, aliases),
-                        apiDetails: apiDetails(script, frame.document.startTime, traits),
+                        apiDetails: apiDetails(script, frame.document.startTime, traits, power),
                     };
                 })
         )
@@ -440,15 +460,26 @@ function pageSignals(scripts: ScriptDetail[]): string[] {
  */
 const ONE_PLACE_MIN_APIS = 5;
 
-/** Signs of fingerprinting in how a script's calls are made: from generated code, or many from one place. */
-function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined, traits: Record<string, ApiTraits>): Signal[] {
+/**
+ * Rare bits read through generated code or from one place from which the card mentions it: below,
+ * the APIs read that way are everyday ones and add next to nothing to the score (e.g. a template
+ * engine reading document.cookie through eval).
+ */
+const SIGNAL_MIN_RARE_BITS = 1;
+
+/**
+ * Signs of fingerprinting in how a script's calls are made, from generated code or many from one
+ * place, when they count toward the score: as it does, by the rare bits read that way.
+ */
+function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined, traits: Record<string, ApiTraits>, power: number, rare: Record<string, number>): Signal[] {
     const signals: Signal[] = [];
-    const kindsOf = (ids: string[]) => learnedKinds(ids, traits).map(({ kind }) => kind);
+    const kindsOf = (ids: string[]) => learnedKinds(ids, rare).map(({ kind }) => kind);
+    const counts = (ids: string[]) => rareIdentifyingBits(ids, traits, power) >= SIGNAL_MIN_RARE_BITS;
 
     // An API counts as read by generated code as soon as one of its calls was, however many weren't.
     const entries = Object.entries(apiLocations ?? {});
     const generated = entries.filter(([, locations]) => locations.some((l) => l.generated)).map(([id]) => id);
-    if (generated.length > 0) {
+    if (generated.length > 0 && counts(generated)) {
         signals.push({
             id: 'generated-code',
             count: generated.length,
@@ -466,7 +497,7 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
         for (const place of new Set(places)) byPlace.set(place, [...(byPlace.get(place) ?? []), id]);
     }
     const fromOnePlace = [...byPlace.values()].sort((a, b) => b.length - a.length)[0] ?? [];
-    if (fromOnePlace.length >= ONE_PLACE_MIN_APIS) {
+    if (fromOnePlace.length >= ONE_PLACE_MIN_APIS && counts(fromOnePlace)) {
         signals.push({
             id: 'one-place',
             count: fromOnePlace.length,
@@ -482,22 +513,23 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
 
 /**
  * What a script learned from the APIs it read, as the APIs' own words (see FpApi.reveals), grouped by
- * kind. Kinds and the facts in them go from the most identifying API down; APIs revealing the same
- * value share their words, so they show once.
+ * kind. Kinds and the facts in them go from the API counting most toward the score down (its rare
+ * bits, see rareBitsOf), so those named first are what makes a script suspicious; APIs revealing
+ * the same value share their words, so they show once.
  */
-function learnedKinds(apiIds: string[], traits: Record<string, ApiTraits>): LearnedKind[] {
-    const bits = (id: string) => traits[id]?.bits ?? 0;
+function learnedKinds(apiIds: string[], rare: Record<string, number>): LearnedKind[] {
+    const counts = (id: string) => rare[id] ?? 0;
     const apis = apiIds
         .map((id) => FP_APIS_BY_ID[id])
         .filter((api) => api !== undefined)
-        .sort((a, b) => bits(b.id) - bits(a.id));
+        .sort((a, b) => counts(b.id) - counts(a.id));
     const byKind = new Map<string, string[]>();
     for (const api of apis) {
         const facts = byKind.get(api.category) ?? [];
         if (!facts.includes(api.reveals)) facts.push(api.reveals);
         byKind.set(api.category, facts);
     }
-    // Map keeps the order in which kinds first appear: by their most identifying API.
+    // Map keeps the order in which kinds first appear: by their API counting most.
     return [...byKind.entries()].map(([category, facts]) => ({ kind: capitalize(fpCategoryName(category)), facts }));
 }
 
@@ -643,7 +675,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         calls: scripts.reduce((sum, script) => sum + script.calls, 0),
         learned: learnedKinds(
             apis.map((api) => api.id),
-            traitsOf(snapshot)
+            rareBitsOf(snapshot)
         ),
         signals,
         apis,
@@ -652,8 +684,8 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
     };
 }
 
-/** A script's APIs in detail (see ApiDetail), the most identifying first, then the most called. */
-function apiDetails(script: ScriptSnapshot, startTime: number | undefined, traits: Record<string, ApiTraits>): ApiDetail[] {
+/** A script's APIs in detail (see ApiDetail), those counting most first, then the most called. */
+function apiDetails(script: ScriptSnapshot, startTime: number | undefined, traits: Record<string, ApiTraits>, power: number): ApiDetail[] {
     const burst = new Set(strongestSpike(script.fpSpikes)?.distinctFpApis ?? []);
     const ids = new Set([...Object.keys(script.apiCounts ?? {}), ...(script.fpMetrics?.distinctFpApis ?? [])]);
     const since = (time: number | undefined) => (time === undefined || startTime === undefined ? null : Math.max(0, time - startTime));
@@ -675,8 +707,10 @@ function apiDetails(script: ScriptSnapshot, startTime: number | undefined, trait
                 places: locations.length,
                 generated: locations.some((location) => location.generated),
                 inStrongestBurst: burst.has(id),
+                counted: { bits: 0, weight: 0, rareBits: 0 },
             };
-        })
+        }),
+        power
     );
 }
 
@@ -703,7 +737,8 @@ function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDeta
         known.first = minOf(known.first, detail.first);
         known.last = known.last === null ? detail.last : detail.last === null ? known.last : Math.max(known.last, detail.last);
     }
-    return sortApiDetails([...byId.values()]);
+    // What each counts among all the page's APIs, like the page's own bits.
+    return sortApiDetails([...byId.values()], rarityPowerOf(snapshot));
 }
 
 /**
@@ -723,8 +758,27 @@ function minOf(a: number | null, b: number | null): number | null {
     return a === null ? b : b === null ? a : Math.min(a, b);
 }
 
-function sortApiDetails(details: ApiDetail[]): ApiDetail[] {
-    return details.sort((a, b) => b.bits - a.bits || b.calls - a.calls || a.id.localeCompare(b.id));
+/**
+ * The APIs with what each counts among all of them (see ApiDetail.counted), those counting most
+ * first, then those revealing most, then the most called.
+ */
+function sortApiDetails(details: ApiDetail[], power: number): ApiDetail[] {
+    const amounts = rareAmounts(
+        details.map((api) => api.id),
+        Object.fromEntries(details.map((api) => [api.id, { bits: api.bits, adds: api.adds, rarity: api.rarity }])),
+        power
+    );
+    for (const api of details) {
+        const amount = amounts.get(api.id);
+        api.counted = {
+            bits: amount?.basis ?? 0,
+            weight: amount?.weight ?? 0,
+            rareBits: amount?.amount ?? 0,
+            ...(amount?.overlapsWith ? { overlapsWith: amount.overlapsWith } : {}),
+            ...(amount?.countedWith ? { countedWith: amount.countedWith } : {}),
+        };
+    }
+    return details.sort((a, b) => b.counted.rareBits - a.counted.rareBits || b.bits - a.bits || b.calls - a.calls || a.id.localeCompare(b.id));
 }
 
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {

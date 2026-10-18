@@ -3,7 +3,7 @@
     // fact ("Read 40 fingerprinting APIs"), a warning triangle for a sign of fingerprinting. With a
     // detail (text, or content such as a list of requests) below it. As `lead`, it is one of a card's
     // main statements: it stands out a little, also without a detail. With `onDetails`, a column on
-    // the right holds "Details ›", leading to a screen about the statement; `details` reserves that
+    // the right holds a chevron, leading to a screen about the statement; `details` reserves that
     // column, so lines with and without it keep the same width.
     import type { Snippet } from 'svelte';
     import type { TextPart } from '../text-parts';
@@ -49,7 +49,7 @@
         {#if children}<span class="detail">{@render children()}</span>{/if}
     </span>
     {#if details}
-        <button type="button" class="open" onclick={onDetails}>Details</button>
+        <button type="button" class="open" aria-label="Details" title="Details" onclick={onDetails}></button>
     {/if}
 </li>
 
@@ -100,41 +100,38 @@
         color: var(--info);
     }
 
-    /* Icon | text | "Details ›". */
+    /* Icon | text | chevron. */
     .details {
         grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
-    /* Leads to another screen: quiet like "Show N more" (grey with a tint of the accent, in full on
-       hover), with a chevron pointing on. On the first row, level with the statement. */
+    /* Leads to another screen: a grey chevron pointing on, like a list row's, in the text color on
+       hover. In the middle of the whole line, detail included; the button around it is larger than
+       the chevron, so it is easy to hit. */
     .open {
+        align-self: center;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
         padding: 0;
         border: 0;
         background: none;
-        color: color-mix(in srgb, var(--info) 45%, var(--muted));
-        font: inherit;
-        font-size: 12px;
-        font-weight: 400;
-        line-height: 20px;
-        white-space: nowrap;
+        color: var(--muted);
         cursor: pointer;
     }
 
     .open::after {
         content: '';
-        display: inline-block;
-        width: 4px;
-        height: 4px;
-        margin-left: 4px;
+        width: 6px;
+        height: 6px;
+        margin-left: -2px;
         border-right: 1.5px solid currentColor;
         border-bottom: 1.5px solid currentColor;
-        vertical-align: 1px;
         transform: rotate(-45deg);
     }
 
     .open:hover {
-        color: var(--info);
-        text-decoration: underline;
-        text-underline-offset: 2px;
+        color: var(--text);
     }
 </style>

@@ -70,4 +70,6 @@ export interface TabSnapshot {
     cutoffs: ScoringSettings['cutoffs'];
     /** Each API's bits and rarity the scores were made with, from the user's scoring settings. */
     apis?: ScoringSettings['apis'];
+    /** The exponent rarity counts with (see ScoringSettings.rarityPower); missing from an older background. */
+    rarityPower?: number;
 }

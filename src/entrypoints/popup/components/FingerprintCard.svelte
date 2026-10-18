@@ -75,7 +75,8 @@
             <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
             <span class="likelihood">
                 <LikelihoodLabel likelihood={script.likelihood} />
-                {#if script.tree.length > 0}<span class="chevron" class:open={breakdown} aria-hidden="true"></span>{/if}
+                <!-- In a box as wide as the info lines' chevron buttons, so the chevrons line up down the card. -->
+                {#if script.tree.length > 0}<span class="chevron-box" aria-hidden="true"><span class="chevron" class:open={breakdown}></span></span>{/if}
             </span>
         </button>
         {/if}
@@ -142,22 +143,29 @@
     .likelihood {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
+    }
+
+    /* As wide as the info lines' chevron buttons (see SignalLine), the chevron in its middle. */
+    .chevron-box {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
     }
 
     /* Points down while the breakdown is closed, up while it is open; muted, so the likelihood
-       keeps its color to itself. */
+       keeps its color to itself. The size of the card's other chevrons: they differ in direction. */
     .chevron {
-        width: 4px;
-        height: 4px;
-        margin-top: -3px;
+        width: 6px;
+        height: 6px;
+        margin-top: -4px;
         border-right: 1.5px solid var(--muted);
         border-bottom: 1.5px solid var(--muted);
         transform: rotate(45deg);
     }
 
     .chevron.open {
-        margin-top: 3px;
+        margin-top: 4px;
         transform: rotate(-135deg);
     }
 
@@ -195,13 +203,13 @@
         grid-template-columns: minmax(0, 1fr) auto auto;
     }
 
-    /* The same chevron as the overview's other cards. */
+    /* The same chevron as the overview's other cards, and as the info lines'. */
     .opens-chevron {
-        width: 7px;
-        height: 7px;
-        margin-left: -4px;
-        border-right: 2px solid var(--muted);
-        border-bottom: 2px solid var(--muted);
+        width: 6px;
+        height: 6px;
+        margin-left: -3px;
+        border-right: 1.5px solid var(--muted);
+        border-bottom: 1.5px solid var(--muted);
         transform: rotate(-45deg);
     }
 

@@ -538,6 +538,17 @@ export function apisSumsBeyond(
     };
 }
 
+/** Each API's part in the rare bits of `distinctApis` read together (see apisSums), by API id. */
+export function rareAmounts(distinctApis: Iterable<string>, apis: ScoringSettings['apis'], rarityPower: number): Map<string, ApiAmount> {
+    const sums = apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis, rarityPower });
+    return new Map(sums.rareIdentifying.apis.map((api) => [api.id, api]));
+}
+
+/** Rare bits added up as the rare identifying APIs signal does (see apisSums), without its full-at. */
+export function rareIdentifyingBits(distinctApis: Iterable<string>, apis: ScoringSettings['apis'], rarityPower: number): number {
+    return apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis, rarityPower }).rareIdentifying.total;
+}
+
 /** Bits added up as the identifying information signal does (see apisSums), without its full-at: for showing the total. */
 export function identifyingBits(distinctApis: Iterable<string>, apis: ScoringSettings['apis']): number {
     return apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis }).identifying.total;

@@ -152,12 +152,13 @@
         z-index: 2;
     }
 
+    /* The card-level chevron, the same size and weight as the info lines' (see SignalLine). */
     .chevron {
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         margin-left: 2px;
-        border-right: 2px solid var(--muted);
-        border-bottom: 2px solid var(--muted);
+        border-right: 1.5px solid var(--muted);
+        border-bottom: 1.5px solid var(--muted);
         transform: rotate(-45deg);
     }
 

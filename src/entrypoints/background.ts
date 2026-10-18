@@ -253,6 +253,7 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
         frames: Object.entries(tabState.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
         cutoffs: settings.cutoffs,
         apis: settings.apis,
+        rarityPower: settings.rarityPower,
     };
 
     return tabSnapshot;
