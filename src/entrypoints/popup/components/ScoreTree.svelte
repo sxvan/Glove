@@ -8,7 +8,8 @@
     // The signals a score was combined from, each with how strongly it was observed (its ring) and its
     // share of the score above it (the shares of siblings add up to it). A signal made
     // from another score opens into that score's signals, e.g. a script's strongest burst into the
-    // burst's, and a signal made from the APIs read into those APIs.
+    // burst's, and a signal made from the APIs read into those APIs. An API opens into the factors
+    // its value is the product of, its bits and its rarity weight, which have no share of their own.
     // Each row hangs off a guide on the left (see .tree), from the row it is under or, at the top,
     // from the score the tree is of.
     let { nodes }: { nodes: ScoreNode[] } = $props();
@@ -22,9 +23,9 @@
     const hidden = $derived(isApiList && !showAll ? Math.max(0, nodes.length - SHOWN_APIS) : 0);
     const shownNodes = $derived(hidden > 0 ? nodes.slice(0, SHOWN_APIS) : nodes);
 
-    // A row made of signals shows their colors in its ring; one made of APIs keeps its own color.
+    // A row made of signals shows their colors in its ring; one made of APIs or factors keeps its own color.
     const segmentsOf = (node: ScoreNode) => {
-        const signals = node.children.filter((child) => !child.api);
+        const signals = node.children.filter((child) => !child.api && !child.factor);
         return signals.length > 0 ? shareSegments(signals) : [];
     };
 
@@ -37,7 +38,7 @@
 <ul class="tree">
     {#each shownNodes as node (node.key)}
         {@const expandable = node.children.length > 0}
-        <li class:idle={node.shownShare === 0}>
+        <li class:idle={node.shownShare === 0 && !node.factor}>
             {#snippet row()}
                 <span class="toggle" class:open={open[node.key]} aria-hidden="true"></span>
                 <span class="text" title={node.api ? node.note : undefined}>
@@ -48,15 +49,15 @@
                         <span class="detail" title={node.detail}>{node.detail}</span>
                     {/if}
                 </span>
-                <!-- An API says what it adds in its detail (its bits or rarity); a ring would measure it
-                     differently from the signals' rings, so its text takes the ring's place. -->
-                {#if !node.api}
-                    <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} title={ringTitle(node)} />
+                <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} text={node.ringText} title={ringTitle(node)} />
+                <!-- A factor multiplies into its parent: no share of its own. -->
+                {#if node.factor}
+                    <span></span>
+                {:else}
+                    <span class="share" class:none={node.shownShare === 0} title="What it adds to the {node.shareTo}'s score">
+                        +{Math.round(node.shownShare * 100)}
+                    </span>
                 {/if}
-                <span class="share" class:none={node.shownShare === 0} title="What it adds to the {node.shareTo}'s score">
-                    +{Math.round(node.shownShare * 100)}
-                    <span class="to">to {node.shareTo}</span>
-                </span>
             {/snippet}
 
             {#if expandable}
@@ -67,7 +68,7 @@
                     <div class="children"><ScoreTree nodes={node.children} /></div>
                 {/if}
             {:else}
-                <div class="row leaf" class:api={node.api}>{@render row()}</div>
+                <div class="row leaf">{@render row()}</div>
             {/if}
         </li>
     {/each}
@@ -94,7 +95,7 @@
     /* Chevron | label and detail | ring with how strongly it was observed | share of the score above. */
     .row {
         display: grid;
-        grid-template-columns: 12px minmax(0, 1fr) 52px 78px;
+        grid-template-columns: 12px minmax(0, 1fr) 52px 32px;
         align-items: center;
         gap: 12px;
         width: 100%;
@@ -198,12 +199,6 @@
         font-weight: 400;
     }
 
-    /* An API's row has no ring: its name and detail run on into the ring's column. As tall as a
-       row with a ring, so the tree lines meet it in the middle. */
-    .row.api {
-        grid-template-columns: 12px minmax(0, 1fr) 78px;
-        min-height: 60px;
-    }
 
     /* Its share of the score above: secondary to how strongly it was observed. */
     .share {
@@ -215,14 +210,6 @@
 
     .share.none {
         opacity: 0.6;
-    }
-
-    /* Whose score the share goes to, under it. */
-    .to {
-        display: block;
-        font-size: 12px;
-        line-height: 1.2;
-        white-space: nowrap;
     }
 
     /* Show more / show less under a list of APIs, lined up with their names: an action, not data,

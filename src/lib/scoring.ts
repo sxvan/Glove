@@ -380,6 +380,10 @@ export interface ApiAmount {
     overlapsWith?: string;
     /** For a sum beyond known APIs (see apisSumsBeyond): whether countedWith or overlapsWith is one of those. */
     withKnown?: boolean;
+    /** For rare bits: its bits on their own, its rarity, and that to rarityPower, which its counted bits are multiplied by. */
+    bits?: number;
+    rarity?: number;
+    weight?: number;
 }
 
 /** An API signal's sum: its value from 0 to 1, the total it was made from and what each API added. */
@@ -441,7 +445,11 @@ export interface ApisSums {
 function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, known?: number): ApisSum {
     const power = Math.max(0, settings.rarityPower);
     const apis = bits.apis
-        .map((api): ApiAmount => ({ ...api, basis: api.amount, amount: api.amount * clamp01(settings.apis[api.id]?.rarity ?? 0) ** power }))
+        .map((api): ApiAmount => {
+            const rarity = clamp01(settings.apis[api.id]?.rarity ?? 0);
+            const weight = rarity ** power;
+            return { ...api, basis: api.amount, amount: api.amount * weight, bits: api.basis, rarity, weight };
+        })
         .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
     const total = apis.reduce((sum, api) => sum + api.amount, 0);
     const value = known === undefined ? saturate(total, fullAt) : fullAt > 0 ? Math.min(total, Math.max(0, fullAt - known)) / fullAt : 0;

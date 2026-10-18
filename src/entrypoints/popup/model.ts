@@ -2,7 +2,7 @@
 // key numbers and the strongest evidence.
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
+import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
@@ -568,6 +568,13 @@ export interface ScoreNode {
     note: string;
     /** An API id, shown in monospace. */
     api?: boolean;
+    /**
+     * A factor of its parent rather than a part of it: an API's rare bits are its bits times its
+     * rarity weight, so they have no share of their own to add up.
+     */
+    factor?: boolean;
+    /** What its ring shows instead of its value on 0–100: an amount of its own, such as an API's rare bits. */
+    ringText?: string;
     children: ScoreNode[];
 }
 
@@ -882,6 +889,51 @@ function partsSource(
     return { detail: '', children: scoreTree(source as ScoreLevel, { signals: part.parts } as MetricsSnapshot, part.value, expand) };
 }
 
+/** An amount in a ring: one decimal, two below 1 ("0.07"), without trailing zeros. */
+function amount(x: number): string {
+    return String(+x.toFixed(x < 1 ? 2 : 1));
+}
+
+/**
+ * What an API's rare bits are made of, as rows under it: its bits (on its own, or what it adds beside
+ * an overlapping API) on the signal's scale, and its rarity weight. Their rings multiply to its own.
+ */
+function rareFactors(api: ApiAmount, fullAt: number, number: (x: number) => number): ScoreNode[] {
+    const own = api.bits ?? api.basis;
+    const rarity = api.rarity ?? 0;
+    const weight = api.weight ?? 0;
+    const share = Math.round((1 - rarity) * 100);
+    const bits = api.countedWith
+        ? `${number(own)} on its own, the same information as ${api.countedWith}: counts none`
+        : api.overlapsWith
+          ? `adds ${number(api.basis)} beside ${api.overlapsWith}, ${number(own)} on its own`
+          : `${number(own)}, what it tells browsers apart by on average`;
+    const factor = (key: string, label: string, value: number, ringText: string, detail: string, note: string): ScoreNode => ({
+        key: `${api.id}:${key}`,
+        label,
+        value,
+        ringText,
+        share: 0,
+        shownShare: 0,
+        shareTo: api.id,
+        detail,
+        note,
+        factor: true,
+        children: [],
+    });
+    return [
+        factor('bits', 'Bits', fullAt > 0 ? api.basis / fullAt : 0, amount(api.basis), bits, `${number(api.basis)} bits counted, of the ${number(fullAt)} that would make the signal full if all of them counted.`),
+        factor(
+            'rarity',
+            'Rarity',
+            weight,
+            weight.toFixed(2),
+            `${number(rarity)}, ${share < 1 ? 'under 1%' : `${share}%`} of page loads read it`,
+            `Rarity ${number(rarity)} to the fourth power: ${number(weight)}, the share of its bits that counts.`
+        ),
+    ];
+}
+
 /** Where the APIs a sum beyond is measured on were read (see apisSumsBeyond). */
 // Only page bursts are measured on top of something among bursts: the strongest script.
 const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = {
@@ -910,7 +962,7 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
         const share = shares.get(api.id) ?? 0;
         const adds =
             sum.measure === 'rareBits'
-                ? `${own(api.basis)}${api.overlapsWith ? ` beside ${api.overlapsWith}` : ''}, counts ${number(api.amount)}`
+                ? `${own(api.basis)}${api.overlapsWith ? ` beside ${api.overlapsWith}` : ''} × ${number(api.weight ?? 0)}`
                 : api.overlapsWith
                   ? `${own(api.basis)}, adds ${number(api.amount)} beside ${api.overlapsWith}`
                   : own(api.basis);
@@ -928,14 +980,16 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
             key: api.id,
             label: api.id,
             api: true,
-            value: api.amount,
+            // Its own value in the signal: its rare bits, the ring filled toward full.
+            value: sum.fullAt > 0 ? api.amount / sum.fullAt : 0,
+            ringText: sum.measure === 'rareBits' ? amount(api.amount) : undefined,
             share,
             shownShare: share,
             shareTo: signal,
             detail: api.countedWith ? `counted with ${api.countedWith}` : adds,
 
             note,
-            children: [],
+            children: sum.measure === 'rareBits' ? rareFactors(api, sum.fullAt, number) : [],
         };
     });
     // Beyond what is already counted: "9 bits on top of 31, 2 of them toward 33".

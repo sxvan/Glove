@@ -259,6 +259,10 @@
                         {:else}
                             <span></span>
                         {/if}
+                        <!-- What it counts alone with these settings: its bits times its rarity to the power. -->
+                        <span class="counts" title="Its bits times its rarity to the power {settings.rarityPower}: the rare bits it counts when read alone">
+                            {+(traits.bits * traits.rarity ** settings.rarityPower).toFixed(2)} rare bits
+                        </span>
                         <label class="field" class:changed={traits.rarity !== defaults.rarity} title="Default {defaults.rarity}">
                             rarity
                             <input type="number" min="0" max="1" step="0.05" value={traits.rarity} oninput={(e) => setApiTrait(api.id, 'rarity', e)} />
@@ -376,10 +380,20 @@
         font-weight: 400;
     }
 
-    /* APIs are listed compactly: one line each, with bits, what they add and rarity. */
+    /* APIs are listed compactly: one line each, with bits, what they add, the rare bits they count
+       and rarity. */
     .row.api {
-        grid-template-columns: 1fr auto auto auto;
+        grid-template-columns: 1fr auto auto auto auto;
         padding: 6px 0;
+    }
+
+    /* Computed from the settings around it, not one of them: quieter, the numbers lined up. */
+    .counts {
+        min-width: 7.5em;
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
     }
 
     .api-id {

@@ -13,8 +13,9 @@
         segments = [],
         scale = 1,
         empty = false,
+        text,
         title,
-    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; scale?: 1 | 100; empty?: boolean; title: string } = $props();
+    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; scale?: 1 | 100; empty?: boolean; text?: string; title: string } = $props();
 
     // The number in the middle: 0.95 by default, or 95 on a 0–100 scale (a score, not a percentage).
     const shownValue = (x: number) => (scale === 100 ? String(Math.round(x * 100)) : x.toFixed(2));
@@ -63,7 +64,8 @@
     </g>
     <!-- The value, capped at full; the outer ring shows how far beyond full it went. -->
     <!-- As `empty`, no value yet: a dash. -->
-    <text class="value" x={CENTER} y={CENTER + 4}>{empty ? '–' : shownValue(laps.inner)}</text>
+    <!-- With `text`, that instead: an amount of its own, such as an API's rare bits. -->
+    <text class="value" x={CENTER} y={CENTER + 4}>{empty ? '–' : (text ?? shownValue(laps.inner))}</text>
 </svg>
 <!-- The outer ring closes at twice full; beyond that, how many times full it is. -->
 {#if ratio > 2}
