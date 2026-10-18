@@ -66,7 +66,8 @@
     }
 
     function setApiTrait(id: string, trait: keyof ApiTraits, event: Event) {
-        const value = unitFromInput(event);
+        // Bits have no upper end; rarity goes from 0 to 1.
+        const value = trait === 'rarity' ? unitFromInput(event) : positiveFromInput(event);
         if (!settings || value === null) return;
         settings.apis[id] = { ...settings.apis[id]!, [trait]: value };
         scheduleSave();
@@ -191,13 +192,17 @@
         <section class="squircle" id="apis">
             <h2>Fingerprinting APIs</h2>
             <p class="section-note">
-                Each fingerprinting API has two values between 0 and 1. <strong>Entropy</strong> is how much lasting identifying information it
-                reveals: its bits divided by 8, so 1 means one browser in 256 or rarer, from a study of 4 million fingerprints
-                (<a href="https://arxiv.org/abs/2006.09511" target="_blank" rel="noopener noreferrer">Andriamilanto et al.</a>).
-                <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
+                Each fingerprinting API has its <strong>bits</strong>: how much identifying information it reveals on its own, its entropy,
+                so 6 bits tell one browser in 64 apart. They come from a study of 4 million fingerprints
+                (<a href="https://arxiv.org/abs/2006.09511" target="_blank" rel="noopener noreferrer">Andriamilanto et al.</a>), lowered where
+                Chrome has changed since, with the time zone and languages from
+                <a href="https://amiunique.org/fingerprints-global-statistics" target="_blank" rel="noopener noreferrer">AmIUnique</a>'s worldwide statistics.
+                APIs whose values overlap, such as the screen's and the window's sizes, also have what they <strong>add</strong> once another of
+                them is known, from the same study: of those read together, the one with the most bits counts all of them, the others only
+                what they add. <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
                 Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
                 October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. They make two
-                independent signals: "Identifying information" adds up the entropy of the different fingerprinting APIs read,
+                independent signals: "Identifying information" adds up the bits of the different fingerprinting APIs read,
                 how much they reveal; "Unusual fingerprinting APIs" adds up their rarity, rare ones counting more (see below), as reading rare ones shows
                 intent even when they reveal little. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions
                 of a call or a canvas exported in two formats, count once.
@@ -225,7 +230,8 @@
                     <div class="name">{APIS_LEVEL_LABELS[level]}</div>
                     <label class="field" class:changed={fullAt.identifying !== defaults.identifying} title="Default {defaults.identifying}">
                         Identifying full at
-                        <input type="number" min="0" step="0.5" value={fullAt.identifying} oninput={(e) => setFullAt(level, 'identifying', e)} />
+                        <input type="number" min="0" step="1" value={fullAt.identifying} oninput={(e) => setFullAt(level, 'identifying', e)} />
+                        bits
                     </label>
                     <label class="field" class:changed={fullAt.unusual !== defaults.unusual} title="Default {defaults.unusual}">
                         Unusual full at
@@ -237,14 +243,24 @@
             {#each API_GROUPS as [category, apis] (category)}
                 <h3>{FP_CATEGORIES[category].name} <span class="category-key">{category}</span></h3>
                 {#each apis as api (api.id)}
-                    {@const traits = settings.apis[api.id] ?? { entropy: api.entropy, rarity: api.rarity }}
+                    {@const defaults = DEFAULT_SETTINGS.apis[api.id] ?? { bits: api.bits, adds: api.bits, rarity: api.rarity }}
+                    {@const traits = settings.apis[api.id] ?? defaults}
                     <div class="row api">
                         <div class="api-id">{api.id}</div>
-                        <label class="field" class:changed={traits.entropy !== api.entropy} title="Default {api.entropy}">
-                            entropy
-                            <input type="number" min="0" max="1" step="0.05" value={traits.entropy} oninput={(e) => setApiTrait(api.id, 'entropy', e)} />
+                        <label class="field" class:changed={traits.bits !== defaults.bits} title="Default {defaults.bits}">
+                            bits
+                            <input type="number" min="0" step="0.1" value={traits.bits} oninput={(e) => setApiTrait(api.id, 'bits', e)} />
                         </label>
-                        <label class="field" class:changed={traits.rarity !== api.rarity} title="Default {api.rarity}">
+                        <!-- Only APIs overlapping with others have what they add beside them. -->
+                        {#if api.overlap}
+                            <label class="field" class:changed={traits.adds !== defaults.adds} title="Default {defaults.adds}: what it adds beside the other {api.overlap.group} APIs">
+                                adds
+                                <input type="number" min="0" step="0.1" value={traits.adds} oninput={(e) => setApiTrait(api.id, 'adds', e)} />
+                            </label>
+                        {:else}
+                            <span></span>
+                        {/if}
+                        <label class="field" class:changed={traits.rarity !== defaults.rarity} title="Default {defaults.rarity}">
                             rarity
                             <input type="number" min="0" max="1" step="0.05" value={traits.rarity} oninput={(e) => setApiTrait(api.id, 'rarity', e)} />
                         </label>
@@ -361,9 +377,9 @@
         font-weight: 400;
     }
 
-    /* APIs are listed compactly: one line each, with entropy and rarity. */
+    /* APIs are listed compactly: one line each, with bits, what they add and rarity. */
     .row.api {
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: 1fr auto auto auto;
         padding: 6px 0;
     }
 

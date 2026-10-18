@@ -3,7 +3,7 @@
     // rare it is, how often, from how many places and when it was called. Sorted by how
     // identifying they are, how rare reading them is, by kind (alphabetically), by name, how often
     // they were called, or when first.
-    import { elapsed, plural } from '../format';
+    import { elapsed, plural, roughCount } from '../format';
     import type { ApiDetail } from '../model';
 
     let { apis }: { apis: ApiDetail[] } = $props();
@@ -46,7 +46,7 @@
         order === 'identifying'
             ? apis
             : order === 'rarest'
-              ? [...apis].sort((a, b) => b.rarity - a.rarity || b.entropy - a.entropy || a.id.localeCompare(b.id))
+              ? [...apis].sort((a, b) => b.rarity - a.rarity || b.bits - a.bits || a.id.localeCompare(b.id))
               : order === 'kind'
               ? byKind(apis).flatMap((group) => group.rows)
               : order === 'name'
@@ -87,12 +87,11 @@
 
     const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-    /** How identifying it is, from its entropy in bits: "One browser in 64 (6 bits)". */
+    /** How identifying it is on its own, from its bits: "One browser in 60 (5.9 bits)". */
     function identifying(api: ApiDetail): string {
-        const bits = Math.round(api.entropy * 8);
-        if (bits < 1) return 'Hardly tells browsers apart';
-        // Entropy stops at 1 (8 bits): such APIs tell browsers apart at least that finely.
-        return `One browser in ${2 ** bits}${api.entropy >= 1 ? ' or more' : ''} (${plural(bits, 'bit')})`;
+        if (api.bits < 0.95) return 'Hardly tells browsers apart';
+        const bits = Math.round(api.bits * 10) / 10;
+        return `One browser in ${roughCount(2 ** bits)} (${bits === 1 ? '1 bit' : `${bits} bits`})`;
     }
 
     /** How common reading it is: the share of page loads using it (rarity is 1 minus that share, see FP_APIS). */
@@ -134,7 +133,7 @@
                     <span class="calls">{calls(api)}</span>
                     <span class="name" title={api.id}>{api.id}</span>
                     <span class="when">{when(api)}</span>
-                    <span class="trait" title="Its entropy: how much it tells this browser apart from others">{identifying(api)}</span>
+                    <span class="trait" title="Its entropy: how much it tells browsers apart on its own, on average">{identifying(api)}</span>
                     <span class="trait right" title="How many page loads in Chrome read it (Chrome's usage statistics)">{common(api)}</span>
                 </li>
             {/each}

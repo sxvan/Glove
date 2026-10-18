@@ -1,7 +1,7 @@
 // What the popup says about a script, as statements: the info lines of its card, which are also
 // the sections of its page.
-import { bytes, listWords, plural } from './format';
-import type { ScriptDetail } from './model';
+import { bytes, listWords, plural, roughCount } from './format';
+import { identifyingBits, type ScriptDetail } from './model';
 import type { TextPart } from './text-parts';
 
 /** A statement about a script, shown as an info line: the card's rating is its only judgment, in color. */
@@ -15,7 +15,7 @@ export interface Statement {
 
 /**
  * What the card says about a script, as a list of statements: what it read (always there, and
- * always first), how (signs of fingerprinting), who is behind it if that is hidden, and where
+ * always first) and how identifying that is together, how (signs of fingerprinting), who is behind it if that is hidden, and where
  * it sent data right after.
  */
 export function statements(script: ScriptDetail): Statement[] {
@@ -35,6 +35,8 @@ export function statements(script: ScriptDetail): Statement[] {
             detail: kinds ? `About ${kinds}` : '',
         },
     ];
+    const identifying = identifyingStatement(script);
+    if (identifying) list.push(identifying);
     // The signs say what their APIs are about like the first line: "About graphics card, …".
     for (const signal of script.signals) {
         const about = listWords(
@@ -62,6 +64,35 @@ export function statements(script: ScriptDetail): Statement[] {
 // words, sites long names, so fewer of them fit in about two lines.
 const SHOWN_KINDS = 6;
 const SHOWN_SITES = 4;
+
+/**
+ * Bits that tell everyone apart: about 5 billion people are online, and 2^33 is 8.6 billion. From
+ * there the sum says no more than that (see identifyingStatement).
+ */
+export const EVERYONE_BITS = 33;
+
+/**
+ * How identifying all it read is together, in bits (see identifyingBits): "Up to 18 bits of
+ * identifying information" over "One browser in about 260,000". "Up to", as details still overlap
+ * beyond what the sum takes into account; from EVERYONE_BITS on, enough to single out anyone instead of a count past
+ * the people online. None under a bit: hardly anything to tell.
+ */
+function identifyingStatement(script: ScriptDetail): Statement | null {
+    const bits = Math.round(identifyingBits(script.apiDetails));
+    if (bits < 1) return null;
+    if (bits >= EVERYONE_BITS) {
+        return {
+            key: 'identifying',
+            text: ['Up to ', { value: `${EVERYONE_BITS} bits or more` }, ' of identifying information'],
+            detail: 'Enough to single out one browser among everyone online',
+        };
+    }
+    return {
+        key: 'identifying',
+        text: ['Up to ', { value: plural(bits, 'bit') }, ' of identifying information'],
+        detail: `One browser in about ${roughCount(2 ** bits)}`,
+    };
+}
 
 /**
  * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to

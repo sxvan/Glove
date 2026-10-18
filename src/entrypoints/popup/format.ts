@@ -26,6 +26,14 @@ export function elapsed(ms: number): string {
     return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
 }
 
+/** A large count in words, to two significant digits: "260,000", "2.6 million", "1.3 billion". */
+export function roughCount(count: number): string {
+    const rounded = Number(count.toPrecision(2));
+    if (rounded >= 1e9) return `${Number((rounded / 1e9).toPrecision(2))} billion`;
+    if (rounded >= 1e6) return `${Number((rounded / 1e6).toPrecision(2))} million`;
+    return rounded.toLocaleString('en-US');
+}
+
 /** A data size, e.g. "512 B" or "4.2 KB". */
 export function bytes(count: number): string {
     return count < 1024 ? `${count} B` : `${(count / 1024).toFixed(1)} KB`;

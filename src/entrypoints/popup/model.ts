@@ -2,7 +2,7 @@
 // key numbers and the strongest evidence.
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_SETTINGS, SIGNALS, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
+import { DEFAULT_SETTINGS, SIGNALS, identifyingBits as addedUpBits, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
@@ -58,7 +58,7 @@ function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
 }
 
 /**
- * Each API's entropy and rarity as the scores were made with them: the user's settings, sent with
+ * Each API's bits and rarity as the scores were made with them: the user's settings, sent with
  * the snapshot, so the popup ranks and shows APIs as it scores them. An older background doesn't
  * send them; the defaults stand in then.
  */
@@ -263,11 +263,11 @@ function techniqueWords(categories: string[], traits: Record<string, ApiTraits>)
     return unique(sorted.map(fpCategoryName));
 }
 
-/** The average entropy of each kind's APIs: how identifying the kind is, for listing kinds in order. */
+/** The average bits of each kind's APIs: how identifying the kind is, for listing kinds in order. */
 function categoryEntropy(traits: Record<string, ApiTraits>): Record<string, number> {
     const byCategory = Object.groupBy(FP_APIS, (api) => api.category);
     return Object.fromEntries(
-        Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (traits[api.id]?.entropy ?? 0), 0) / apis!.length])
+        Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (traits[api.id]?.bits ?? 0), 0) / apis!.length])
     );
 }
 
@@ -322,8 +322,9 @@ export interface ApiDetail {
     /** Its kind of detail, e.g. "Graphics card", and what it reveals, e.g. "graphics card name" (see FP_APIS). */
     kind: string;
     reveals: string;
-    /** Its default entropy and rarity, from 0 to 1 (see FpApi). */
-    entropy: number;
+    /** Its bits on their own, the bits it adds beyond an overlapping API, and its rarity, as set (see ApiTraits). */
+    bits: number;
+    adds: number;
     rarity: number;
     calls: number;
     /** When it was first and last called, in ms since the page started; null if unknown. */
@@ -483,11 +484,11 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
  * value share their words, so they show once.
  */
 function learnedKinds(apiIds: string[], traits: Record<string, ApiTraits>): LearnedKind[] {
-    const entropy = (id: string) => traits[id]?.entropy ?? 0;
+    const bits = (id: string) => traits[id]?.bits ?? 0;
     const apis = apiIds
         .map((id) => FP_APIS_BY_ID[id])
         .filter((api) => api !== undefined)
-        .sort((a, b) => entropy(b.id) - entropy(a.id));
+        .sort((a, b) => bits(b.id) - bits(a.id));
     const byKind = new Map<string, string[]>();
     for (const api of apis) {
         const facts = byKind.get(api.category) ?? [];
@@ -656,7 +657,8 @@ function apiDetails(script: ScriptSnapshot, startTime: number | undefined, trait
                 id,
                 kind: api ? capitalize(fpCategoryName(api.category)) : 'Other',
                 reveals: api?.reveals ?? '',
-                entropy: traits[id]?.entropy ?? 0,
+                bits: traits[id]?.bits ?? 0,
+                adds: traits[id]?.adds ?? 0,
                 rarity: traits[id]?.rarity ?? 0,
                 calls: script.apiCounts?.[id] ?? 0,
                 first: since(times?.first),
@@ -695,12 +697,25 @@ function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDeta
     return sortApiDetails([...byId.values()]);
 }
 
+/**
+ * The identifying information of APIs read, added up in bits like the score does (see apisSums):
+ * those revealing the same value once, of overlapping ones the strongest fully and the others what
+ * they add. Still an upper bound: what an API adds is measured beside the one API telling the most
+ * about it, and APIs of different groups can overlap too.
+ */
+export function identifyingBits(apis: ApiDetail[]): number {
+    return addedUpBits(
+        apis.map((api) => api.id),
+        Object.fromEntries(apis.map((api) => [api.id, { bits: api.bits, adds: api.adds, rarity: api.rarity }]))
+    );
+}
+
 function minOf(a: number | null, b: number | null): number | null {
     return a === null ? b : b === null ? a : Math.min(a, b);
 }
 
 function sortApiDetails(details: ApiDetail[]): ApiDetail[] {
-    return details.sort((a, b) => b.entropy - a.entropy || b.calls - a.calls || a.id.localeCompare(b.id));
+    return details.sort((a, b) => b.bits - a.bits || b.calls - a.calls || a.id.localeCompare(b.id));
 }
 
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
@@ -766,12 +781,13 @@ function scoreTree(
 
     const nodes = signals.map(({ key, signal, part, alone }): ScoreNode => {
         const share = reached > 0 ? total * (added.get(key)! / reached) : 0;
-        const source: { detail: string; detailPath?: boolean; children: ScoreNode[] } | null = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label) : expand(key);
+        const source: { detail: string; detailPath?: boolean; children: ScoreNode[] } | null = part.value <= 0 ? null : part.apis ? apisSource(part.apis, part.value, SHORT_NAMES[key] ?? signal.label, level) : expand(key);
         return {
             key,
             label: treeLabel(signal.label),
             value: part.value,
-            points: part.apis ? { total: part.apis.total, fullAt: part.apis.fullAt } : undefined,
+            // Beyond what is already counted, the points are those that count: what was still missing.
+            points: part.apis ? { total: part.apis.known === undefined ? part.apis.total : part.value * part.apis.fullAt, fullAt: part.apis.fullAt } : undefined,
             share,
             shownShare: share,
             shareTo: level,
@@ -837,9 +853,13 @@ const SHORT_NAMES: Record<string, string> = {
  * (1 of 10 points is +0.10) until the signal is full; later ones add nothing beyond full. An API
  * whose information another API already counted adds nothing.
  */
-function apisSource(sum: ApisSum, total: number, signal: string): { detail: string; children: ScoreNode[] } {
-    const measure = sum.measure === 'entropy' ? 'entropy' : 'rarity';
+/** Where the APIs a sum beyond is measured on were read (see apisSumsBeyond). */
+const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = { script: 'read in the strongest burst', page: 'read by the strongest script' };
+
+function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: ScoreLevel): { detail: string; children: ScoreNode[] } {
     const number = (x: number) => +x.toFixed(2);
+    // An API's own value: "5.9 bits", or "rarity 0.93".
+    const own = (basis: number) => (sum.measure === 'bits' ? `${number(basis)} bits` : `rarity ${number(basis)}`);
 
     // sum.apis is sorted by what they add, most first.
     const shares = new Map<string, number>();
@@ -852,10 +872,17 @@ function apisSource(sum: ApisSum, total: number, signal: string): { detail: stri
 
     const children = sum.apis.map((api): ScoreNode => {
         const share = shares.get(api.id) ?? 0;
-        const adds =
-            sum.measure === 'rarity' && api.amount !== api.basis ? `${measure} ${number(api.basis)}, counts ${number(api.amount)}` : `${measure} ${number(api.basis)}`;
+        const adds = api.overlapsWith
+            ? `${own(api.basis)}, adds ${number(api.amount)} beside ${api.overlapsWith}`
+            : sum.measure === 'rarity' && api.amount !== api.basis
+              ? `${own(api.basis)}, counts ${number(api.amount)}`
+              : own(api.basis);
         let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} points that make it full: +${score(share)}.`;
-        if (api.countedWith) note = `Same information as ${api.countedWith}, which counts instead.`;
+        // A sum beyond what is already counted names that as such: "read in the burst".
+        const where = api.withKnown ? `, ${KNOWN_WHERE[signalLevel]}` : '';
+        if (api.countedWith) note = `Same information as ${api.countedWith}${where}, which counts instead.`;
+        else if (api.overlapsWith)
+            note = `Overlaps with ${api.overlapsWith}${where}, which counts all its bits: this one adds only the ${number(api.amount)} bits it tells beyond it, +${score(share)}.`;
         else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)
             note = `Adds ${number(api.amount)} points, but the APIs adding more already filled it up to full: +${score(share)}.`;
         return {
@@ -867,11 +894,17 @@ function apisSource(sum: ApisSum, total: number, signal: string): { detail: stri
             shownShare: share,
             shareTo: signal,
             detail: api.countedWith ? `counted with ${api.countedWith}` : adds,
+
             note,
             children: [],
         };
     });
-    return { detail: `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'API')}`, children: withShownShares(children, total) };
+    // Beyond what is already counted: "9 bits on top of 31, 2 of them toward 33".
+    const detail =
+        sum.known !== undefined && sum.measure === 'bits'
+            ? `${number(sum.total)} bits on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
+            : `${number(sum.total)} of ${number(sum.fullAt)} from ${plural(sum.apis.length, 'API')}`;
+    return { detail, children: withShownShares(children, total) };
 }
 
 export interface RequestLine {

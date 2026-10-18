@@ -26,7 +26,7 @@ export const SIGNALS = {
         identifying: {
             label: 'Identifying information',
             description:
-                'How much identifying information the burst reads: the entropy of the different fingerprinting APIs it reads, added up. Those revealing the same information count once.',
+                'How much identifying information the burst reads: the bits of the different fingerprinting APIs it reads, added up. Those revealing the same information count once, and of those that overlap, such as screen and window sizes, the strongest counts fully and the others what they add.',
             strength: 0.3,
         },
         unusualApis: {
@@ -57,7 +57,7 @@ export const SIGNALS = {
         identifying: {
             label: 'Identifying information',
             description:
-                'How much identifying information the script reads beyond its strongest burst: the entropy of those fingerprinting APIs, added up. Those revealing the same information count once. A fallback for collecting spread out or split into several bursts.',
+                'How much identifying information the script adds beyond its strongest burst, on top of what that burst revealed: the APIs it read outside the burst, each counting what it reveals beyond what is already known (nothing for a value already read, what it adds beside an overlapping API). Measured as how much of the way to the full 33 bits it covers, so once the burst reached them nothing adds. A fallback for collecting spread out or split into several bursts.',
             strength: 0.15,
         },
         unusualApis: {
@@ -96,7 +96,7 @@ export const SIGNALS = {
         identifying: {
             label: 'Identifying information',
             description:
-                'How much identifying information the page reads beyond its strongest script: the entropy of the different fingerprinting APIs the other scripts read, added up. A weak fallback for collecting split over several scripts: ordinary pages also read a fair amount through their many scripts.',
+                'How much identifying information the other scripts add beyond the strongest script, on top of what that script revealed, counted as for a script (nothing for a value already read, what it adds beside an overlapping API, toward the full 33 bits). A weak fallback for collecting split over several scripts: ordinary pages also read a fair amount through their many scripts.',
             strength: 0.15,
         },
         unusualApis: {
@@ -174,21 +174,24 @@ export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
     burst: 'Burst of calls in a script',
 };
 
-/** Where the API signals count as full (value 1): the added-up entropy and rarity. */
+/** Where the API signals count as full (value 1): the added-up bits and rarity. */
 export interface ApisFullAt {
     identifying: number;
     unusual: number;
 }
 
 export interface ApiTraits {
-    entropy: number;
+    /** Its identifying information on its own, in bits (see FpApi.bits). */
+    bits: number;
+    /** The bits it adds once another API of its overlap group counted (see FpApi.overlap); its bits if it has no group. */
+    adds: number;
     rarity: number;
 }
 
 export interface ScoringSettings {
     strengths: { [L in ScoreLevel]: SignalValues<L> };
     cutoffs: { fingerprinting: Cutoffs; hostname: Cutoffs };
-    /** Entropy and rarity per fingerprinting API, by API id (see FpApi and apisSums). */
+    /** Bits and rarity per fingerprinting API, by API id (see FpApi and apisSums). */
     apis: Record<string, ApiTraits>;
     /**
      * How much more rare APIs count than everyday ones in the unusual APIs signals: each API counts
@@ -214,26 +217,34 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         fingerprinting: { possible: 0.3, likely: 0.75 },
         hostname: { possible: 0.3, likely: 0.6 },
     },
-    apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { entropy: api.entropy, rarity: api.rarity }])),
+    apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { bits: api.bits, adds: api.overlap?.adds ?? api.bits, rarity: api.rarity }])),
     rarityPower: 4,
+    // Identifying information is full at 33 bits on every level: the bits that tell apart one
+    // browser among everyone online (about 5 billion people, 2^33 = 8.6 billion), however the
+    // collecting was done. Added up with overlapping APIs counting what they add (see apisSums); the
+    // sum still overcounts somewhat, so full means "would be enough", not "identifies you".
+    // Collectors read 35 to 73 bits in a burst (FingerprintJS 72, 135 counted without overlap),
+    // ordinary scripts up to about 26 (analytics and players reading sizes, languages, time zone).
+    // Unusual APIs are a sum of rarities, without such an anchor: full at what measured collections
+    // reach (see the levels).
     fullAt: {
-        burst: { identifying: 4.5, unusual: 5 },
-        // Many scripts starting up together read more than one script's burst: ordinary pages reach
-        // up to 5.1 identifying and 3.4 unusual (GitHub, from 20 APIs where its strongest script's
-        // burst read 4), a collection split over scripts in one go about 9 and 10.
-        pageBurst: { identifying: 9, unusual: 10 },
-        // Higher than for bursts: over a whole script they are a fallback for collecting without
-        // bursts, and ordinary scripts read far more over their lifetime than in one burst.
-        // They count only what a script read beyond its strongest burst. Both are full at about what large
-        // collectors gather in their lifetime. Identifying information has a low strength: over a
-        // lifetime, ordinary scripts (YouTube's app: 6.4) collect as much as smaller collectors, so
-        // only the unusual APIs tell them apart. Together they stay just below Likely
+        burst: { identifying: 33, unusual: 5 },
+        // A burst across all the page's scripts: the same measure as a script's, so the same 33 bits.
+        // Many scripts starting up together read more unusual APIs than one: ordinary pages up to 3.4
+        // (GitHub, from 20 APIs where its strongest script's burst read 4), a collection split over
+        // scripts in one go about 10.
+        pageBurst: { identifying: 33, unusual: 10 },
+        // Beyond the strongest burst (see apisSumsBeyond): how much of what the burst left missing to
+        // 33 bits the rest of the script adds. A fallback for collecting without bursts; for unusual
+        // APIs full at about what large collectors read over their lifetime, as ordinary scripts read
+        // far more over theirs than in one burst. Identifying information has a low strength, as
+        // ordinary scripts reveal much over a lifetime too; together they stay just below Likely
         // (1 - 0.85 × 0.3): collecting spread out alone is Possible.
-        script: { identifying: 10, unusual: 10 },
-        // Beyond the strongest script: ordinary pages reach up to about 3 unusual (GitHub, from several
-        // of its own scripts) and 4.3 identifying (CNN, ESPN), a collection like FingerprintJS's
-        // split over three scripts about 10 and 9.
-        page: { identifying: 10, unusual: 12 },
+        script: { identifying: 33, unusual: 10 },
+        // Beyond the strongest script, likewise: what the other scripts add to it. Ordinary pages read
+        // up to about 3 unusual (GitHub, from several of its own scripts), a collection like
+        // FingerprintJS's split over three scripts about 9.
+        page: { identifying: 33, unusual: 12 },
     },
     // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
     // page responsive; measured collections took 13–362 ms with pauses up to 190 ms.
@@ -332,57 +343,168 @@ export function saturate(value: number, fullAt: number): number {
 /** What one API added to an API signal. */
 export interface ApiAmount {
     id: string;
-    /** Its entropy or rarity, as set. */
+    /** Its bits or rarity, as set. */
     basis: number;
-    /** What it added: the entropy, or the rarity to rarityPower; 0 if an API with the same information counted instead. */
+    /**
+     * What it added: its bits (what it adds beyond an overlapping API, see overlapsWith), or the
+     * rarity to rarityPower; 0 if an API with the same information counted instead.
+     */
     amount: number;
     /** The API with the same information that counted instead of this one. */
     countedWith?: string;
+    /** For bits: the API of its overlap group that counted all its bits, so this one only what it adds. */
+    overlapsWith?: string;
+    /** For a sum beyond known APIs (see apisSumsBeyond): whether countedWith or overlapsWith is one of those. */
+    withKnown?: boolean;
 }
 
 /** An API signal's sum: its value from 0 to 1, the total it was made from and what each API added. */
 export interface ApisSum {
-    measure: 'entropy' | 'rarity';
+    measure: 'bits' | 'rarity';
     value: number;
     total: number;
     fullAt: number;
+    /**
+     * For a sum beyond known APIs (see apisSumsBeyond): the bits those already counted; the value is
+     * then how much of what was still missing to fullAt the APIs here add.
+     */
+    known?: number;
     /** Most added first. */
     apis: ApiAmount[];
 }
 
 /**
  * The API signals' sums for the different APIs read, with what each API added (see ApisSum):
- * identifying information (Σ entropy), how much they reveal, and unusual APIs (Σ rarity ^
+ * identifying information (Σ bits), how much they reveal, and unusual APIs (Σ rarity ^
  * rarityPower), how unusual it is to read them. The two are independent: the user agent reveals a
  * lot but everyone reads it, navigator.webdriver reveals nothing but checking it shows intent.
  *
  * APIs that reveal the same value (see FpApi.same, e.g. the WebGL and WebGL2 versions of a call,
  * or the pixels of a canvas exported in two formats) count once together, as the highest of them.
+ * Of APIs whose values only overlap (see FpApi.overlap, e.g. the screen's and the window's sizes),
+ * the one with the most bits counts all of them, the others only what they add beyond it.
  */
 export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings): { identifying: ApisSum; unusual: ApisSum } {
-    const identifying = new SameSum('entropy');
+    const identifying = new SameSum('bits');
     const unusual = new SameSum('rarity');
     for (const id of distinctApis) {
         const traits = settings.apis[id];
         if (!traits) continue;
-        const information = FP_APIS_BY_ID[id]?.same ?? id;
-        const entropy = clamp01(traits.entropy);
+        const api = FP_APIS_BY_ID[id];
+        const information = api?.same ?? id;
+        const bits = nonNegative(traits.bits);
         const rarity = clamp01(traits.rarity);
-        identifying.add(id, information, entropy, entropy);
+        identifying.add(id, information, bits, bits, api?.overlap ? { group: api.overlap.group, adds: Math.min(bits, nonNegative(traits.adds)) } : undefined);
         unusual.add(id, information, rarity, rarity ** Math.max(0, settings.rarityPower));
     }
     const fullAt = settings.fullAt[level];
     return { identifying: identifying.sum(fullAt.identifying), unusual: unusual.sum(fullAt.unusual) };
 }
 
-/** Amounts added up, each piece of information once: as the API adding the most for it. */
+/**
+ * The API signals for what `distinctApis` add on top of `knownApis`, which are already counted
+ * elsewhere: a script's beyond its strongest burst, a page's beyond its strongest script.
+ *
+ * Identifying information starts from the bits the known APIs reveal together (B), then adds the
+ * others, the most bits first: one revealing a value already counted adds nothing (or what it has
+ * more), one whose overlap group already has a counted API (known or added before) adds what it adds
+ * beside it, any other its bits. Its value is how much of the way from B to fullAt they cover:
+ * min(added, fullAt − B) / fullAt. Known APIs revealing fullAt bits already identify the browser,
+ * so nothing beyond adds to that.
+ *
+ * Unusual APIs count each API's rarity as usual, except those revealing a value already counted.
+ * Rarity is about intent, so overlapping values each count: reading another rare API shows more.
+ */
+export function apisSumsBeyond(
+    knownApis: Iterable<string>,
+    distinctApis: Iterable<string>,
+    level: ApisLevel,
+    settings: ScoringSettings
+): { identifying: ApisSum; unusual: ApisSum } {
+    const known = new Set(knownApis);
+    const base = apisSums(known, level, settings).identifying;
+    const fullAt = settings.fullAt[level];
+
+    // What is counted so far: per value the API counting it and its bits, per overlap group an API of it.
+    const values = new Map<string, { id: string; bits: number; known: boolean }>();
+    const groups = new Map<string, { id: string; known: boolean }>();
+    for (const api of base.apis) {
+        if (api.countedWith) continue;
+        const definition = FP_APIS_BY_ID[api.id];
+        values.set(definition?.same ?? api.id, { id: api.id, bits: api.basis, known: true });
+        const group = definition?.overlap?.group;
+        if (group && !api.overlapsWith) groups.set(group, { id: api.id, known: true });
+    }
+
+    const added = [...new Set(distinctApis)]
+        .filter((id) => !known.has(id) && settings.apis[id])
+        .map((id) => ({ id, bits: nonNegative(settings.apis[id]!.bits), traits: settings.apis[id]! }))
+        .sort((a, b) => b.bits - a.bits || a.id.localeCompare(b.id));
+    const identifying: ApiAmount[] = [];
+    const unusual: ApiAmount[] = [];
+    const rarityValues = new Map([...values].map(([value, { id }]) => [value, { id, known: true }]));
+    for (const { id, bits, traits } of added) {
+        const definition = FP_APIS_BY_ID[id];
+        const value = definition?.same ?? id;
+        const group = definition?.overlap?.group;
+        const counted = values.get(value);
+        const member = group ? groups.get(group) : undefined;
+        if (counted) {
+            // The same value: only what this API reveals more, as overlapping with the one counting it.
+            const more = Math.max(0, bits - counted.bits);
+            identifying.push(more > 0 ? { id, basis: bits, amount: more, overlapsWith: counted.id, withKnown: counted.known } : { id, basis: bits, amount: 0, countedWith: counted.id, withKnown: counted.known });
+            if (more > 0) values.set(value, { id, bits, known: false });
+        } else if (member) {
+            identifying.push({ id, basis: bits, amount: Math.min(bits, nonNegative(traits.adds)), overlapsWith: member.id, withKnown: member.known });
+            values.set(value, { id, bits, known: false });
+        } else {
+            identifying.push({ id, basis: bits, amount: bits });
+            values.set(value, { id, bits, known: false });
+            if (group) groups.set(group, { id, known: false });
+        }
+
+        const rarity = clamp01(traits.rarity);
+        const sameValue = rarityValues.get(value);
+        if (sameValue) unusual.push({ id, basis: rarity, amount: 0, countedWith: sameValue.id, withKnown: sameValue.known });
+        else {
+            unusual.push({ id, basis: rarity, amount: rarity ** Math.max(0, settings.rarityPower) });
+            rarityValues.set(value, { id, known: false });
+        }
+    }
+
+    const byAmount = (a: ApiAmount, b: ApiAmount) => b.amount - a.amount || a.id.localeCompare(b.id);
+    const addedBits = identifying.reduce((sum, api) => sum + api.amount, 0);
+    const missing = Math.max(0, fullAt.identifying - base.total);
+    const unusualTotal = unusual.reduce((sum, api) => sum + api.amount, 0);
+    return {
+        identifying: {
+            measure: 'bits',
+            value: fullAt.identifying > 0 ? Math.min(addedBits, missing) / fullAt.identifying : 0,
+            total: addedBits,
+            fullAt: fullAt.identifying,
+            known: base.total,
+            apis: identifying.sort(byAmount),
+        },
+        unusual: { measure: 'rarity', value: saturate(unusualTotal, fullAt.unusual), total: unusualTotal, fullAt: fullAt.unusual, apis: unusual.sort(byAmount) },
+    };
+}
+
+/** Bits added up as the identifying information signal does (see apisSums), without its full-at: for showing the total. */
+export function identifyingBits(distinctApis: Iterable<string>, apis: ScoringSettings['apis']): number {
+    return apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis }).identifying.total;
+}
+
+/**
+ * Amounts added up, each piece of information once: as the API adding the most for it. Of an
+ * overlap group, the API adding the most counts its whole amount, the others what they add.
+ */
 class SameSum {
-    private readonly items: { id: string; information: string; basis: number; amount: number }[] = [];
+    private readonly items: { id: string; information: string; basis: number; amount: number; overlap?: { group: string; adds: number } }[] = [];
 
     constructor(private readonly measure: ApisSum['measure']) {}
 
-    add(id: string, information: string, basis: number, amount: number) {
-        this.items.push({ id, information, basis, amount });
+    add(id: string, information: string, basis: number, amount: number, overlap?: { group: string; adds: number }) {
+        this.items.push({ id, information, basis, amount, overlap });
     }
 
     sum(fullAt: number): ApisSum {
@@ -391,14 +513,22 @@ class SameSum {
             const best = counted.get(item.information);
             if (!best || item.amount > best.amount) counted.set(item.information, item);
         }
-        let total = 0;
-        for (const item of counted.values()) total += item.amount;
+        // Per overlap group, the counted API with the most; it alone counts its whole amount.
+        const leaders = new Map<string, (typeof this.items)[number]>();
+        for (const item of counted.values()) {
+            if (!item.overlap) continue;
+            const leader = leaders.get(item.overlap.group);
+            if (!leader || item.amount > leader.amount || (item.amount === leader.amount && item.id < leader.id)) leaders.set(item.overlap.group, item);
+        }
         const apis = this.items
-            .map(({ id, information, basis, amount }): ApiAmount => {
+            .map(({ id, information, basis, amount, overlap }): ApiAmount => {
                 const best = counted.get(information)!;
-                return best.id === id ? { id, basis, amount } : { id, basis, amount: 0, countedWith: best.id };
+                if (best.id !== id) return { id, basis, amount: 0, countedWith: best.id };
+                const leader = overlap ? leaders.get(overlap.group)! : undefined;
+                return leader && leader.id !== id ? { id, basis, amount: overlap!.adds, overlapsWith: leader.id } : { id, basis, amount };
             })
             .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
+        const total = apis.reduce((sum, api) => sum + api.amount, 0);
         return { measure: this.measure, value: saturate(total, fullAt), total, fullAt, apis };
     }
 }
@@ -407,13 +537,25 @@ function clamp01(value: number): number {
     return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
+function nonNegative(value: number): number {
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
 // ---------- user settings ----------
 
 const STORAGE_KEY = 'scoringSettings';
 
+/**
+ * The version of the stored settings' units. 2: an API's identifying information in bits (see
+ * ApiTraits), which version 1 (no version stored) kept as entropy from 0 to 1, bits divided by 8.
+ */
+const SETTINGS_VERSION = 2;
+
+type StoredSettings = Partial<ScoringSettings> & { version?: number };
+
 /** The user's settings, with defaults for anything not set (e.g. signals added since). */
 export async function loadScoringSettings(): Promise<ScoringSettings> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as Partial<ScoringSettings> | undefined;
+    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as StoredSettings | undefined;
     return withDefaults(stored);
 }
 
@@ -422,7 +564,25 @@ export async function loadScoringSettings(): Promise<ScoringSettings> {
  * still reaches everyone who didn't set that value themselves.
  */
 export function saveScoringSettings(settings: ScoringSettings): Promise<void> {
-    return browser.storage.local.set({ [STORAGE_KEY]: changedFrom(DEFAULT_SETTINGS, settings) ?? {} });
+    const changed = (changedFrom(DEFAULT_SETTINGS, settings) ?? {}) as StoredSettings;
+    return browser.storage.local.set({ [STORAGE_KEY]: { ...changed, version: SETTINGS_VERSION } });
+}
+
+/**
+ * Settings stored in version 1's units, in version 2's: an API's entropy set as bits (×8). The
+ * identifying information's full-at values are left out, as the sum they were set for counted
+ * overlapping APIs fully; the new defaults apply.
+ */
+function migrated(stored: StoredSettings | undefined): StoredSettings | undefined {
+    if (!stored || stored.version === SETTINGS_VERSION) return stored;
+    const apis = Object.fromEntries(
+        Object.entries(stored.apis ?? {}).map(([id, traits]) => {
+            const { entropy, ...rest } = traits as Partial<ApiTraits> & { entropy?: number };
+            return [id, entropy === undefined ? rest : { ...rest, bits: entropy * 8 }];
+        })
+    ) as ScoringSettings['apis'];
+    const fullAt = Object.fromEntries(Object.entries(stored.fullAt ?? {}).map(([level, { identifying, ...rest }]) => [level, rest])) as ScoringSettings['fullAt'];
+    return { ...stored, apis, fullAt, version: SETTINGS_VERSION };
 }
 
 /** The parts of `value` that differ from `base`, as a nested object; undefined if none do. */
@@ -445,13 +605,14 @@ export function resetScoringSettings(): Promise<void> {
 /** Calls `onChange` with the new settings whenever the user changes them. */
 export function watchScoringSettings(onChange: (settings: ScoringSettings) => void): () => void {
     const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && STORAGE_KEY in changes) onChange(withDefaults(changes[STORAGE_KEY]!.newValue as Partial<ScoringSettings> | undefined));
+        if (area === 'local' && STORAGE_KEY in changes) onChange(withDefaults(changes[STORAGE_KEY]!.newValue as StoredSettings | undefined));
     };
     browser.storage.onChanged.addListener(listener);
     return () => browser.storage.onChanged.removeListener(listener);
 }
 
-function withDefaults(stored: Partial<ScoringSettings> | undefined): ScoringSettings {
+function withDefaults(storedAsIs: StoredSettings | undefined): ScoringSettings {
+    const stored = migrated(storedAsIs);
     const strengths = Object.fromEntries(
         (Object.keys(DEFAULT_SETTINGS.strengths) as ScoreLevel[]).map((level) => [
             level,

@@ -66,6 +66,6 @@ export interface TabSnapshot {
     frames: (FrameSnapshot | null)[];
     /** Where scores count as possible or likely, from the user's scoring settings. */
     cutoffs: ScoringSettings['cutoffs'];
-    /** Each API's entropy and rarity the scores were made with, from the user's scoring settings. */
+    /** Each API's bits and rarity the scores were made with, from the user's scoring settings. */
     apis?: ScoringSettings['apis'];
 }
