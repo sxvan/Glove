@@ -917,7 +917,9 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
         let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} ${unit} that make it full: +${score(share)}.`;
         // A sum beyond what is already counted names that as such: "read in the burst".
         const where = api.withKnown ? `, ${KNOWN_WHERE[signalLevel]}` : '';
-        if (api.countedWith) note = `Same information as ${api.countedWith}${where}, which counts instead.`;
+        // For unusual APIs, counted with another means read together with it: its value or its pair (see readKey).
+        if (api.countedWith)
+            note = sum.measure === 'rarity' ? `Read together with ${api.countedWith}${where}, which counts instead.` : `Same information as ${api.countedWith}${where}, which counts instead.`;
         else if (api.overlapsWith)
             note = `Overlaps with ${api.overlapsWith}${where}, which counts all its bits: this one adds only the ${number(api.amount)} bits it tells beyond it, +${score(share)}.`;
         else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)

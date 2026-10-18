@@ -11,7 +11,7 @@
 // and a score can never exceed 1. Strengths and the likelihood cutoffs can be changed by the user on
 // the options page; the defaults and the "full at" limits are defined here.
 import { browser } from 'wxt/browser';
-import { FP_APIS, FP_APIS_BY_ID } from './fp-apis';
+import { FP_APIS, FP_APIS_BY_ID, readKey } from './fp-apis';
 
 export interface SignalDefinition {
     label: string;
@@ -427,7 +427,8 @@ export interface ApisSum {
  * lot but everyone reads it, navigator.webdriver reveals nothing but checking it shows intent.
  *
  * APIs that reveal the same value (see FpApi.same, e.g. the WebGL and WebGL2 versions of a call,
- * or the pixels of a canvas exported in two formats) count once together, as the highest of them.
+ * or the pixels of a canvas exported in two formats) count once together, as the highest of them;
+ * for unusual APIs so do both coordinates of a pair (see FpApi.pair), read together as one.
  * Of APIs whose values only overlap (see FpApi.overlap, e.g. the screen's and the window's sizes),
  * the one with the most bits counts all of them, the others only what they add beyond it.
  */
@@ -442,7 +443,8 @@ export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, setti
         const bits = nonNegative(traits.bits);
         const rarity = clamp01(traits.rarity);
         identifying.add(id, information, bits, bits, api?.overlap ? { group: api.overlap.group, adds: Math.min(bits, nonNegative(traits.adds)) } : undefined);
-        unusual.add(id, information, rarity, rarity ** Math.max(0, settings.rarityPower));
+        // Both coordinates of a pair are one read (see readKey).
+        unusual.add(id, readKey(id), rarity, rarity ** Math.max(0, settings.rarityPower));
     }
     const fullAt = settings.fullAt[level];
     return { identifying: identifying.sum(fullAt.identifying), unusual: unusual.sum(fullAt.unusual) };
@@ -459,7 +461,8 @@ export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, setti
  * min(added, fullAt − B) / fullAt. Known APIs revealing fullAt bits already identify the browser,
  * so nothing beyond adds to that.
  *
- * Unusual APIs count each API's rarity as usual, except those revealing a value already counted.
+ * Unusual APIs count each API's rarity as usual, except those whose read was already counted (the
+ * same value, or the other coordinate of a pair).
  * Rarity is about intent, so overlapping values each count: reading another rare API shows more.
  * Its value is likewise how much of the way from the known APIs' rarities to fullAt they cover:
  * known APIs reading as unusually as no ordinary script does already show the intent.
@@ -492,7 +495,8 @@ export function apisSumsBeyond(
         .sort((a, b) => b.bits - a.bits || a.id.localeCompare(b.id));
     const identifying: ApiAmount[] = [];
     const unusual: ApiAmount[] = [];
-    const rarityValues = new Map([...values].map(([value, { id }]) => [value, { id, known: true }]));
+    // For unusual APIs, what was read (see readKey): the known APIs' reads count as read.
+    const reads = new Map([...known].filter((id) => settings.apis[id]).map((id) => [readKey(id), { id, known: true }]));
     for (const { id, bits, traits } of added) {
         const definition = FP_APIS_BY_ID[id];
         const value = definition?.same ?? id;
@@ -514,11 +518,12 @@ export function apisSumsBeyond(
         }
 
         const rarity = clamp01(traits.rarity);
-        const sameValue = rarityValues.get(value);
-        if (sameValue) unusual.push({ id, basis: rarity, amount: 0, countedWith: sameValue.id, withKnown: sameValue.known });
+        const read = readKey(id);
+        const sameRead = reads.get(read);
+        if (sameRead) unusual.push({ id, basis: rarity, amount: 0, countedWith: sameRead.id, withKnown: sameRead.known });
         else {
             unusual.push({ id, basis: rarity, amount: rarity ** Math.max(0, settings.rarityPower) });
-            rarityValues.set(value, { id, known: false });
+            reads.set(read, { id, known: false });
         }
     }
 
