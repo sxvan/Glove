@@ -98,6 +98,11 @@ export interface FpApi {
      */
     rarity: number;
     /**
+     * Where its rarity comes from: Chrome's use counter for it unless said otherwise; a counter of a
+     * related feature ("related"), or an estimate without data ("estimate").
+     */
+    rarityBasis?: 'related' | 'estimate';
+    /**
      * The id of an API that reveals the same value (e.g. webgl2.readPixels and webgl.readPixels, or
      * screen.pixelDepth and screen.colorDepth): they count once together, as the highest of them.
      * Values that only overlap, like a height and its width, have their own entropy instead.
@@ -141,7 +146,7 @@ export const FP_APIS: FpApi[] = [
     // browser version identify more, but analytics asks for them routinely too (Google Analytics does
     // by default), so they count only moderately.
     { id: 'uadata.getHighEntropyValues', owner: 'NavigatorUAData', prop: 'getHighEntropyValues', category: 'Browser', reveals: 'client hints', entropy: 0.2, rarity: 0.38 },
-    { id: 'uadata.detailedHints', owner: 'NavigatorUAData', prop: 'getHighEntropyValues', category: 'Browser', reveals: 'exact OS version, device model and architecture', entropy: 0.5, rarity: 0.5, readOf: { api: 'uadata.getHighEntropyValues', read: 'highEntropyValues' } },
+    { id: 'uadata.detailedHints', owner: 'NavigatorUAData', prop: 'getHighEntropyValues', category: 'Browser', reveals: 'exact OS version, device model and architecture', entropy: 0.5, rarity: 0.5, readOf: { api: 'uadata.getHighEntropyValues', read: 'highEntropyValues' }, rarityBasis: 'estimate' },
     { id: 'navigator.platform', owner: 'Navigator', prop: 'platform', category: 'Browser', reveals: 'operating system', entropy: 0.2, rarity: 0.37 },
     { id: 'navigator.language', owner: 'Navigator', prop: 'language', category: 'Languages', reveals: 'languages', entropy: 0.2, rarity: 0.44, same: 'navigator.languages' },
     { id: 'navigator.languages', owner: 'Navigator', prop: 'languages', category: 'Languages', reveals: 'languages', entropy: 0.3, rarity: 0.59 },
@@ -154,7 +159,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'navigator.vendor', owner: 'Navigator', prop: 'vendor', category: 'Browser', reveals: 'browser vendor', entropy: 0.15, rarity: 0.63 },
     // Says almost nothing about the device (false in practically every real browser), but checking
     // for automation is what bot detection does.
-    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', entropy: 0.05, rarity: 1 },
+    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', entropy: 0.05, rarity: 1, rarityBasis: 'estimate' },
     // The same fixed list in modern Chrome, so it tells little about the device, but it's read
     // almost only by fingerprinting.
     { id: 'navigator.plugins', owner: 'Navigator', prop: 'plugins', category: 'Plugins', reveals: 'plugins', entropy: 0.1, rarity: 0.68 },
@@ -175,7 +180,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'connection.downlink', owner: 'NetworkInformation', prop: 'downlink', category: 'Connection', reveals: 'connection speed', entropy: 0.1, rarity: 0.65 },
     // The installed voices depend on the operating system, its version and language packs; only
     // text-to-speech needs them.
-    { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', entropy: 0.55, rarity: 0.86 },
+    { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', entropy: 0.55, rarity: 0.86, rarityBasis: 'related' },
 
     // Screen
     { id: 'screen.width', owner: 'Screen', prop: 'width', category: 'ScreenSetup', reveals: 'screen size', entropy: 0.5, rarity: 0.31 },
@@ -205,50 +210,50 @@ export const FP_APIS: FpApi[] = [
     { id: 'window.screenTop', owner: 'Window', prop: 'screenTop', category: 'ScreenSetup', reveals: 'window position', entropy: 0.15, rarity: 0.86, same: 'window.screenY' },
 
     // Document: more tracking than fingerprinting, and read everywhere.
-    { id: 'document.referrer', owner: 'Document', prop: 'referrer', category: 'Cookies', reveals: 'previous page', entropy: 0.05, rarity: 0.15 },
+    { id: 'document.referrer', owner: 'Document', prop: 'referrer', category: 'Cookies', reveals: 'previous page', entropy: 0.05, rarity: 0.15, rarityBasis: 'estimate' },
     { id: 'document.cookie', owner: 'Document', prop: 'cookie', category: 'Cookies', reveals: 'cookies', entropy: 0.05, rarity: 0.22 },
 
     // Canvas: reading back what was drawn shows how this device renders. Exporting or editing a
     // visible canvas is common; reading back a canvas that isn't on the page is canvas fingerprinting.
     { id: 'canvas.toDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'canvas image', entropy: 1, rarity: 0.86 },
-    { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' } },
+    { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
     { id: 'canvas.toBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'canvas image', entropy: 1, rarity: 0.99, same: 'canvas.toDataURL' },
-    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' } },
+    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
     { id: 'canvas.getImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'canvas image', entropy: 1, rarity: 0.92, same: 'canvas.toDataURL' },
-    { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' } },
+    { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', entropy: 1, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
     // Whether a point lies in a path drawn with the even-odd rule: the same in practically every
     // browser, but part of a canvas fingerprint (FingerprintJS's "winding"), and rare otherwise.
     { id: 'canvas.isPointInPath', owner: 'CanvasRenderingContext2D', prop: 'isPointInPath', category: 'CanvasImage', reveals: 'canvas path handling', entropy: 0.05, rarity: 0.96 },
     // Measuring text is everyday; measuring it in many different fonts is finding out which are installed.
     { id: 'canvas.measureText', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'text measurements', entropy: 0.1, rarity: 0.92 },
-    { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', entropy: 0.85, rarity: 1, readOf: { api: 'canvas.measureText', read: 'fontProbing' } },
+    { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', entropy: 0.85, rarity: 1, readOf: { api: 'canvas.measureText', read: 'fontProbing' }, rarityBasis: 'estimate' },
 
     // WebGL: 3D engines check capabilities and shader precision when they start, and read pixels
     // back to find what was clicked. The graphics card's maker and model (through
     // WEBGL_debug_renderer_info) are recorded on their own, as almost nothing but fingerprinting
     // needs them.
     { id: 'webgl.getParameter', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', entropy: 0.35, rarity: 0.71 },
-    { id: 'webgl.gpuName', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', entropy: 0.75, rarity: 1, readOf: { api: 'webgl.getParameter', read: 'gpuName' } },
+    { id: 'webgl.gpuName', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', entropy: 0.75, rarity: 1, readOf: { api: 'webgl.getParameter', read: 'gpuName' }, rarityBasis: 'estimate' },
     { id: 'webgl.getExtension', owner: 'WebGLRenderingContext', prop: 'getExtension', category: 'GraphicsCard', reveals: 'graphics extensions', entropy: 0.1, rarity: 0.73 },
     { id: 'webgl.getSupportedExtensions', owner: 'WebGLRenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', entropy: 0.55, rarity: 0.93 },
-    { id: 'webgl.readPixels', owner: 'WebGLRenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6 },
+    { id: 'webgl.readPixels', owner: 'WebGLRenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6, rarityBasis: 'estimate' },
     // The precision of the graphics card's shaders: 3D engines ask when they start, fingerprinters always do.
     { id: 'webgl.getShaderPrecisionFormat', owner: 'WebGLRenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', entropy: 0.2, rarity: 0.94 },
     // The context's settings (antialiasing and the like): mostly what was asked for, read back.
-    { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9 },
+    { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9, rarityBasis: 'estimate' },
 
-    { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', entropy: 0.35, rarity: 0.71, same: 'webgl.getParameter' },
-    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', entropy: 0.75, rarity: 1, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' } },
+    { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', entropy: 0.35, rarity: 0.71, same: 'webgl.getParameter', rarityBasis: 'related' },
+    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', entropy: 0.75, rarity: 1, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' }, rarityBasis: 'estimate' },
     { id: 'webgl2.getExtension', owner: 'WebGL2RenderingContext', prop: 'getExtension', category: 'GraphicsCard', reveals: 'graphics extensions', entropy: 0.1, rarity: 0.94, same: 'webgl.getExtension' },
     { id: 'webgl2.getSupportedExtensions', owner: 'WebGL2RenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', entropy: 0.55, rarity: 0.98, same: 'webgl.getSupportedExtensions' },
-    { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6, same: 'webgl.readPixels' },
-    { id: 'webgl2.getShaderPrecisionFormat', owner: 'WebGL2RenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', entropy: 0.2, rarity: 0.94, same: 'webgl.getShaderPrecisionFormat' },
-    { id: 'webgl2.getContextAttributes', owner: 'WebGL2RenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9, same: 'webgl.getContextAttributes' },
+    { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', entropy: 0.7, rarity: 0.6, same: 'webgl.readPixels', rarityBasis: 'estimate' },
+    { id: 'webgl2.getShaderPrecisionFormat', owner: 'WebGL2RenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', entropy: 0.2, rarity: 0.94, same: 'webgl.getShaderPrecisionFormat', rarityBasis: 'related' },
+    { id: 'webgl2.getContextAttributes', owner: 'WebGL2RenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', entropy: 0.05, rarity: 0.9, same: 'webgl.getContextAttributes', rarityBasis: 'estimate' },
 
     // WebGPU: asking for an adapter is how WebGPU content starts; its info names the graphics card's
     // maker and architecture, which only fingerprinting needs.
     { id: 'webgpu.requestAdapter', owner: 'GPU', prop: 'requestAdapter', category: 'GraphicsCard', reveals: 'WebGPU support', entropy: 0.05, rarity: 0.9 },
-    { id: 'webgpu.adapterInfo', owner: 'GPUAdapter', prop: 'info', category: 'GraphicsCard', reveals: 'graphics card maker and architecture', entropy: 0.45, rarity: 0.95 },
+    { id: 'webgpu.adapterInfo', owner: 'GPUAdapter', prop: 'info', category: 'GraphicsCard', reveals: 'graphics card maker and architecture', entropy: 0.45, rarity: 0.95, rarityBasis: 'estimate' },
 
     // Audio: setting up nodes is ordinary; rendering silently and reading the samples is fingerprinting.
     { id: 'audiocontext.createAnalyser', owner: 'AudioContext', prop: 'createAnalyser', category: 'Audio', reveals: 'audio setup', entropy: 0.1, rarity: 0.97 },
@@ -259,28 +264,21 @@ export const FP_APIS: FpApi[] = [
     // Codecs: which audio and video formats the browser plays, which depends on the browser, its
     // build and the operating system. Video players ask too, for the formats they have.
     { id: 'media.canPlayType', owner: 'HTMLMediaElement', prop: 'canPlayType', category: 'Codecs', reveals: 'supported media formats', entropy: 0.15, rarity: 0.77 },
-    { id: 'mediasource.isTypeSupported', owner: 'MediaSource', prop: 'isTypeSupported', category: 'Codecs', reveals: 'supported media formats', entropy: 0.15, rarity: 0.77, same: 'media.canPlayType' },
+    { id: 'mediasource.isTypeSupported', owner: 'MediaSource', prop: 'isTypeSupported', category: 'Codecs', reveals: 'supported media formats', entropy: 0.15, rarity: 0.77, same: 'media.canPlayType', rarityBasis: 'related' },
     // Media devices: the list of cameras and microphones is read silently; without permission it
     // only tells how many of each kind there are. getUserMedia asks first.
     { id: 'mediadevices.enumerateDevices', owner: 'MediaDevices', prop: 'enumerateDevices', category: 'MediaDevices', reveals: 'cameras and microphones', entropy: 0.15, rarity: 0.86 },
     { id: 'mediadevices.getUserMedia', owner: 'MediaDevices', prop: 'getUserMedia', category: 'MediaDevices', reveals: 'camera or microphone access', entropy: 0.05, rarity: 1 },
 
     // WebRTC: can reveal local network addresses; video calls use it legitimately.
-    { id: 'webrtc.createDataChannel', owner: 'RTCPeerConnection', prop: 'createDataChannel', category: 'Network', reveals: 'WebRTC connection', entropy: 0.05, rarity: 0.93 },
+    { id: 'webrtc.createDataChannel', owner: 'RTCPeerConnection', prop: 'createDataChannel', category: 'Network', reveals: 'WebRTC connection', entropy: 0.05, rarity: 0.93, rarityBasis: 'related' },
     { id: 'webrtc.addIceCandidate', owner: 'RTCPeerConnection', prop: 'addIceCandidate', category: 'Network', reveals: 'local network addresses', entropy: 0.3, rarity: 0.94, same: 'webrtc.setLocalDescription' },
     { id: 'webrtc.setLocalDescription', owner: 'RTCPeerConnection', prop: 'setLocalDescription', category: 'Network', reveals: 'local network addresses', entropy: 0.3, rarity: 0.94 },
 
     // Intl: the time zone; date libraries read it too.
-    { id: 'intl.datetimeformat.resolvedOptions', owner: 'IntlDateTimeFormat', prop: 'resolvedOptions', category: 'TimeZone', reveals: 'time zone', entropy: 0.4, rarity: 0.64 },
-    { id: 'date.getTimezoneOffset', owner: 'Date', prop: 'getTimezoneOffset', category: 'TimeZone', reveals: 'time zone', entropy: 0.35, rarity: 0.1 },
+    { id: 'intl.datetimeformat.resolvedOptions', owner: 'IntlDateTimeFormat', prop: 'resolvedOptions', category: 'TimeZone', reveals: 'time zone', entropy: 0.4, rarity: 0.64, rarityBasis: 'related' },
+    { id: 'date.getTimezoneOffset', owner: 'Date', prop: 'getTimezoneOffset', category: 'TimeZone', reveals: 'time zone', entropy: 0.35, rarity: 0.1, rarityBasis: 'estimate' },
 ];
 
 export const FP_APIS_BY_ID: Record<string, FpApi> = Object.fromEntries(FP_APIS.map((api) => [api.id, api]));
 
-/** The average entropy of each kind's APIs: how identifying the kind is, for listing kinds in order. */
-export const FP_CATEGORY_ENTROPY: Record<string, number> = Object.fromEntries(
-    Object.entries(Object.groupBy(FP_APIS, (api) => api.category)).map(([category, apis]) => [
-        category,
-        apis!.reduce((sum, api) => sum + api.entropy, 0) / apis!.length,
-    ])
-);

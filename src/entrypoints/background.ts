@@ -252,6 +252,7 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
         dnsTrackingRequests: collectDnsTrackingRequestsForTab(session, tabId),
         frames: Object.entries(tabState.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
         cutoffs: settings.cutoffs,
+        apis: settings.apis,
     };
 
     return tabSnapshot;
@@ -275,6 +276,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
     return {
         documentId: document.documentId,
         url: document.currentUrl,
+        startTime: document.startTime,
         fpMetrics: convertToMetricsSnapshot(document.fpMetrics),
         spikes: document.spikes.map((spike) => convertToMetricsSnapshot(spike.fpMetrics)).filter((metrics) => metrics !== null),
         scripts: Object.entries(document.scripts).map(([scriptName, script]) => scriptSnapshotFromScript(script, scriptName)),
@@ -285,8 +287,10 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
     // Counted as the calls arrived (see storeFpEvent), so also exact once they were thinned out.
     const apiCounts: Record<string, number> = {};
     const apiLocations: Record<string, CallLocation[]> = {};
+    const apiTimes: Record<string, { first: number; last: number }> = {};
     for (const [api, calls] of Object.entries(script.calls)) {
         apiCounts[api] = calls.count;
+        apiTimes[api] = { first: calls.first, last: calls.last };
         const locations = Object.values(calls.locations);
         if (locations.length > 0) apiLocations[api] = locations.map((location) => ({ ...location })).sort((a, b) => b.calls - a.calls);
     }
@@ -297,6 +301,7 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         fpSpikes: script.fpSpikes.map(convertToSpikeSnapshot),
         apiCounts,
         apiLocations,
+        apiTimes,
     };
 }
 

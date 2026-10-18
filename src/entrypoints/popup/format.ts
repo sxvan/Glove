@@ -19,6 +19,13 @@ export function duration(ms: number): string {
     return ms < 1000 ? `${Math.max(1, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
+/** A time since the page started, e.g. "0.4 s", "12.1 s" or "3 min 05 s". */
+export function elapsed(ms: number): string {
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+    const seconds = Math.floor(ms / 1000);
+    return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
+}
+
 /** A data size, e.g. "512 B" or "4.2 KB". */
 export function bytes(count: number): string {
     return count < 1024 ? `${count} B` : `${(count / 1024).toFixed(1)} KB`;

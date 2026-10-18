@@ -5,6 +5,9 @@ import type { CallLocation } from './snapshot';
 /** An API's calls by a script: how many, and from where in the code (by "line:column"). */
 export interface ApiCalls {
     count: number;
+    /** When it was first and last called (ms since the epoch). */
+    first: number;
+    last: number;
     locations: Record<string, CallLocation>;
 }
 

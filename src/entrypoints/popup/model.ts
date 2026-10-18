@@ -1,8 +1,8 @@
 // Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
 // key numbers and the strongest evidence.
-import { FP_APIS_BY_ID, FP_CATEGORY_ENTROPY, fpCategoryName } from '@/lib/fp-apis';
+import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_SETTINGS, SIGNALS, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
+import { DEFAULT_SETTINGS, SIGNALS, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
@@ -53,6 +53,15 @@ export interface EvidenceRow {
 /** Where scores count as possible or likely: the user's settings, sent with the snapshot. */
 function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
     return snapshot.cutoffs ?? DEFAULT_SETTINGS.cutoffs;
+}
+
+/**
+ * Each API's entropy and rarity as the scores were made with them: the user's settings, sent with
+ * the snapshot, so the popup ranks and shows APIs as it scores them. An older background doesn't
+ * send them; the defaults stand in then.
+ */
+function traitsOf(snapshot: TabSnapshot): Record<string, ApiTraits> {
+    return snapshot.apis ?? DEFAULT_SETTINGS.apis;
 }
 
 /** Evidence rows per category on the overview. */
@@ -117,7 +126,7 @@ function fingerprinting(snapshot: TabSnapshot): Category {
             .flatMap((d) => d.scripts)
             .filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
             .flatMap((s) => s.fpMetrics?.distinctFpCategories ?? []);
-        const techniques = techniqueWords(categories);
+        const techniques = techniqueWords(categories, traitsOf(snapshot));
         const shown = techniques.length <= 3 ? techniques : [...techniques.slice(0, 2), `${techniques.length - 2} other details`];
 
         const thirdParty = scripts.filter((s) => s.party === 'third').length;
@@ -233,9 +242,18 @@ function dnsLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Like
 }
 
 /** API categories as words, most identifying first (e.g. canvas before screen size). */
-function techniqueWords(categories: string[]): string[] {
-    const sorted = unique(categories).sort((a, b) => (FP_CATEGORY_ENTROPY[b] ?? 0) - (FP_CATEGORY_ENTROPY[a] ?? 0));
+function techniqueWords(categories: string[], traits: Record<string, ApiTraits>): string[] {
+    const entropy = categoryEntropy(traits);
+    const sorted = unique(categories).sort((a, b) => (entropy[b] ?? 0) - (entropy[a] ?? 0));
     return unique(sorted.map(fpCategoryName));
+}
+
+/** The average entropy of each kind's APIs: how identifying the kind is, for listing kinds in order. */
+function categoryEntropy(traits: Record<string, ApiTraits>): Record<string, number> {
+    const byCategory = Object.groupBy(FP_APIS, (api) => api.category);
+    return Object.fromEntries(
+        Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (traits[api.id]?.entropy ?? 0), 0) / apis!.length])
+    );
 }
 
 // ---------- detail screens ----------
@@ -277,8 +295,30 @@ export interface ScriptDetail {
     signals: Signal[];
     /** Fingerprinting APIs with call counts (null if unknown) and call positions, most called first. */
     apis: ViewerApi[];
+    /** The fingerprinting APIs it read in detail, for its page: the most identifying first. */
+    apiDetails: ApiDetail[];
     /** Requests carrying data that the script made right after fingerprinting, the most data first. */
     sent: SentRequest[];
+}
+
+/** A fingerprinting API a script read, with how and when (see apiDetails). */
+export interface ApiDetail {
+    id: string;
+    /** Its kind of detail, e.g. "Graphics card", and what it reveals, e.g. "graphics card name" (see FP_APIS). */
+    kind: string;
+    reveals: string;
+    /** Its default entropy and rarity, from 0 to 1 (see FpApi). */
+    entropy: number;
+    rarity: number;
+    calls: number;
+    /** When it was first and last called, in ms since the page started; null if unknown. */
+    first: number | null;
+    last: number | null;
+    /** How many places in the code it was called from, and whether any of them is generated code. */
+    places: number;
+    generated: boolean;
+    /** Whether it was read in the strongest burst, the one its score comes from. */
+    inStrongestBurst: boolean;
 }
 
 /** A kind of detail a script read, e.g. "Graphics card", with what it learned: "name, rendered 3D image". */
@@ -306,6 +346,7 @@ export interface SentRequest {
 /** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
     const cutoffs = cutoffsOf(snapshot);
+    const traits = traitsOf(snapshot);
     const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
     const aliases = cloakedHosts(snapshot);
 
@@ -338,10 +379,11 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         score,
                         tree: scriptTree(script),
                         calls: script.fpMetrics?.intensity ?? 0,
-                        learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? []),
-                        signals: scriptSignals(script.apiLocations),
+                        learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? [], traits),
+                        signals: scriptSignals(script.apiLocations, traits),
                         apis,
                         sent: sentRequests(correlations, aliases),
+                        apiDetails: apiDetails(script, frame.document.startTime, traits),
                     };
                 })
         )
@@ -358,6 +400,9 @@ export interface Signal {
      */
     count: number;
     rest: string;
+    /** The APIs it is about, and their kinds of detail, the most identifying first (see learnedKinds). */
+    apis: string[];
+    kinds: string[];
     /** Why it is a sign of fingerprinting, in a sentence; not shown for now. */
     explanation: string;
 }
@@ -379,32 +424,37 @@ function pageSignals(scripts: ScriptDetail[]): string[] {
 const ONE_PLACE_MIN_APIS = 5;
 
 /** Signs of fingerprinting in how a script's calls are made: from generated code, or many from one place. */
-function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined): Signal[] {
+function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined, traits: Record<string, ApiTraits>): Signal[] {
     const signals: Signal[] = [];
+    const kindsOf = (ids: string[]) => learnedKinds(ids, traits).map(({ kind }) => kind);
 
     // An API counts as read by generated code as soon as one of its calls was, however many weren't.
-    const apis = Object.values(apiLocations ?? {});
-    const generated = apis.filter((locations) => locations.some((l) => l.generated)).length;
-    if (generated > 0) {
+    const entries = Object.entries(apiLocations ?? {});
+    const generated = entries.filter(([, locations]) => locations.some((l) => l.generated)).map(([id]) => id);
+    if (generated.length > 0) {
         signals.push({
             id: 'generated-code',
-            count: generated,
+            count: generated.length,
             rest: 'read by code generated at runtime',
+            apis: generated,
+            kinds: kindsOf(generated),
             explanation: 'Code created while the page runs (eval, new Function) is hidden from the script file, which hides what it does.',
         });
     }
 
     // The place in the code reading the most different APIs: a loop or VM instruction collecting them.
-    const byPlace = new Map<string, number>();
-    for (const locations of apis) {
-        for (const place of new Set(locations.map((l) => `${l.line}:${l.column}`))) byPlace.set(place, (byPlace.get(place) ?? 0) + 1);
+    const byPlace = new Map<string, string[]>();
+    for (const [id, locations] of entries) {
+        for (const place of new Set(locations.map((l) => `${l.line}:${l.column}`))) byPlace.set(place, [...(byPlace.get(place) ?? []), id]);
     }
-    const fromOnePlace = Math.max(0, ...byPlace.values());
-    if (fromOnePlace >= ONE_PLACE_MIN_APIS) {
+    const fromOnePlace = [...byPlace.values()].sort((a, b) => b.length - a.length)[0] ?? [];
+    if (fromOnePlace.length >= ONE_PLACE_MIN_APIS) {
         signals.push({
             id: 'one-place',
-            count: fromOnePlace,
+            count: fromOnePlace.length,
             rest: 'read from one place in the code',
+            apis: fromOnePlace,
+            kinds: kindsOf(fromOnePlace),
             explanation: 'Ordinary code reads each detail where it needs it; collecting them through one loop is typical of fingerprinting.',
         });
     }
@@ -417,11 +467,12 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined)
  * kind. Kinds and the facts in them go from the most identifying API down; APIs revealing the same
  * value share their words, so they show once.
  */
-function learnedKinds(apiIds: string[]): LearnedKind[] {
+function learnedKinds(apiIds: string[], traits: Record<string, ApiTraits>): LearnedKind[] {
+    const entropy = (id: string) => traits[id]?.entropy ?? 0;
     const apis = apiIds
         .map((id) => FP_APIS_BY_ID[id])
         .filter((api) => api !== undefined)
-        .sort((a, b) => b.entropy - a.entropy);
+        .sort((a, b) => entropy(b.id) - entropy(a.id));
     const byKind = new Map<string, string[]>();
     for (const api of apis) {
         const facts = byKind.get(api.category) ?? [];
@@ -565,11 +616,76 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         score: page.score,
         tree: page.tree,
         calls: scripts.reduce((sum, script) => sum + script.calls, 0),
-        learned: learnedKinds(apis.map((api) => api.id)),
+        learned: learnedKinds(
+            apis.map((api) => api.id),
+            traitsOf(snapshot)
+        ),
         signals,
         apis,
         sent: scripts.flatMap((script) => script.sent).sort((a, b) => b.bytes - a.bytes),
+        apiDetails: pageApiDetails(snapshot, scripts),
     };
+}
+
+/** A script's APIs in detail (see ApiDetail), the most identifying first, then the most called. */
+function apiDetails(script: ScriptSnapshot, startTime: number | undefined, traits: Record<string, ApiTraits>): ApiDetail[] {
+    const burst = new Set(strongestSpike(script.fpSpikes)?.distinctFpApis ?? []);
+    const ids = new Set([...Object.keys(script.apiCounts ?? {}), ...(script.fpMetrics?.distinctFpApis ?? [])]);
+    const since = (time: number | undefined) => (time === undefined || startTime === undefined ? null : Math.max(0, time - startTime));
+    return sortApiDetails(
+        [...ids].map((id): ApiDetail => {
+            const api = FP_APIS_BY_ID[id];
+            const locations = script.apiLocations?.[id] ?? [];
+            const times = script.apiTimes?.[id];
+            return {
+                id,
+                kind: api ? capitalize(fpCategoryName(api.category)) : 'Other',
+                reveals: api?.reveals ?? '',
+                entropy: traits[id]?.entropy ?? 0,
+                rarity: traits[id]?.rarity ?? 0,
+                calls: script.apiCounts?.[id] ?? 0,
+                first: since(times?.first),
+                last: since(times?.last),
+                places: locations.length,
+                generated: locations.some((location) => location.generated),
+                inStrongestBurst: burst.has(id),
+            };
+        })
+    );
+}
+
+/**
+ * The page's APIs in detail, all its scripts together: calls and places added up, the earliest
+ * first call and latest last call; in the strongest burst means the page's, across its scripts.
+ */
+function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDetail[] {
+    const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
+    const pageBurst = documents
+        .flatMap((document) => document.spikes ?? [])
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+    const burst = new Set(pageBurst?.distinctFpApis ?? []);
+    const byId = new Map<string, ApiDetail>();
+    for (const detail of scripts.flatMap((script) => script.apiDetails)) {
+        const known = byId.get(detail.id);
+        if (!known) {
+            byId.set(detail.id, { ...detail, inStrongestBurst: burst.has(detail.id) });
+            continue;
+        }
+        known.calls += detail.calls;
+        known.places += detail.places;
+        known.generated ||= detail.generated;
+        known.first = minOf(known.first, detail.first);
+        known.last = known.last === null ? detail.last : detail.last === null ? known.last : Math.max(known.last, detail.last);
+    }
+    return sortApiDetails([...byId.values()]);
+}
+
+function minOf(a: number | null, b: number | null): number | null {
+    return a === null ? b : b === null ? a : Math.min(a, b);
+}
+
+function sortApiDetails(details: ApiDetail[]): ApiDetail[] {
+    return details.sort((a, b) => b.entropy - a.entropy || b.calls - a.calls || a.id.localeCompare(b.id));
 }
 
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
@@ -584,7 +700,7 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
             // An older background may not send the page's bursts.
             const burst = [...(document.spikes ?? [])].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
             if (!burst) return null;
-            const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}, all scripts together`;
+            const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}, all activity`;
             return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
         }
         return null;

@@ -31,6 +31,8 @@ export interface ScriptSnapshot {
     apiCounts: Record<string, number>;
     /** Distinct positions in the script each API was called from, most calls first. */
     apiLocations: Record<string, CallLocation[]>;
+    /** When each API was first and last called (ms since the epoch); missing from an older background. */
+    apiTimes?: Record<string, { first: number; last: number }>;
 }
 
 /** A position in a script's source (1-based, as in stack traces) and how often an API was called there. */
@@ -45,6 +47,8 @@ export interface CallLocation {
 export interface DocumentSnapshot {
     documentId: string;
     url: string | null;
+    /** When the document started (ms since the epoch), for times relative to it; missing from an older background. */
+    startTime?: number;
     fpMetrics: MetricsSnapshot | null;
     /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
     spikes: MetricsSnapshot[];
@@ -62,4 +66,6 @@ export interface TabSnapshot {
     frames: (FrameSnapshot | null)[];
     /** Where scores count as possible or likely, from the user's scoring settings. */
     cutoffs: ScoringSettings['cutoffs'];
+    /** Each API's entropy and rarity the scores were made with, from the user's scoring settings. */
+    apis?: ScoringSettings['apis'];
 }

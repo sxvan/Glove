@@ -161,8 +161,10 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
 
     script.fpEvents.push(event);
     script.callCount += 1;
-    const calls = (script.calls[event.id] ??= { count: 0, locations: {} });
+    const calls = (script.calls[event.id] ??= { count: 0, first: event.timeStamp, last: event.timeStamp, locations: {} });
     calls.count += 1;
+    calls.first = Math.min(calls.first, event.timeStamp);
+    calls.last = Math.max(calls.last, event.timeStamp);
     // == null also skips events from an older recorder, which don't have the fields at all.
     if (event.line != null && event.column != null) {
         const location = (calls.locations[`${event.line}:${event.column}`] ??= { line: event.line, column: event.column, generated: false, calls: 0 });

@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import type { AnalysisUpdatedMessage, GetTabSnapshotMessage } from '@/types/messages';
     import type { TabSnapshot } from '@/types/snapshot';
@@ -11,6 +10,8 @@
     import CnameDetail from './screens/CnameDetail.svelte';
     import DnsDetail from './screens/DnsDetail.svelte';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
+    import ScriptPage from './screens/ScriptPage.svelte';
+    import { onMount, tick } from 'svelte';
 
     type Status = 'loading' | 'ready' | 'unavailable';
 
@@ -25,8 +26,25 @@
     const categories = $derived(snapshot ? buildCategories(snapshot) : []);
     const openCategory = $derived(categories.find((c) => c.id === openCategoryId));
 
+    // A script's page within the fingerprinting screen, and where that screen was scrolled to, to
+    // return there.
+    let openScript = $state<{ key: string; section: string } | null>(null);
+    let scrolledTo = 0;
+
+    function openScriptPage(key: string, section: string) {
+        scrolledTo = window.scrollY;
+        openScript = { key, section };
+    }
+
+    async function closeScriptPage() {
+        openScript = null;
+        await tick();
+        window.scrollTo(0, scrolledTo);
+    }
+
     function openDetail(id: Category['id'] | null) {
         openCategoryId = id;
+        openScript = null;
         window.scrollTo(0, 0);
     }
     const summary = $derived(snapshot ? buildSummary(snapshot) : null);
@@ -101,10 +119,20 @@
     {:else if status === 'unavailable'}
         <p class="state">No data for this tab yet. Reload the page to check it.</p>
     {:else if openCategory && snapshot}
-        <DetailHeader category={openCategory} onBack={() => openDetail(null)} backOnly={openCategory.id === 'fingerprinting'} />
-        {#if openCategory.id === 'fingerprinting'}
-            {@const scripts = fingerprintingDetails(snapshot)}
-            <FingerprintingDetail page={fingerprintingPageDetail(snapshot, scripts)} {scripts} />
+        {@const scripts = openCategory.id === 'fingerprinting' ? fingerprintingDetails(snapshot) : []}
+        {@const page = openCategory.id === 'fingerprinting' ? fingerprintingPageDetail(snapshot, scripts) : null}
+        {@const shownScript = openScript ? [page, ...scripts].find((s) => s?.key === openScript?.key) : undefined}
+        <DetailHeader
+            category={openCategory}
+            onBack={() => (shownScript ? closeScriptPage() : openDetail(null))}
+            backOnly={openCategory.id === 'fingerprinting'}
+        />
+        {#if shownScript && openScript}
+            {#key openScript}
+                <ScriptPage script={shownScript} section={openScript.section} />
+            {/key}
+        {:else if openCategory.id === 'fingerprinting' && page}
+            <FingerprintingDetail {page} {scripts} onDetails={openScriptPage} />
         {:else if openCategory.id === 'cname'}
             <CnameDetail aliases={cnameDetails(snapshot)} />
         {:else}
