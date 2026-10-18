@@ -118,6 +118,8 @@ function recordFpEvent(id: string, hook: Function) {
         line: caller?.line ?? null,
         column: caller?.column ?? null,
         generated: caller?.generated ?? false,
+        innerLine: caller?.inner?.line ?? null,
+        innerColumn: caller?.inner?.column ?? null,
     });
 
     if (!flushScheduled) {

@@ -41,6 +41,8 @@ export interface CallLocation {
     column: number;
     /** True when the calls came from code generated at runtime, here being where it was generated. */
     generated: boolean;
+    /** For generated code, the position of the calls inside it, which tells its places apart (see placeKey). */
+    inner?: { line: number; column: number };
     calls: number;
 }
 

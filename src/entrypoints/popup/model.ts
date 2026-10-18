@@ -1,5 +1,6 @@
 // Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
 // key numbers and the strongest evidence.
+import { placeKey } from '@/lib/call-stack';
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
@@ -461,7 +462,8 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
     // The place in the code reading the most different APIs: a loop or VM instruction collecting them.
     const byPlace = new Map<string, string[]>();
     for (const [id, locations] of entries) {
-        for (const place of new Set(locations.map((l) => `${l.line}:${l.column}`))) byPlace.set(place, [...(byPlace.get(place) ?? []), id]);
+        const places = locations.map((l) => placeKey({ line: l.line, column: l.column, generated: l.generated, innerLine: l.inner?.line, innerColumn: l.inner?.column }));
+        for (const place of new Set(places)) byPlace.set(place, [...(byPlace.get(place) ?? []), id]);
     }
     const fromOnePlace = [...byPlace.values()].sort((a, b) => b.length - a.length)[0] ?? [];
     if (fromOnePlace.length >= ONE_PLACE_MIN_APIS) {

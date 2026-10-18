@@ -39,7 +39,7 @@ export const SIGNALS = {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
-            strength: 0.6,
+            strength: 0.5,
         },
         dataSent: {
             label: 'Data sent right after',
@@ -80,7 +80,7 @@ export const SIGNALS = {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs beyond its strongest burst it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs".',
-            strength: 0.6,
+            strength: 0.5,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
@@ -120,20 +120,20 @@ export const SIGNALS = {
         rareIdentifying: {
             label: 'Rare identifying fingerprinting APIs',
             description:
-                'How much identifying information the other scripts read outside their strongest burst through APIs ordinary code rarely needs, on top of what the strongest script and the burst read, toward the full 33.',
+                'How much identifying information the other scripts read outside their strongest burst through APIs ordinary code rarely needs, on top of what the strongest script and the burst read, toward the full 13.',
             strength: 0.9,
         },
         onePlace: {
             label: 'Fingerprinting APIs from one place',
             description:
                 'How many rare identifying fingerprinting APIs one of the other scripts reads from a single place in its code outside their strongest burst, beyond those the strongest script and the burst read.',
-            strength: 0.6,
+            strength: 0.5,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
             description:
                 'The most rare identifying fingerprinting APIs one of the other scripts reads outside their strongest burst in code generated at runtime (new Function, eval).',
-            strength: 0,
+            strength: 0.5,
         },
     },
     request: {
@@ -239,11 +239,17 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         Object.entries(SIGNALS).map(([level, signals]) => [level, Object.fromEntries(Object.entries(signals).map(([key, s]) => [key, s.strength]))])
     ) as ScoringSettings['strengths'],
     cutoffs: {
-        // From 30, analytics and bot checks collecting device details (Dynatrace, reCAPTCHA, about 35 to
-        // 39) are Possible together; known collectors score 80 and more, ordinary heavy scripts
-        // (YouTube, video players) up to 64. Bing's ad tag (24) reads device details and the
-        // automation check, which a large part of the web reads (see navigator.webdriver).
-        fingerprinting: { possible: 0.3, likely: 0.75 },
+        // A script's score comes almost all from its rare identifying APIs (about 0.9 × rare bits / 13),
+        // so the cutoffs stand for rare bits, and Tracker Radar's third-party scripts (see fullAt)
+        // tell how many of those reaching them are rated fingerprinting. Possible from 30 (4.3 rare
+        // bits): 85% of those scripts are fingerprinting, while below it the share stays around 75%
+        // down to 15, where analytics and players reading many everyday APIs are. Likely from 65 (9.4
+        // rare bits): 99% are; higher only leaves out fingerprinters (at 75, a quarter of those from
+        // 65). The crawl doesn't see the particular reads, so fingerprinters score somewhat more here.
+        // Measured: collectors 90 and more (Akamai, FingerprintJS, CNN's), security fingerprinting 64
+        // to 77 (Google's sign-in and ad-traffic checks, Amazon's device script), YouTube's player 31
+        // to 34, analytics up to about 20 (Apple's, BBC's, Microsoft Clarity).
+        fingerprinting: { possible: 0.3, likely: 0.65 },
         hostname: { possible: 0.3, likely: 0.6 },
     },
     apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { bits: api.bits, adds: api.overlap?.adds ?? api.bits, rarity: api.rarity }])),

@@ -15,6 +15,27 @@ export interface StackLocation {
     column: number;
     /** True for code generated at runtime (new Function, eval); the position is where it was generated. */
     generated: boolean;
+    /** For generated code, the position of the call inside it (1-based, relative to the generated source). */
+    inner?: { line: number; column: number };
+}
+
+/** Where a call was made from, enough to tell places apart (see placeKey). */
+export interface CallPlace {
+    line: number | null;
+    column: number | null;
+    generated?: boolean;
+    innerLine?: number | null;
+    innerColumn?: number | null;
+}
+
+/**
+ * A place in the code, as a key: its position in the script, and for generated code also the
+ * position inside it. All of a piece of generated code has the position it was generated at, so
+ * without the inner position everything it calls would look like one place.
+ */
+export function placeKey(place: CallPlace): string {
+    const inner = place.generated && place.innerLine != null && place.innerColumn != null ? `>${place.innerLine}:${place.innerColumn}` : '';
+    return `${place.line}:${place.column}${inner}`;
 }
 
 /**
@@ -62,7 +83,7 @@ export function createStackReader(maxFrames: number): (hook: Function) => StackL
     /**
      * The page script positions on the stack, from the caller of `hook` outwards. Code generated with
      * new Function or eval has no URL of its own; it counts for the script that generated it, at the
-     * place it did.
+     * place it did, with the position inside the generated code as well.
      */
     return (hook) => {
         const locations: StackLocation[] = [];
@@ -72,7 +93,10 @@ export function createStackReader(maxFrames: number): (hook: Function) => StackL
             const url = generated ? origin?.[1] : site.getFileName();
             const line = generated ? Number(origin?.[2]) : site.getLineNumber();
             const column = generated ? Number(origin?.[3]) : site.getColumnNumber();
-            if (url && SCRIPT_URL.test(url) && line && column) locations.push({ url, line, column, generated });
+            if (!url || !SCRIPT_URL.test(url) || !line || !column) continue;
+            const innerLine = generated ? site.getLineNumber() : null;
+            const innerColumn = generated ? site.getColumnNumber() : null;
+            locations.push({ url, line, column, generated, ...(innerLine && innerColumn ? { inner: { line: innerLine, column: innerColumn } } : {}) });
         }
         return locations;
     };

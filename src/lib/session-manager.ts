@@ -1,3 +1,4 @@
+import { placeKey } from './call-stack';
 import type { FpMonkeyEvent, HttpMonkeyEvent } from '@/types/events';
 import type { DocumentState, FrameState, ScriptState, Session, TabState } from '@/types/session';
 
@@ -167,7 +168,8 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
     calls.last = Math.max(calls.last, event.timeStamp);
     // == null also skips events from an older recorder, which don't have the fields at all.
     if (event.line != null && event.column != null) {
-        const location = (calls.locations[`${event.line}:${event.column}`] ??= { line: event.line, column: event.column, generated: false, calls: 0 });
+        const location = (calls.locations[placeKey(event)] ??= { line: event.line, column: event.column, generated: false, calls: 0 });
+        if (event.generated && event.innerLine != null && event.innerColumn != null) location.inner = { line: event.innerLine, column: event.innerColumn };
         location.calls += 1;
         location.generated ||= event.generated === true;
     }

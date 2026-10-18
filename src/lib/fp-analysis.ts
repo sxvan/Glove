@@ -1,6 +1,7 @@
 import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/types/analysis';
 import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
+import { placeKey } from './call-stack';
 import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { LIMITS, apisSums, apisSumsBeyond, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
@@ -243,13 +244,14 @@ const ONE_PLACE_MIN_APIS = 2;
  * value (see apisSums) of the place reading the most. Only places reading at least
  * ONE_PLACE_MIN_APIS different APIs count, as every API is read from some place. Everyday APIs count
  * little, so layout code reading innerWidth and innerHeight together adds almost nothing. Calls from
- * generated code count at the place it was generated.
+ * generated code count at their place inside it (see placeKey), so a piece of generated code isn't
+ * one place just because it was generated at one.
  */
 function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
     const byPlace = new Map<string, Set<string>>();
     for (const event of fpEvents) {
         if (event.line == null || event.column == null) continue;
-        const place = `${event.scriptUrl}:${event.line}:${event.column}`;
+        const place = `${event.scriptUrl}:${placeKey(event)}`;
         const apis = byPlace.get(place) ?? new Set<string>();
         apis.add(event.id);
         byPlace.set(place, apis);
