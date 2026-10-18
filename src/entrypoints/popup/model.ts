@@ -853,8 +853,7 @@ function treeLabel(label: string): string {
 }
 
 const SHORT_NAMES: Record<string, string> = {
-    identifying: 'identifying',
-    unusualApis: 'unusual',
+    rareIdentifying: 'rare identifying',
     onePlace: 'one place',
     generatedCode: 'generated',
 };
@@ -893,10 +892,10 @@ const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = {
 
 function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: ScoreLevel): { detail: string; children: ScoreNode[] } {
     const number = (x: number) => +x.toFixed(2);
-    // What the sum counts: bits of identifying information, or points of rarity.
-    const unit = sum.measure === 'bits' ? 'bits' : 'points';
-    // An API's own value: "5.9 bits", or "rarity 0.93".
-    const own = (basis: number) => (sum.measure === 'bits' ? `${number(basis)} bits` : `rarity ${number(basis)}`);
+    // What the sum counts: bits of identifying information, or rare ones (bits times rarity).
+    const unit = sum.measure === 'rareBits' ? 'rare bits' : 'bits';
+    // An API's own value: "5.9 bits"; for rare bits, the bits it counted.
+    const own = (basis: number) => `${number(basis)} bits`;
 
     // sum.apis is sorted by what they add, most first.
     const shares = new Map<string, number>();
@@ -909,17 +908,18 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
 
     const children = sum.apis.map((api): ScoreNode => {
         const share = shares.get(api.id) ?? 0;
-        const adds = api.overlapsWith
-            ? `${own(api.basis)}, adds ${number(api.amount)} beside ${api.overlapsWith}`
-            : sum.measure === 'rarity' && api.amount !== api.basis
-              ? `${own(api.basis)}, counts ${number(api.amount)}`
-              : own(api.basis);
+        const adds =
+            sum.measure === 'rareBits'
+                ? `${own(api.basis)}${api.overlapsWith ? ` beside ${api.overlapsWith}` : ''}, counts ${number(api.amount)}`
+                : api.overlapsWith
+                  ? `${own(api.basis)}, adds ${number(api.amount)} beside ${api.overlapsWith}`
+                  : own(api.basis);
         let note = `Adds ${number(api.amount)} of the ${number(sum.fullAt)} ${unit} that make it full: +${score(share)}.`;
         // A sum beyond what is already counted names that as such: "read in the burst".
         const where = api.withKnown ? `, ${KNOWN_WHERE[signalLevel]}` : '';
-        // For unusual APIs, counted with another means read together with it: its value or its pair (see readKey).
-        if (api.countedWith)
-            note = sum.measure === 'rarity' ? `Read together with ${api.countedWith}${where}, which counts instead.` : `Same information as ${api.countedWith}${where}, which counts instead.`;
+        if (api.countedWith) note = `Same information as ${api.countedWith}${where}, which counts instead.`;
+        else if (api.overlapsWith && sum.measure === 'rareBits')
+            note = `Overlaps with ${api.overlapsWith}${where}: counts only the ${number(api.basis)} bits it tells beyond it, times its rarity: ${number(api.amount)} rare bits, +${score(share)}.`;
         else if (api.overlapsWith)
             note = `Overlaps with ${api.overlapsWith}${where}, which counts all its bits: this one adds only the ${number(api.amount)} bits it tells beyond it, +${score(share)}.`;
         else if (api.amount > 0 && share < api.amount / sum.fullAt - 0.005)
@@ -941,8 +941,8 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
     // Beyond what is already counted: "9 bits on top of 31, 2 of them toward 33".
     const detail =
         sum.known !== undefined
-            ? `${number(sum.total)}${sum.measure === 'bits' ? ' bits' : ''} on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
-            : `${number(sum.total)} of ${number(sum.fullAt)}${sum.measure === 'bits' ? ' bits' : ''} from ${plural(sum.apis.length, 'API')}`;
+            ? `${number(sum.total)} ${unit} on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
+            : `${number(sum.total)} of ${number(sum.fullAt)} ${unit} from ${plural(sum.apis.length, 'API')}`;
     return { detail, children: withShownShares(children, total) };
 }
 

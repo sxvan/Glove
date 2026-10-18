@@ -204,19 +204,19 @@
                 them is known, from the same study: of those read together, the one with the most bits counts all of them, the others only
                 what they add. <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
                 Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
-                October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. They make two
-                independent signals: "Identifying fingerprinting APIs" adds up the bits of the different fingerprinting APIs read,
-                how much they reveal; "Unusual fingerprinting APIs" adds up their rarity, rare ones counting more (see below), as reading rare ones shows
-                intent even when they reveal little. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions
-                of a call or a canvas exported in two formats, count once.
+                October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. Together they make
+                "Rare identifying fingerprinting APIs": each API's bits times its rarity, rare ones counting more (see below), added up. What
+                reveals a lot but everyone reads counts little, and so does what is rarely read but reveals little; what a fingerprinter
+                collects is both. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions of a call or a canvas
+                exported in two formats, count once.
             </p>
 
             <div class="row">
                 <div>
                     <div class="name">Rare APIs count more</div>
                     <div class="description">
-                        Each API counts its rarity to this power in the unusual fingerprinting APIs signals. 1 counts rarity as it is;
-                        at 4, rarity 0.6 counts 0.13 and 0.93 counts 0.75, so everyday reads add up to little.
+                        Each API's bits count times its rarity to this power. 1 counts rarity as it is; at 4, rarity 0.6 counts 0.13
+                        and 0.93 counts 0.75, so everyday reads add up to little.
                     </div>
                 </div>
                 <label class="field">
@@ -231,14 +231,10 @@
                 {@const defaults = DEFAULT_SETTINGS.fullAt[level]}
                 <div class="row cutoffs">
                     <div class="name">{APIS_LEVEL_LABELS[level]}</div>
-                    <label class="field" class:changed={fullAt.identifying !== defaults.identifying} title="Default {defaults.identifying}">
-                        Identifying full at
-                        <input type="number" min="0" step="1" value={fullAt.identifying} oninput={(e) => setFullAt(level, 'identifying', e)} />
+                    <label class="field" class:changed={fullAt.rareIdentifying !== defaults.rareIdentifying} title="Default {defaults.rareIdentifying}">
+                        Rare identifying full at
+                        <input type="number" min="0" step="1" value={fullAt.rareIdentifying} oninput={(e) => setFullAt(level, 'rareIdentifying', e)} />
                         bits
-                    </label>
-                    <label class="field" class:changed={fullAt.unusual !== defaults.unusual} title="Default {defaults.unusual}">
-                        Unusual full at
-                        <input type="number" min="0" step="0.5" value={fullAt.unusual} oninput={(e) => setFullAt(level, 'unusual', e)} />
                     </label>
                 </div>
             {/each}

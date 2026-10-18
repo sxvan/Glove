@@ -3,7 +3,7 @@ import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
 import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
-import { LIMITS, apisSums, apisSumsBeyond, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ScoredParts, type ScoringSettings } from './scoring';
+import { LIMITS, apisSums, apisSumsBeyond, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
 
 /**
@@ -12,14 +12,12 @@ import { detectSpikes } from './spike-detection';
  * full and weighed by the signal's strength. Close to the burst's score, and cheap to add up.
  */
 function burstWeight(level: 'burst' | 'pageBurst', settings: ScoringSettings): (apiId: string) => number {
-    const { identifying, unusualApis } = settings.strengths.burst;
+    const { rareIdentifying } = settings.strengths.burst;
     const fullAt = settings.fullAt[level];
     return (id) => {
         const traits = settings.apis[id];
-        if (!traits) return 0;
-        const information = fullAt.identifying > 0 ? (identifying * traits.bits) / fullAt.identifying : 0;
-        const unusual = fullAt.unusual > 0 ? (unusualApis * traits.rarity ** Math.max(0, settings.rarityPower)) / fullAt.unusual : 0;
-        return information + unusual;
+        if (!traits || fullAt.rareIdentifying <= 0) return 0;
+        return (rareIdentifying * traits.bits * traits.rarity ** Math.max(0, settings.rarityPower)) / fullAt.rareIdentifying;
     };
 }
 
@@ -241,11 +239,11 @@ function computeDocumentFpScore(document: DocumentState, settings: ScoringSettin
 const ONE_PLACE_MIN_APIS = 2;
 
 /**
- * How many unusual APIs are read from a single place in the code: the unusual APIs value (see
- * apisSums) of the place reading the most. Only places reading at least ONE_PLACE_MIN_APIS different
- * APIs count, as every API is read from some place. Everyday APIs count little, so layout code
- * reading innerWidth and innerHeight together adds almost nothing. Calls from generated code count at
- * the place it was generated.
+ * How many rare identifying APIs are read from a single place in the code: the rare identifying
+ * value (see apisSums) of the place reading the most. Only places reading at least
+ * ONE_PLACE_MIN_APIS different APIs count, as every API is read from some place. Everyday APIs count
+ * little, so layout code reading innerWidth and innerHeight together adds almost nothing. Calls from
+ * generated code count at the place it was generated.
  */
 function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
     const byPlace = new Map<string, Set<string>>();
@@ -258,34 +256,37 @@ function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: Scor
     }
     return [...byPlace.values()]
         .filter((apis) => apis.size >= ONE_PLACE_MIN_APIS)
-        .map((apis) => apisSums(apis, level, settings).unusual)
-        .reduce((most, sum) => (sum.value > most.value ? sum : most), apisSums([], level, settings).unusual);
+        .map((apis) => apisSums(apis, level, settings).rareIdentifying)
+        .reduce((most, sum) => (sum.value > most.value ? sum : most), apisSums([], level, settings).rareIdentifying);
 }
 
 /** The API signals for what the APIs read add beyond those already counted (see apisSumsBeyond). */
 function apiSignalsBeyond(known: Iterable<string>, distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings) {
-    const { identifying, unusual } = apisSumsBeyond(known, distinctApis, level, settings);
-    return { values: { identifying: identifying.value, unusualApis: unusual.value }, sums: { identifying, unusualApis: unusual } };
+    return apiSignalsOf(apisSumsBeyond(known, distinctApis, level, settings));
 }
 
-/** The identifying information and unusual APIs signals for the different APIs read (see apisSums). */
+/** The rare identifying APIs signal for the different APIs read (see apisSums). */
 function apiSignals(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings) {
-    const { identifying, unusual } = apisSums(distinctApis, level, settings);
-    return { values: { identifying: identifying.value, unusualApis: unusual.value }, sums: { identifying, unusualApis: unusual } };
+    return apiSignalsOf(apisSums(distinctApis, level, settings));
+}
+
+/** The API signal's value and sum by signal key. */
+function apiSignalsOf({ rareIdentifying }: ApisSums) {
+    return { values: { rareIdentifying: rareIdentifying.value }, sums: { rareIdentifying } };
 }
 
 /**
- * How much fingerprinting is done by code generated at runtime: the unusual APIs read by it, like the
- * "Unusual fingerprinting APIs" signal. An API counts as soon as one of its calls came from generated code, however
- * many didn't. Counting unusual APIs rather than the share keeps e.g. a template engine reading
- * document.cookie through eval from counting much.
+ * How much fingerprinting is done by code generated at runtime: the rare identifying APIs read by
+ * it, like the "Rare identifying fingerprinting APIs" signal. An API counts as soon as one of its
+ * calls came from generated code, however many didn't. Counting rare identifying APIs rather than
+ * the share keeps e.g. a template engine reading document.cookie through eval from counting much.
  */
 function generatedCodeSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
     const generated = new Set<string>();
     for (const event of fpEvents) {
         if (event.generated) generated.add(event.id);
     }
-    return apisSums(generated, level, settings).unusual;
+    return apisSums(generated, level, settings).rareIdentifying;
 }
 
 function getDistinctFpApis(fpEvents: FpMonkeyEvent[]): Set<string> {

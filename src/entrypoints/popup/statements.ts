@@ -1,5 +1,6 @@
 // What the popup says about a script, as statements: the info lines of its card, which are also
 // the sections of its page.
+import { EVERYONE_BITS } from '@/lib/scoring';
 import { bytes, listWords, plural, roughCount } from './format';
 import { identifyingBits, type ScriptDetail } from './model';
 import type { TextPart } from './text-parts';
@@ -65,11 +66,8 @@ export function statements(script: ScriptDetail): Statement[] {
 const SHOWN_KINDS = 6;
 const SHOWN_SITES = 4;
 
-/**
- * Bits that tell everyone apart: about 5 billion people are online, and 2^33 is 8.6 billion. From
- * there the sum says no more than that (see identifyingStatement).
- */
-export const EVERYONE_BITS = 33;
+// Bits that tell everyone apart (see identifyingStatement).
+export { EVERYONE_BITS };
 
 /**
  * How identifying all it read is together, in bits (see identifyingBits): "Up to 18 bits of

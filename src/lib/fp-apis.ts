@@ -128,13 +128,6 @@ export interface FpApi {
      */
     same?: string;
     /**
-     * The id of the API with the other coordinate of the same thing (screen.height for screen.width,
-     * screenY for screenX): code reads both together as one (Tracker Radar: 90 to 100% of scripts
-     * reading one read the other), so for unusual APIs they count once, as the rarer of them. Their
-     * values differ, so their bits count as overlapping (see overlap).
-     */
-    pair?: string;
-    /**
      * For a particular read through another API, which reveals much more than its usual use: the id
      * of that API and which read it is (the recorder recognizes the calls). Such calls are recorded
      * under this id instead.
@@ -236,27 +229,27 @@ export const FP_APIS: FpApi[] = [
     { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', bits: 4.5, rarity: 0.93, rarityBasis: 'trackerRadar' },
 
     // Screen
-    { id: 'screen.width', owner: 'Screen', prop: 'width', category: 'ScreenSetup', reveals: 'screen size', bits: 4.2, rarity: 0.31, overlap: { group: 'sizes', adds: 0.1 }, pair: 'screen.height' },
-    { id: 'screen.height', owner: 'Screen', prop: 'height', category: 'ScreenSetup', reveals: 'screen size', bits: 4.1, rarity: 0.31, overlap: { group: 'sizes', adds: 0.3 }, pair: 'screen.width' },
+    { id: 'screen.width', owner: 'Screen', prop: 'width', category: 'ScreenSetup', reveals: 'screen size', bits: 4.2, rarity: 0.31, overlap: { group: 'sizes', adds: 0.1 } },
+    { id: 'screen.height', owner: 'Screen', prop: 'height', category: 'ScreenSetup', reveals: 'screen size', bits: 4.1, rarity: 0.31, overlap: { group: 'sizes', adds: 0.3 } },
     // The space left by the taskbar, which tells operating systems and setups apart.
-    { id: 'screen.availWidth', owner: 'Screen', prop: 'availWidth', category: 'ScreenSetup', reveals: 'available screen size', bits: 4.4, rarity: 0.68, overlap: { group: 'sizes', adds: 0.4 }, pair: 'screen.availHeight' },
-    { id: 'screen.availHeight', owner: 'Screen', prop: 'availHeight', category: 'ScreenSetup', reveals: 'available screen size', bits: 5.9, rarity: 0.67, overlap: { group: 'sizes', adds: 1.3 }, pair: 'screen.availWidth' },
+    { id: 'screen.availWidth', owner: 'Screen', prop: 'availWidth', category: 'ScreenSetup', reveals: 'available screen size', bits: 4.4, rarity: 0.68, overlap: { group: 'sizes', adds: 0.4 } },
+    { id: 'screen.availHeight', owner: 'Screen', prop: 'availHeight', category: 'ScreenSetup', reveals: 'available screen size', bits: 5.9, rarity: 0.67, overlap: { group: 'sizes', adds: 1.3 } },
     { id: 'screen.colorDepth', owner: 'Screen', prop: 'colorDepth', category: 'ScreenSetup', reveals: 'color depth', bits: 0.7, rarity: 0.65 },
     { id: 'screen.pixelDepth', owner: 'Screen', prop: 'pixelDepth', category: 'ScreenSetup', reveals: 'color depth', bits: 0.7, rarity: 0.88, same: 'screen.colorDepth' },
     { id: 'screen.orientation', owner: 'Screen', prop: 'orientation', category: 'ScreenSetup', reveals: 'screen orientation', bits: 2.4, rarity: 0.86, overlap: { group: 'sizes', adds: 0.1 } },
     // Where the available space starts: the taskbar's or menu bar's side, and the screen's place
     // among several.
-    { id: 'screen.availTop', owner: 'Screen', prop: 'availTop', category: 'ScreenSetup', reveals: 'screen position', bits: 1.3, rarity: 0.83, overlap: { group: 'sizes', adds: 0.1 }, pair: 'screen.availLeft' },
-    { id: 'screen.availLeft', owner: 'Screen', prop: 'availLeft', category: 'ScreenSetup', reveals: 'screen position', bits: 1.1, rarity: 0.85, overlap: { group: 'sizes', adds: 0.1 }, pair: 'screen.availTop' },
+    { id: 'screen.availTop', owner: 'Screen', prop: 'availTop', category: 'ScreenSetup', reveals: 'screen position', bits: 1.3, rarity: 0.83, overlap: { group: 'sizes', adds: 0.1 } },
+    { id: 'screen.availLeft', owner: 'Screen', prop: 'availLeft', category: 'ScreenSetup', reveals: 'screen position', bits: 1.1, rarity: 0.85, overlap: { group: 'sizes', adds: 0.1 } },
 
     // Window: the inner size is everyday layout, the outer size and position rarely needed.
-    { id: 'window.innerWidth', owner: 'Window', prop: 'innerWidth', category: 'ScreenSetup', reveals: 'window size', bits: 5.8, rarity: 0.28, overlap: { group: 'sizes', adds: 0.5 }, pair: 'window.innerHeight' },
-    { id: 'window.innerHeight', owner: 'Window', prop: 'innerHeight', category: 'ScreenSetup', reveals: 'window size', bits: 8.5, rarity: 0.3, overlap: { group: 'sizes', adds: 4 }, pair: 'window.innerWidth' },
-    { id: 'window.outerWidth', owner: 'Window', prop: 'outerWidth', category: 'ScreenSetup', reveals: 'browser window size', bits: 6.4, rarity: 0.68, overlap: { group: 'sizes', adds: 1.6 }, pair: 'window.outerHeight' },
-    { id: 'window.outerHeight', owner: 'Window', prop: 'outerHeight', category: 'ScreenSetup', reveals: 'browser window size', bits: 7.2, rarity: 0.7, overlap: { group: 'sizes', adds: 2.6 }, pair: 'window.outerWidth' },
+    { id: 'window.innerWidth', owner: 'Window', prop: 'innerWidth', category: 'ScreenSetup', reveals: 'window size', bits: 5.8, rarity: 0.28, overlap: { group: 'sizes', adds: 0.5 } },
+    { id: 'window.innerHeight', owner: 'Window', prop: 'innerHeight', category: 'ScreenSetup', reveals: 'window size', bits: 8.5, rarity: 0.3, overlap: { group: 'sizes', adds: 4 } },
+    { id: 'window.outerWidth', owner: 'Window', prop: 'outerWidth', category: 'ScreenSetup', reveals: 'browser window size', bits: 6.4, rarity: 0.68, overlap: { group: 'sizes', adds: 1.6 } },
+    { id: 'window.outerHeight', owner: 'Window', prop: 'outerHeight', category: 'ScreenSetup', reveals: 'browser window size', bits: 7.2, rarity: 0.7, overlap: { group: 'sizes', adds: 2.6 } },
     { id: 'window.devicePixelRatio', owner: 'Window', prop: 'devicePixelRatio', category: 'ScreenSetup', reveals: 'pixel density', bits: 2.3, rarity: 0.4, overlap: { group: 'sizes', adds: 0.6 } },
-    { id: 'window.screenX', owner: 'Window', prop: 'screenX', category: 'ScreenSetup', reveals: 'window position', bits: 2.7, rarity: 0.83, overlap: { group: 'sizes', adds: 1 }, pair: 'window.screenY' },
-    { id: 'window.screenY', owner: 'Window', prop: 'screenY', category: 'ScreenSetup', reveals: 'window position', bits: 2.8, rarity: 0.82, overlap: { group: 'sizes', adds: 1.1 }, pair: 'window.screenX' },
+    { id: 'window.screenX', owner: 'Window', prop: 'screenX', category: 'ScreenSetup', reveals: 'window position', bits: 2.7, rarity: 0.83, overlap: { group: 'sizes', adds: 1 } },
+    { id: 'window.screenY', owner: 'Window', prop: 'screenY', category: 'ScreenSetup', reveals: 'window position', bits: 2.8, rarity: 0.82, overlap: { group: 'sizes', adds: 1.1 } },
     // Older names for screenX and screenY, with the same values.
     { id: 'window.screenLeft', owner: 'Window', prop: 'screenLeft', category: 'ScreenSetup', reveals: 'window position', bits: 2.7, rarity: 0.86, same: 'window.screenX', overlap: { group: 'sizes', adds: 1 } },
     { id: 'window.screenTop', owner: 'Window', prop: 'screenTop', category: 'ScreenSetup', reveals: 'window position', bits: 2.8, rarity: 0.86, same: 'window.screenY', overlap: { group: 'sizes', adds: 1.1 } },
@@ -333,14 +326,3 @@ export const FP_APIS: FpApi[] = [
 ];
 
 export const FP_APIS_BY_ID: Record<string, FpApi> = Object.fromEntries(FP_APIS.map((api) => [api.id, api]));
-
-/**
- * What reading an API is a read of, for unusual APIs: its value (see FpApi.same), both coordinates
- * of a pair as one (see FpApi.pair). APIs with the same key count once, as the rarest of them.
- */
-export function readKey(id: string): string {
-    const value = FP_APIS_BY_ID[id]?.same ?? id;
-    const pair = FP_APIS_BY_ID[value]?.pair;
-    return pair ? [value, pair].sort().join('+') : value;
-}
-

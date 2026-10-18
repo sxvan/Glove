@@ -11,7 +11,7 @@
 // and a score can never exceed 1. Strengths and the likelihood cutoffs can be changed by the user on
 // the options page; the defaults and the "full at" limits are defined here.
 import { browser } from 'wxt/browser';
-import { FP_APIS, FP_APIS_BY_ID, readKey } from './fp-apis';
+import { FP_APIS, FP_APIS_BY_ID } from './fp-apis';
 
 export interface SignalDefinition {
     label: string;
@@ -23,28 +23,22 @@ export interface SignalDefinition {
 /** The signals of each score, in the order the options page lists them. */
 export const SIGNALS = {
     burst: {
-        identifying: {
-            label: 'Identifying fingerprinting APIs',
+        rareIdentifying: {
+            label: 'Rare identifying fingerprinting APIs',
             description:
-                'How much identifying information the burst reads: the bits of the different fingerprinting APIs it reads, added up. Those revealing the same information count once, and of those that overlap, such as screen and window sizes, the strongest counts fully and the others what they add.',
-            strength: 0.3,
-        },
-        unusualApis: {
-            label: 'Unusual fingerprinting APIs',
-            description:
-                'How many fingerprinting APIs the burst reads that ordinary code rarely needs: their rarity added up, rare ones counting more. Reading them shows intent even when they reveal little.',
-            strength: 0.85,
+                'How much identifying information the burst reads through APIs ordinary code rarely needs: the bits of each API, those revealing the same value once and overlapping ones what they add, times its rarity to rarityPower, added up. Intent and what is revealed at once, as in reading a hidden canvas, probing fonts or rendering audio; everyday reads like the window size count next to nothing, and so do checks that reveal little.',
+            strength: 0.9,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
             description:
-                'How many unusual fingerprinting APIs the burst reads in code generated at runtime (new Function, eval), which hides what it does.',
+                'How many rare identifying fingerprinting APIs the burst reads in code generated at runtime (new Function, eval), which hides what it does, counted like "Rare identifying fingerprinting APIs".',
             strength: 0.5,
         },
         onePlace: {
             label: 'Fingerprinting APIs from one place',
             description:
-                'How many unusual fingerprinting APIs it reads from a single place in the code, counted like "Unusual fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
+                'How many rare identifying fingerprinting APIs it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
             strength: 0.6,
         },
         dataSent: {
@@ -76,28 +70,22 @@ export const SIGNALS = {
     },
     // A script outside its strongest burst: only APIs the burst didn't read (see computeScriptFpScore).
     scriptBeyondBurst: {
-        identifying: {
-            label: 'Identifying fingerprinting APIs',
+        rareIdentifying: {
+            label: 'Rare identifying fingerprinting APIs',
             description:
-                'How much identifying information the script adds beyond its strongest burst, on top of what that burst revealed: the APIs it read outside the burst, each counting what it reveals beyond what is already known (nothing for a value already read, what it adds beside an overlapping API). Measured as how much of the way to the full 33 bits it covers, so once the burst reached them nothing adds. A fallback for collecting spread out or split into several bursts.',
-            strength: 0.15,
-        },
-        unusualApis: {
-            label: 'Unusual fingerprinting APIs',
-            description:
-                'How many fingerprinting APIs the script reads beyond its strongest burst that ordinary code rarely needs: their rarity added up, rare ones counting more. A fallback for collecting spread out or split into several bursts.',
-            strength: 0.7,
+                'How much identifying information the script reads outside its strongest burst through APIs ordinary code rarely needs, counted as for a burst, on top of what the burst read, toward full. Counts as much as in a burst, so a collection split into several bursts or spread out counts like one in a single go.',
+            strength: 0.9,
         },
         onePlace: {
             label: 'Fingerprinting APIs from one place',
             description:
-                'How many unusual fingerprinting APIs beyond its strongest burst it reads from a single place in the code, counted like "Unusual fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
+                'How many rare identifying fingerprinting APIs beyond its strongest burst it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs".',
             strength: 0.6,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
             description:
-                'How many unusual fingerprinting APIs beyond its strongest burst the script reads in code it generates at runtime (new Function, eval), which hides what it does.',
+                'How many rare identifying fingerprinting APIs beyond its strongest burst the script reads in code it generates at runtime (new Function, eval), which hides what it does.',
             strength: 0.5,
         },
     },
@@ -108,8 +96,8 @@ export const SIGNALS = {
         strongestScript: { label: 'Strongest script', description: 'The score of the most suspicious script, counted in full.', strength: 1 },
         otherScripts: {
             label: 'Other scripts',
-            description: 'What the other scripts read, on top of the strongest script: catches collecting split over several scripts.',
-            strength: 1,
+            description: 'What the other scripts read, on top of the strongest script, scored like a script: catches collecting split over several scripts. Counts half: scripts start together when the page loads, and they come from different vendors without coordination.',
+            strength: 0.5,
         },
     },
     otherScripts: {
@@ -117,7 +105,7 @@ export const SIGNALS = {
             label: 'Strongest burst',
             description:
                 'The score of the most suspicious burst of calls of the other scripts, on top of the strongest script: what they read together in one go beyond what it read.',
-            strength: 0.3,
+            strength: 1,
         },
         beyondBurst: {
             label: 'Outside the burst',
@@ -129,27 +117,22 @@ export const SIGNALS = {
     // The other scripts outside their strongest burst: only APIs neither the strongest script nor the
     // burst read (see computeDocumentFpScore).
     otherScriptsBeyondBurst: {
-        identifying: {
-            label: 'Identifying fingerprinting APIs',
+        rareIdentifying: {
+            label: 'Rare identifying fingerprinting APIs',
             description:
-                'How much identifying information the other scripts add outside their strongest burst, on top of what the strongest script and the burst revealed, counted as for a script (nothing for a value already read, what it adds beside an overlapping API, toward the full 33 bits). Weak: ordinary pages also read a fair amount through their many scripts.',
-            strength: 0.15,
-        },
-        unusualApis: {
-            label: 'Unusual fingerprinting APIs',
-            description:
-                'How many fingerprinting APIs the other scripts read outside their strongest burst that ordinary code rarely needs, beyond those the strongest script and the burst read: their rarity added up, rare ones counting more.',
-            strength: 0.3,
+                'How much identifying information the other scripts read outside their strongest burst through APIs ordinary code rarely needs, on top of what the strongest script and the burst read, toward the full 33.',
+            strength: 0.9,
         },
         onePlace: {
             label: 'Fingerprinting APIs from one place',
             description:
-                'How many unusual fingerprinting APIs one of the other scripts reads from a single place in its code outside their strongest burst, beyond those the strongest script and the burst read, counted like "Unusual fingerprinting APIs".',
+                'How many rare identifying fingerprinting APIs one of the other scripts reads from a single place in its code outside their strongest burst, beyond those the strongest script and the burst read.',
             strength: 0.6,
         },
         generatedCode: {
             label: 'Fingerprinting APIs from generated code',
-            description: 'The most unusual fingerprinting APIs one of the other scripts reads outside their strongest burst in code generated at runtime (new Function, eval).',
+            description:
+                'The most rare identifying fingerprinting APIs one of the other scripts reads outside their strongest burst in code generated at runtime (new Function, eval).',
             strength: 0,
         },
     },
@@ -183,10 +166,10 @@ export type SignalSource = ScoreLevel | 'apis';
 export const SIGNAL_SOURCES: { [L in ScoreLevel]?: Partial<Record<SignalKey<L>, SignalSource>> } = {
     page: { strongestScript: 'script', otherScripts: 'otherScripts' },
     otherScripts: { strongestBurst: 'burst', beyondBurst: 'otherScriptsBeyondBurst' },
-    otherScriptsBeyondBurst: { identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
+    otherScriptsBeyondBurst: { rareIdentifying: 'apis', onePlace: 'apis', generatedCode: 'apis' },
     script: { strongestBurst: 'burst', beyondBurst: 'scriptBeyondBurst' },
-    scriptBeyondBurst: { identifying: 'apis', unusualApis: 'apis', onePlace: 'apis', generatedCode: 'apis' },
-    burst: { identifying: 'apis', unusualApis: 'apis', generatedCode: 'apis', onePlace: 'apis', dataSent: 'request' },
+    scriptBeyondBurst: { rareIdentifying: 'apis', onePlace: 'apis', generatedCode: 'apis' },
+    burst: { rareIdentifying: 'apis', generatedCode: 'apis', onePlace: 'apis', dataSent: 'request' },
 };
 
 export const LEVEL_LABELS: Record<ScoreLevel, string> = {
@@ -220,10 +203,9 @@ export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
     burst: 'Burst of calls in a script',
 };
 
-/** Where the API signals count as full (value 1): the added-up bits and rarity. */
+/** Where the API signals count as full (value 1): the added-up rare bits. */
 export interface ApisFullAt {
-    identifying: number;
-    unusual: number;
+    rareIdentifying: number;
 }
 
 export interface ApiTraits {
@@ -266,30 +248,25 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     },
     apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { bits: api.bits, adds: api.overlap?.adds ?? api.bits, rarity: api.rarity }])),
     rarityPower: 4,
-    // Identifying information is full at 33 bits on every level: the bits that tell apart one
-    // browser among everyone online (about 5 billion people, 2^33 = 8.6 billion), however the
-    // collecting was done. Added up with overlapping APIs counting what they add (see apisSums); the
-    // sum still overcounts somewhat, so full means "would be enough", not "identifies you".
-    // Collectors read 35 to 73 bits in a burst (FingerprintJS 72, 135 counted without overlap),
-    // ordinary scripts up to about 26 (analytics and players reading sizes, languages, time zone).
+    // Rare identifying APIs (each API's bits, counted as for the bits read, times its rarity to
+    // rarityPower, added up) are full at 13 on every level: where no ordinary script gets to any
+    // more. Of DuckDuckGo's Tracker Radar's 51,426 third-party scripts (US crawl, 2026-10-09, each
+    // once), 98% of those reaching 8 and all reaching 10 are rated fingerprinting, while below them
+    // ordinary scripts appear; fingerprinters reach a median of 9. The crawl doesn't see the
+    // particular reads (the graphics card name, hidden canvases, font probing), which add about 3
+    // more, so 13 here. Measured collectors reach 13 to 26 in a burst (CNN's 13, FingerprintJS 23,
+    // Akamai on Costco 26), ordinary scripts up to about 4 (YouTube's player, Cloudflare's bot check).
     //
-    // Unusual APIs (rarities to rarityPower, added up) are full at 5 on every level: where no ordinary
-    // script gets to any more. Of DuckDuckGo's Tracker Radar's 51,426 third-party scripts (US crawl,
-    // 2026-10-09, each once), 99% of those reaching 3 and all reaching 4 are rated fingerprinting
-    // (SEON, Forter, Incognia, Akamai's browserfp at 12 to 16), while below 3 ordinary scripts
-    // appear; fingerprinters reach a median of 4.6. The crawl doesn't see the particular reads (the
-    // graphics card name, hidden canvases, font probing), which add about 1 more, so 5 here.
-    //
-    // Beyond the strongest burst or script (see apisSumsBeyond) both count how much of the way to
-    // full the rest still adds: once that reached full, nothing beyond adds to it.
+    // Beyond the strongest burst or script (see apisSumsBeyond) it counts how much of the way to full
+    // the rest still adds: once that reached full, nothing beyond adds to it.
     fullAt: {
-        burst: { identifying: 33, unusual: 5 },
-        // A burst of the other scripts: the same measures as a script's burst, so the same values.
-        pageBurst: { identifying: 33, unusual: 5 },
+        burst: { rareIdentifying: 13 },
+        // A burst of the other scripts: the same measure as a script's burst, so the same value.
+        pageBurst: { rareIdentifying: 13 },
         // A script outside its strongest burst.
-        script: { identifying: 33, unusual: 5 },
+        script: { rareIdentifying: 13 },
         // The other scripts outside their strongest burst.
-        page: { identifying: 33, unusual: 5 },
+        page: { rareIdentifying: 13 },
     },
     // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
     // page responsive; measured collections took 13–362 ms with pauses up to 190 ms.
@@ -390,11 +367,11 @@ export function saturate(value: number, fullAt: number): number {
 /** What one API added to an API signal. */
 export interface ApiAmount {
     id: string;
-    /** Its bits or rarity, as set. */
+    /** Its bits, as set; for rare bits, the bits it counted (see amount for bits). */
     basis: number;
     /**
-     * What it added: its bits (what it adds beyond an overlapping API, see overlapsWith), or the
-     * rarity to rarityPower; 0 if an API with the same information counted instead.
+     * What it added: its bits (what it adds beyond an overlapping API, see overlapsWith), or those
+     * bits times its rarity to rarityPower; 0 if an API with the same information counted instead.
      */
     amount: number;
     /** The API with the same information that counted instead of this one. */
@@ -407,7 +384,7 @@ export interface ApiAmount {
 
 /** An API signal's sum: its value from 0 to 1, the total it was made from and what each API added. */
 export interface ApisSum {
-    measure: 'bits' | 'rarity';
+    measure: 'bits' | 'rareBits';
     value: number;
     total: number;
     fullAt: number;
@@ -421,58 +398,74 @@ export interface ApisSum {
 }
 
 /**
- * The API signals' sums for the different APIs read, with what each API added (see ApisSum):
- * identifying information (Σ bits), how much they reveal, and unusual APIs (Σ rarity ^
- * rarityPower), how unusual it is to read them. The two are independent: the user agent reveals a
- * lot but everyone reads it, navigator.webdriver reveals nothing but checking it shows intent.
- *
- * APIs that reveal the same value (see FpApi.same, e.g. the WebGL and WebGL2 versions of a call,
- * or the pixels of a canvas exported in two formats) count once together, as the highest of them;
- * for unusual APIs so do both coordinates of a pair (see FpApi.pair), read together as one.
- * Of APIs whose values only overlap (see FpApi.overlap, e.g. the screen's and the window's sizes),
- * the one with the most bits counts all of them, the others only what they add beyond it.
+ * The bits the different APIs read reveal and the rare identifying APIs made from them, with what
+ * each API added (see ApisSum). The bits: APIs that reveal the same value (see FpApi.same, e.g. the
+ * WebGL and WebGL2 versions of a call, or the pixels of a canvas exported in two formats) count once
+ * together, as the highest of them; of APIs whose values only overlap (see FpApi.overlap, e.g. the
+ * screen's and the window's sizes), the one with the most bits counts all of them, the others only
+ * what they add beyond it. The rare bits: each API's counted bits times its rarity to rarityPower,
+ * as reading what ordinary code rarely needs shows intent: the user agent reveals a lot but everyone
+ * reads it, navigator.webdriver is rarely read but reveals nothing, a hidden canvas is both.
  */
-export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings): { identifying: ApisSum; unusual: ApisSum } {
+export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings): ApisSums {
     const identifying = new SameSum('bits');
-    const unusual = new SameSum('rarity');
     for (const id of distinctApis) {
         const traits = settings.apis[id];
         if (!traits) continue;
         const api = FP_APIS_BY_ID[id];
-        const information = api?.same ?? id;
         const bits = nonNegative(traits.bits);
-        const rarity = clamp01(traits.rarity);
-        identifying.add(id, information, bits, bits, api?.overlap ? { group: api.overlap.group, adds: Math.min(bits, nonNegative(traits.adds)) } : undefined);
-        // Both coordinates of a pair are one read (see readKey).
-        unusual.add(id, readKey(id), rarity, rarity ** Math.max(0, settings.rarityPower));
+        identifying.add(id, api?.same ?? id, bits, bits, api?.overlap ? { group: api.overlap.group, adds: Math.min(bits, nonNegative(traits.adds)) } : undefined);
     }
     const fullAt = settings.fullAt[level];
-    return { identifying: identifying.sum(fullAt.identifying), unusual: unusual.sum(fullAt.unusual) };
+    const bits = identifying.sum(EVERYONE_BITS);
+    return { identifying: bits, rareIdentifying: rareBits(bits, settings, fullAt.rareIdentifying) };
+}
+
+/**
+ * Bits that tell everyone apart: about 5 billion people are online, and 2^33 is 8.6 billion. The
+ * bits read count up to there (see ApisSums.identifying), which the popup shows.
+ */
+export const EVERYONE_BITS = 33;
+
+/** The API sums (see apisSums): the bits read, which the popup shows, and the rare bits, which score. */
+export interface ApisSums {
+    identifying: ApisSum;
+    rareIdentifying: ApisSum;
+}
+
+/**
+ * Rare identifying APIs from what the APIs added to identifying APIs (`bits`): each API's counted
+ * bits times its rarity to rarityPower. Beyond `known` rare bits already counted (see
+ * apisSumsBeyond), the value is how much of the way from them to fullAt these add.
+ */
+function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, known?: number): ApisSum {
+    const power = Math.max(0, settings.rarityPower);
+    const apis = bits.apis
+        .map((api): ApiAmount => ({ ...api, basis: api.amount, amount: api.amount * clamp01(settings.apis[api.id]?.rarity ?? 0) ** power }))
+        .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
+    const total = apis.reduce((sum, api) => sum + api.amount, 0);
+    const value = known === undefined ? saturate(total, fullAt) : fullAt > 0 ? Math.min(total, Math.max(0, fullAt - known)) / fullAt : 0;
+    return { measure: 'rareBits', value, total, fullAt, known, apis };
 }
 
 /**
  * The API signals for what `distinctApis` add on top of `knownApis`, which are already counted
  * elsewhere: a script's beyond its strongest burst, a page's beyond its strongest script.
  *
- * Identifying information starts from the bits the known APIs reveal together (B), then adds the
- * others, the most bits first: one revealing a value already counted adds nothing (or what it has
- * more), one whose overlap group already has a counted API (known or added before) adds what it adds
- * beside it, any other its bits. Its value is how much of the way from B to fullAt they cover:
- * min(added, fullAt − B) / fullAt. Known APIs revealing fullAt bits already identify the browser,
- * so nothing beyond adds to that.
+ * The bits start from those the known APIs reveal together, then add the others, the most bits
+ * first: one revealing a value already counted adds nothing (or what it has more), one whose overlap
+ * group already has a counted API (known or added before) adds what it adds beside it, any other its
+ * bits.
  *
- * Unusual APIs count each API's rarity as usual, except those whose read was already counted (the
- * same value, or the other coordinate of a pair).
- * Rarity is about intent, so overlapping values each count: reading another rare API shows more.
- * Its value is likewise how much of the way from the known APIs' rarities to fullAt they cover:
- * known APIs reading as unusually as no ordinary script does already show the intent.
+ * Rare identifying APIs are those amounts times rarity, likewise toward fullAt from the known
+ * APIs' rare bits: known APIs reaching full already show what a fingerprinter collects.
  */
 export function apisSumsBeyond(
     knownApis: Iterable<string>,
     distinctApis: Iterable<string>,
     level: ApisLevel,
     settings: ScoringSettings
-): { identifying: ApisSum; unusual: ApisSum } {
+): ApisSums {
     const known = new Set(knownApis);
     const baseSums = apisSums(known, level, settings);
     const base = baseSums.identifying;
@@ -494,9 +487,6 @@ export function apisSumsBeyond(
         .map((id) => ({ id, bits: nonNegative(settings.apis[id]!.bits), traits: settings.apis[id]! }))
         .sort((a, b) => b.bits - a.bits || a.id.localeCompare(b.id));
     const identifying: ApiAmount[] = [];
-    const unusual: ApiAmount[] = [];
-    // For unusual APIs, what was read (see readKey): the known APIs' reads count as read.
-    const reads = new Map([...known].filter((id) => settings.apis[id]).map((id) => [readKey(id), { id, known: true }]));
     for (const { id, bits, traits } of added) {
         const definition = FP_APIS_BY_ID[id];
         const value = definition?.same ?? id;
@@ -516,39 +506,21 @@ export function apisSumsBeyond(
             values.set(value, { id, bits, known: false });
             if (group) groups.set(group, { id, known: false });
         }
-
-        const rarity = clamp01(traits.rarity);
-        const read = readKey(id);
-        const sameRead = reads.get(read);
-        if (sameRead) unusual.push({ id, basis: rarity, amount: 0, countedWith: sameRead.id, withKnown: sameRead.known });
-        else {
-            unusual.push({ id, basis: rarity, amount: rarity ** Math.max(0, settings.rarityPower) });
-            reads.set(read, { id, known: false });
-        }
     }
 
     const byAmount = (a: ApiAmount, b: ApiAmount) => b.amount - a.amount || a.id.localeCompare(b.id);
     const addedBits = identifying.reduce((sum, api) => sum + api.amount, 0);
-    const missing = Math.max(0, fullAt.identifying - base.total);
-    const unusualTotal = unusual.reduce((sum, api) => sum + api.amount, 0);
-    const unusualMissing = Math.max(0, fullAt.unusual - baseSums.unusual.total);
+    const identifyingSum: ApisSum = {
+        measure: 'bits',
+        value: Math.min(addedBits, Math.max(0, EVERYONE_BITS - base.total)) / EVERYONE_BITS,
+        total: addedBits,
+        fullAt: EVERYONE_BITS,
+        known: base.total,
+        apis: identifying.sort(byAmount),
+    };
     return {
-        identifying: {
-            measure: 'bits',
-            value: fullAt.identifying > 0 ? Math.min(addedBits, missing) / fullAt.identifying : 0,
-            total: addedBits,
-            fullAt: fullAt.identifying,
-            known: base.total,
-            apis: identifying.sort(byAmount),
-        },
-        unusual: {
-            measure: 'rarity',
-            value: fullAt.unusual > 0 ? Math.min(unusualTotal, unusualMissing) / fullAt.unusual : 0,
-            total: unusualTotal,
-            fullAt: fullAt.unusual,
-            known: baseSums.unusual.total,
-            apis: unusual.sort(byAmount),
-        },
+        identifying: identifyingSum,
+        rareIdentifying: rareBits(identifyingSum, settings, fullAt.rareIdentifying, baseSums.rareIdentifying.total),
     };
 }
 
@@ -633,8 +605,7 @@ export function saveScoringSettings(settings: ScoringSettings): Promise<void> {
 
 /**
  * Settings stored in version 1's units, in version 2's: an API's entropy set as bits (×8). The
- * identifying information's full-at values are left out, as the sum they were set for counted
- * overlapping APIs fully; the new defaults apply.
+ * full-at values are left out, as they were for other signals than today's; the defaults apply.
  */
 function migrated(stored: StoredSettings | undefined): StoredSettings | undefined {
     if (!stored || stored.version === SETTINGS_VERSION) return stored;
@@ -644,8 +615,8 @@ function migrated(stored: StoredSettings | undefined): StoredSettings | undefine
             return [id, entropy === undefined ? rest : { ...rest, bits: entropy * 8 }];
         })
     ) as ScoringSettings['apis'];
-    const fullAt = Object.fromEntries(Object.entries(stored.fullAt ?? {}).map(([level, { identifying, ...rest }]) => [level, rest])) as ScoringSettings['fullAt'];
-    return { ...stored, apis, fullAt, version: SETTINGS_VERSION };
+    // Full-at values of version 1 were for other signals than today's; the defaults apply.
+    return { ...stored, apis, fullAt: undefined, version: SETTINGS_VERSION };
 }
 
 /** The parts of `value` that differ from `base`, as a nested object; undefined if none do. */
@@ -683,7 +654,7 @@ function movedStrengths(stored: StoredSettings | undefined, level: ScoreLevel): 
     const strengths = (stored?.strengths ?? {}) as Partial<Record<string, Partial<Record<string, number>>>>;
     const pick = (from: string, keys: readonly string[]) =>
         Object.fromEntries(keys.filter((key) => strengths[from]?.[key] !== undefined).map((key) => [key, strengths[from]![key]!]));
-    const API_SIGNALS = ['identifying', 'unusualApis', 'onePlace', 'generatedCode'] as const;
+    const API_SIGNALS = ['onePlace', 'generatedCode'] as const;
     if (level === 'otherScripts') return pick('page', ['strongestBurst']);
     if (level === 'otherScriptsBeyondBurst') return { ...pick('page', API_SIGNALS), ...pick('otherScripts', API_SIGNALS) };
     if (level === 'scriptBeyondBurst') return pick('script', API_SIGNALS);

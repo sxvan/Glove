@@ -5,8 +5,7 @@
 import type { ScoreNode } from './model';
 
 const SIGNAL_COLORS: Record<string, string> = {
-    identifying: '#3b82f6',
-    unusualApis: '#8b5cf6',
+    rareIdentifying: '#6366f1',
     generatedCode: '#14b8a6',
     onePlace: '#ec4899',
     dataSent: '#d4a106',
