@@ -116,10 +116,11 @@ export interface FpApi {
     /**
      * Where its rarity comes from: Chrome's use counter for it unless said otherwise; a counter of a
      * related feature ("related"), how often DuckDuckGo's Tracker Radar saw third-party scripts read
-     * it compared with APIs that have a counter ("trackerRadar", see FP_APIS), or an estimate without
-     * data ("estimate").
+     * it compared with APIs that have a counter ("trackerRadar"), at least as rare as the API it is a
+     * particular read of, judged within that bound ("bound"), or an estimate without data
+     * ("estimate"). See FP_APIS.
      */
-    rarityBasis?: 'related' | 'trackerRadar' | 'estimate';
+    rarityBasis?: 'related' | 'trackerRadar' | 'bound' | 'estimate';
     /**
      * The id of an API that reveals the same value (e.g. webgl2.readPixels and webgl.readPixels, or
      * screen.pixelDepth and screen.colorDepth): they count once together, as the highest of them.
@@ -158,22 +159,31 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 // - estimate: what the study didn't measure.
 // The canvas counts like the study's canvas modelled on AmIUnique's (7.8 bits; its own elaborate
 // one reached 9.2), the font measurements like its fallback font text. Rarity is 1 − the share of page loads
-// that use the API, from Chrome's use counters (chromestatus.com/data/featurepopularity, 2026-10-15):
+// that use the API, from Chrome's use counters (chromestatus.com/data/featurepopularity, 2026-10-16):
 // innerWidth is read on 72% of page loads (0.28), deviceMemory on 43% (0.57), getChannelData on 7%
-// (0.93). Where a related counter is all there is, it is used: webgl2.getParameter and
-// getShaderPrecisionFormat from WebGL 1, speech.getVoices from reading speechSynthesis (an upper
-// bound), createDataChannel from creating an RTCPeerConnection, resolvedOptions from creating a
-// DateTimeFormat, mediasource.isTypeSupported from canPlayType, which answers the same question.
-// Chrome counts no use of navigator.webdriver (its IDL has no MeasureAs). DuckDuckGo's Tracker
-// Radar (github.com/duckduckgo/tracker-radar, US crawl) saw third-party scripts read it on 118,868
-// sites, about as often as deviceMemory (116,222; 43% of page loads in Chrome) and languages
-// (128,367; 41%): across such APIs with a counter, a page load share of about 3.4e-6 per site,
-// which makes webdriver about 40% (0.6). Probably rather less, as mostly third parties (bot
-// detection) read it, which the crawl sees all of, while first-party code reads the others too.
-// Rarity estimates without data: uadata.detailedHints,
-// document.referrer, date.getTimezoneOffset, webgl readPixels and getContextAttributes,
-// webgpu.adapterInfo, and the special
-// reads (hidden canvas, font probing, graphics card name), which are rarer than the API they use.
+// (0.93). Without a counter of its own:
+// - related: a related feature's counter. The graphics card name needs WEBGL_debug_renderer_info,
+//   which 28% of page loads get (0.72); getShaderPrecisionFormat in WebGL 2 from WebGL 1;
+//   createDataChannel from creating an RTCPeerConnection (8%); resolvedOptions from creating a
+//   DateTimeFormat (36%); mediasource.isTypeSupported from pages using Media Source (8%) plus the
+//   third-party scripts checking it (0.9).
+// - trackerRadar: DuckDuckGo's Tracker Radar (github.com/duckduckgo/tracker-radar, US crawl) counts
+//   on how many sites third-party scripts read an API. Against APIs that have a counter, a site
+//   stands for a share of page loads of about 2e-6 for APIs mostly third parties read
+//   (getChannelData 1.8e-6, getImageData 2.1e-6, getHighEntropyValues and RTCPeerConnection 2.2e-6)
+//   and 3e-6 to 5e-6 for those first-party code reads too (languages 3.2e-6, deviceMemory 3.7e-6,
+//   canPlayType 4.7e-6): navigator.webdriver, read almost only by bot detection, on 118,868 sites
+//   is about 26% (0.7); speech.getVoices on 22,793 about 6% (0.93); WebGL getContextAttributes on
+//   35,507 about 10% (0.9), in WebGL 2 on 502 (0.99); webgl2.getParameter on 2,719 (0.97, first-
+//   party 3D content aside); readPixels on about 2,000 (0.95, leaving room for first-party 3D
+//   content: maps, games); getTimezoneOffset on 266,303, most of the web with date libraries on top
+//   (0.1). (Chrome counts no use of navigator.webdriver: its IDL has no MeasureAs.)
+// - bound: a particular read is at most as common as the API it uses. Hidden canvases are read
+//   through toDataURL (14%), getImageData (8%) and toBlob (1%), most of those reads fingerprinting
+//   (0.9, 0.95, 1); font probing through measureText (8%), most of which is laying out text (0.96);
+//   the WebGPU adapter's info after requestAdapter (10%; 0.95).
+// - estimate: the detailed client hints (Google Analytics asks for them by default, so about half
+//   of the 64% asking for client hints at all) and document.referrer.
 export const FP_APIS: FpApi[] = [
     // Navigator
     { id: 'navigator.userAgent', owner: 'Navigator', prop: 'userAgent', category: 'Browser', reveals: 'browser and version', bits: 4.8, rarity: 0.09, overlap: { group: 'browser', adds: 1 }, bitsBasis: 'adjusted' },
@@ -193,9 +203,9 @@ export const FP_APIS: FpApi[] = [
     { id: 'navigator.maxTouchPoints', owner: 'Navigator', prop: 'maxTouchPoints', category: 'Hardware', reveals: 'touch support', bits: 2.2, rarity: 0.48 },
     { id: 'navigator.vendor', owner: 'Navigator', prop: 'vendor', category: 'Browser', reveals: 'browser vendor', bits: 1.4, rarity: 0.63, overlap: { group: 'browser', adds: 0 } },
     // Says almost nothing about the device (false in practically every real browser). Checking for
-    // automation is what bot detection does, and that runs on a large part of the web: read about
-    // as often as deviceMemory.
-    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', bits: 0.4, rarity: 0.6, rarityBasis: 'trackerRadar', bitsBasis: 'adjusted' },
+    // automation is what bot detection does, and that runs on a large part of the web: read on
+    // about a quarter of page loads.
+    { id: 'navigator.webdriver', owner: 'Navigator', prop: 'webdriver', category: 'Automation', reveals: 'automation flag', bits: 0.4, rarity: 0.7, bitsBasis: 'adjusted', rarityBasis: 'trackerRadar' },
     // The same fixed list in modern Chrome, so it tells little about the device, but it's read
     // almost only by fingerprinting.
     { id: 'navigator.plugins', owner: 'Navigator', prop: 'plugins', category: 'Plugins', reveals: 'plugins', bits: 0.8, rarity: 0.68, bitsBasis: 'adjusted' },
@@ -216,7 +226,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'connection.downlink', owner: 'NetworkInformation', prop: 'downlink', category: 'Connection', reveals: 'connection speed', bits: 0.7, rarity: 0.65, overlap: { group: 'connection', adds: 0.1 } },
     // The installed voices depend on the operating system, its version and language packs; only
     // text-to-speech needs them.
-    { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', bits: 4.5, rarity: 0.86, rarityBasis: 'related' },
+    { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', bits: 4.5, rarity: 0.93, rarityBasis: 'trackerRadar' },
 
     // Screen
     { id: 'screen.width', owner: 'Screen', prop: 'width', category: 'ScreenSetup', reveals: 'screen size', bits: 4.2, rarity: 0.31, overlap: { group: 'sizes', adds: 0.1 } },
@@ -251,44 +261,44 @@ export const FP_APIS: FpApi[] = [
     // Canvas: reading back what was drawn shows how this device renders. Exporting or editing a
     // visible canvas is common; reading back a canvas that isn't on the page is canvas fingerprinting.
     { id: 'canvas.toDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.86 },
-    { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
+    { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.9, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     { id: 'canvas.toBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.99, same: 'canvas.toDataURL' },
-    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
+    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     { id: 'canvas.getImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.92, same: 'canvas.toDataURL' },
-    { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' }, rarityBasis: 'estimate' },
+    { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.95, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     // Whether a point lies in a path drawn with the even-odd rule: the same in practically every
     // browser, but part of a canvas fingerprint (FingerprintJS's "winding"), and rare otherwise.
     { id: 'canvas.isPointInPath', owner: 'CanvasRenderingContext2D', prop: 'isPointInPath', category: 'CanvasImage', reveals: 'canvas path handling', bits: 0.4, rarity: 0.96, bitsBasis: 'estimate' },
     // Measuring text is everyday; measuring it in many different fonts is finding out which are installed.
     { id: 'canvas.measureText', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'text measurements', bits: 4, rarity: 0.92, overlap: { group: 'fonts', adds: 0.5 } },
-    { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', bits: 6.7, rarity: 1, readOf: { api: 'canvas.measureText', read: 'fontProbing' }, rarityBasis: 'estimate', overlap: { group: 'fonts', adds: 2.4 } },
+    { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', bits: 6.7, rarity: 0.96, readOf: { api: 'canvas.measureText', read: 'fontProbing' }, overlap: { group: 'fonts', adds: 2.4 }, rarityBasis: 'bound' },
 
     // WebGL: 3D engines check capabilities and shader precision when they start, and read pixels
     // back to find what was clicked. The graphics card's maker and model (through
     // WEBGL_debug_renderer_info) are recorded on their own, as almost nothing but fingerprinting
     // needs them.
     { id: 'webgl.getParameter', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', bits: 2.8, rarity: 0.71, overlap: { group: 'gpu', adds: 0.3 } },
-    { id: 'webgl.gpuName', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 1, readOf: { api: 'webgl.getParameter', read: 'gpuName' }, rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 1.6 } },
+    { id: 'webgl.gpuName', owner: 'WebGLRenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 0.72, readOf: { api: 'webgl.getParameter', read: 'gpuName' }, overlap: { group: 'gpu', adds: 1.6 }, rarityBasis: 'related' },
     { id: 'webgl.getExtension', owner: 'WebGLRenderingContext', prop: 'getExtension', category: 'GraphicsCard', reveals: 'graphics extensions', bits: 0.8, rarity: 0.73, overlap: { group: 'gpu', adds: 0.1 }, bitsBasis: 'estimate' },
     { id: 'webgl.getSupportedExtensions', owner: 'WebGLRenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', bits: 4.6, rarity: 0.93, overlap: { group: 'gpu', adds: 0.6 } },
-    { id: 'webgl.readPixels', owner: 'WebGLRenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', bits: 5.8, rarity: 0.6, rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 0.5 } },
+    { id: 'webgl.readPixels', owner: 'WebGLRenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', bits: 5.8, rarity: 0.95, overlap: { group: 'gpu', adds: 0.5 }, rarityBasis: 'trackerRadar' },
     // The precision of the graphics card's shaders: 3D engines ask when they start, fingerprinters always do.
     { id: 'webgl.getShaderPrecisionFormat', owner: 'WebGLRenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', bits: 1.6, rarity: 0.94, overlap: { group: 'gpu', adds: 0 } },
     // The context's settings (antialiasing and the like): mostly what was asked for, read back.
-    { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', bits: 0.4, rarity: 0.9, rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 0.2 }, bitsBasis: 'adjusted' },
+    { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', bits: 0.4, rarity: 0.9, overlap: { group: 'gpu', adds: 0.2 }, bitsBasis: 'adjusted', rarityBasis: 'trackerRadar' },
 
-    { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', bits: 2.8, rarity: 0.71, same: 'webgl.getParameter', rarityBasis: 'related', overlap: { group: 'gpu', adds: 0.3 } },
-    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 1, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' }, rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 1.6 } },
+    { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', bits: 2.8, rarity: 0.97, same: 'webgl.getParameter', overlap: { group: 'gpu', adds: 0.3 }, rarityBasis: 'trackerRadar' },
+    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 0.72, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' }, overlap: { group: 'gpu', adds: 1.6 }, rarityBasis: 'related' },
     { id: 'webgl2.getExtension', owner: 'WebGL2RenderingContext', prop: 'getExtension', category: 'GraphicsCard', reveals: 'graphics extensions', bits: 0.8, rarity: 0.94, same: 'webgl.getExtension', overlap: { group: 'gpu', adds: 0.1 }, bitsBasis: 'estimate' },
     { id: 'webgl2.getSupportedExtensions', owner: 'WebGL2RenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', bits: 4.6, rarity: 0.98, same: 'webgl.getSupportedExtensions', overlap: { group: 'gpu', adds: 0.6 } },
-    { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', bits: 5.8, rarity: 0.6, same: 'webgl.readPixels', rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 0.5 } },
+    { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', bits: 5.8, rarity: 0.95, same: 'webgl.readPixels', overlap: { group: 'gpu', adds: 0.5 }, rarityBasis: 'trackerRadar' },
     { id: 'webgl2.getShaderPrecisionFormat', owner: 'WebGL2RenderingContext', prop: 'getShaderPrecisionFormat', category: 'GraphicsCard', reveals: 'shader precision', bits: 1.6, rarity: 0.94, same: 'webgl.getShaderPrecisionFormat', rarityBasis: 'related', overlap: { group: 'gpu', adds: 0 } },
-    { id: 'webgl2.getContextAttributes', owner: 'WebGL2RenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', bits: 0.4, rarity: 0.9, same: 'webgl.getContextAttributes', rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 0.2 }, bitsBasis: 'adjusted' },
+    { id: 'webgl2.getContextAttributes', owner: 'WebGL2RenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', bits: 0.4, rarity: 0.99, same: 'webgl.getContextAttributes', overlap: { group: 'gpu', adds: 0.2 }, bitsBasis: 'adjusted', rarityBasis: 'trackerRadar' },
 
     // WebGPU: asking for an adapter is how WebGPU content starts; its info names the graphics card's
     // maker and architecture, which only fingerprinting needs.
     { id: 'webgpu.requestAdapter', owner: 'GPU', prop: 'requestAdapter', category: 'GraphicsCard', reveals: 'WebGPU support', bits: 0.4, rarity: 0.9, bitsBasis: 'estimate' },
-    { id: 'webgpu.adapterInfo', owner: 'GPUAdapter', prop: 'info', category: 'GraphicsCard', reveals: 'graphics card maker and architecture', bits: 3.6, rarity: 0.95, rarityBasis: 'estimate', overlap: { group: 'gpu', adds: 0.5 }, bitsBasis: 'estimate' },
+    { id: 'webgpu.adapterInfo', owner: 'GPUAdapter', prop: 'info', category: 'GraphicsCard', reveals: 'graphics card maker and architecture', bits: 3.6, rarity: 0.95, overlap: { group: 'gpu', adds: 0.5 }, bitsBasis: 'estimate', rarityBasis: 'bound' },
 
     // Audio: setting up nodes is ordinary; rendering silently and reading the samples is fingerprinting.
     { id: 'audiocontext.createAnalyser', owner: 'AudioContext', prop: 'createAnalyser', category: 'Audio', reveals: 'audio setup', bits: 0.8, rarity: 0.97 },
@@ -299,7 +309,7 @@ export const FP_APIS: FpApi[] = [
     // Codecs: which audio and video formats the browser plays, which depends on the browser, its
     // build and the operating system. Video players ask too, for the formats they have.
     { id: 'media.canPlayType', owner: 'HTMLMediaElement', prop: 'canPlayType', category: 'Codecs', reveals: 'supported media formats', bits: 1.2, rarity: 0.77, bitsBasis: 'adjusted' },
-    { id: 'mediasource.isTypeSupported', owner: 'MediaSource', prop: 'isTypeSupported', category: 'Codecs', reveals: 'supported media formats', bits: 1.2, rarity: 0.77, same: 'media.canPlayType', rarityBasis: 'related', bitsBasis: 'adjusted' },
+    { id: 'mediasource.isTypeSupported', owner: 'MediaSource', prop: 'isTypeSupported', category: 'Codecs', reveals: 'supported media formats', bits: 1.2, rarity: 0.9, same: 'media.canPlayType', bitsBasis: 'adjusted', rarityBasis: 'related' },
     // Media devices: the list of cameras and microphones is read silently; without permission it
     // only tells how many of each kind there are. getUserMedia asks first.
     { id: 'mediadevices.enumerateDevices', owner: 'MediaDevices', prop: 'enumerateDevices', category: 'MediaDevices', reveals: 'cameras and microphones', bits: 1.2, rarity: 0.86, bitsBasis: 'estimate' },
@@ -307,12 +317,12 @@ export const FP_APIS: FpApi[] = [
 
     // WebRTC: can reveal local network addresses; video calls use it legitimately.
     { id: 'webrtc.createDataChannel', owner: 'RTCPeerConnection', prop: 'createDataChannel', category: 'Network', reveals: 'WebRTC connection', bits: 0.4, rarity: 0.93, rarityBasis: 'related', bitsBasis: 'estimate' },
-    { id: 'webrtc.addIceCandidate', owner: 'RTCPeerConnection', prop: 'addIceCandidate', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 0.94, same: 'webrtc.setLocalDescription', bitsBasis: 'adjusted' },
+    { id: 'webrtc.addIceCandidate', owner: 'RTCPeerConnection', prop: 'addIceCandidate', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 1, same: 'webrtc.setLocalDescription', bitsBasis: 'adjusted' },
     { id: 'webrtc.setLocalDescription', owner: 'RTCPeerConnection', prop: 'setLocalDescription', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 0.94, bitsBasis: 'adjusted' },
 
     // Intl: the time zone; date libraries read it too.
     { id: 'intl.datetimeformat.resolvedOptions', owner: 'IntlDateTimeFormat', prop: 'resolvedOptions', category: 'TimeZone', reveals: 'time zone', bits: 3.7, rarity: 0.64, rarityBasis: 'related', overlap: { group: 'timezone', adds: 0.3 }, bitsBasis: 'worldwide' },
-    { id: 'date.getTimezoneOffset', owner: 'Date', prop: 'getTimezoneOffset', category: 'TimeZone', reveals: 'time zone', bits: 3.5, rarity: 0.1, rarityBasis: 'estimate', overlap: { group: 'timezone', adds: 0.1 }, bitsBasis: 'worldwide' },
+    { id: 'date.getTimezoneOffset', owner: 'Date', prop: 'getTimezoneOffset', category: 'TimeZone', reveals: 'time zone', bits: 3.5, rarity: 0.1, overlap: { group: 'timezone', adds: 0.1 }, bitsBasis: 'worldwide', rarityBasis: 'trackerRadar' },
 ];
 
 export const FP_APIS_BY_ID: Record<string, FpApi> = Object.fromEntries(FP_APIS.map((api) => [api.id, api]));

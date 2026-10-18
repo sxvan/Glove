@@ -938,8 +938,8 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
     });
     // Beyond what is already counted: "9 bits on top of 31, 2 of them toward 33".
     const detail =
-        sum.known !== undefined && sum.measure === 'bits'
-            ? `${number(sum.total)} bits on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
+        sum.known !== undefined
+            ? `${number(sum.total)}${sum.measure === 'bits' ? ' bits' : ''} on top of ${number(sum.known)}, ${number(total * sum.fullAt)} of them toward ${number(sum.fullAt)}`
             : `${number(sum.total)} of ${number(sum.fullAt)}${sum.measure === 'bits' ? ' bits' : ''} from ${plural(sum.apis.length, 'API')}`;
     return { detail, children: withShownShares(children, total) };
 }
