@@ -36,6 +36,8 @@ export interface ScriptSnapshot {
     apiTimes?: Record<string, { first: number; last: number }>;
     /** What it stored in the browser, in the order first stored; missing from an older background. */
     stored?: StoredItem[];
+    /** Whether it reached the limit of calls kept per script (see lib/limits). */
+    capped?: boolean;
 }
 
 export type StorageKind = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB';
@@ -93,6 +95,8 @@ export interface TabSnapshot {
     apis?: ScoringSettings['apis'];
     /** The exponent rarity counts with (see ScoringSettings.rarityPower); missing from an older background. */
     rarityPower?: number;
+    /** Whether the page reached the limit of calls kept per page (see lib/limits). */
+    callsCapped?: boolean;
     /** What counts as a possible identifier among stored values, and how long after a burst counts as right after it; missing from an older background. */
     identifiers?: IdentifierRules;
     rightAfterMs?: number;

@@ -13,6 +13,7 @@ import {
     watchExempt,
     type BlockedScript,
 } from '@/lib/blocking';
+import { DEFAULT_LIMITS, loadLimits, watchLimits } from '@/lib/limits';
 import { registerRecorders } from '@/lib/recorders';
 import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
@@ -32,6 +33,8 @@ const MAX_INTERVAL_MS = 5000;
 
 // The user's scoring settings (see lib/scoring); the defaults until they are loaded.
 let settings: ScoringSettings = DEFAULT_SETTINGS;
+// How many calls are kept (see lib/limits); the defaults until they are loaded.
+let limits = DEFAULT_LIMITS;
 
 export default defineBackground(() => {
     watchPopups();
@@ -70,6 +73,14 @@ export default defineBackground(() => {
     watchScoringSettings((changed) => {
         settings = changed;
         reanalyzeAll();
+    });
+    let limitsChanged = false;
+    loadLimits().then((loaded) => {
+        if (!limitsChanged) limits = loaded;
+    });
+    watchLimits((changed) => {
+        limitsChanged = true;
+        limits = changed;
     });
 
     // The scripts the user blocked (see lib/blocking), by what they are blocked by, and the sites the
@@ -304,7 +315,7 @@ export default defineBackground(() => {
         }
     }
 
-    browser.runtime.onMessage.addListener((msg: RecorderMessage, sender) => {
+    browser.runtime.onMessage.addListener((msg: RecorderMessage, sender, sendResponse) => {
         if (!sender.tab || sender.tab.id === -1 || sender.frameId === -1 || !sender.documentId) {
             return;
         }
@@ -321,11 +332,23 @@ export default defineBackground(() => {
         const { document } = ensureDocument(session, tabId, frameId, sender.documentId, sender.url);
 
         if (msg.type === 'fp-batch') {
+            // Up to the limits (see lib/limits): what wasn't kept isn't scored again either.
+            let pageCalls = callsOnPage(session, tabId);
+            let kept = 0;
             for (const fpEvent of msg.payload) {
-                storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, fpEvent);
+                if (pageCalls >= limits.callsPerPage) break;
+                if (storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, fpEvent, limits.callsPerScript)) {
+                    kept++;
+                    pageCalls++;
+                }
             }
 
-            scheduleAnalysis(document, tabId);
+            if (kept > 0) scheduleAnalysis(document, tabId);
+            // Past the page's limit, the bridge stops sending its calls.
+            if (pageCalls >= limits.callsPerPage) {
+                sendResponse({ stop: true });
+                broadcastTabSnapshot(session, tabId);
+            }
             return;
         }
 
@@ -421,6 +444,16 @@ export default defineBackground(() => {
     });
 });
 
+/** How many calls the tab's page made, all its frames together, as kept (see lib/limits). */
+function callsOnPage(session: Session, tabId: number): number {
+    let calls = 0;
+    for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
+        const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+        for (const script of Object.values(document?.scripts ?? {})) calls += script.callCount;
+    }
+    return calls;
+}
+
 /** Loads `url` in the tab and waits until it has loaded, at most a few seconds. */
 function navigateAndWait(tabId: number, url: string): Promise<void> {
     return new Promise((resolve) => {
@@ -502,6 +535,7 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
         cutoffs: settings.cutoffs,
         apis: settings.apis,
         rarityPower: settings.rarityPower,
+        callsCapped: callsOnPage(session, tabId) >= limits.callsPerPage,
         identifiers: settings.identifiers,
         rightAfterMs: settings.bursts.requestWindowMs,
     };
@@ -554,6 +588,7 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         apiCounts,
         apiLocations,
         apiTimes,
+        capped: script.capped === true,
         stored: Object.values(script.stored ?? {})
             .map((item) => ({ ...item }))
             .sort((a, b) => a.first - b.first),

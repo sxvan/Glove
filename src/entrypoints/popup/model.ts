@@ -320,6 +320,8 @@ export interface ScriptDetail {
     /** The signals the score was combined from. */
     tree: ScoreNode[];
     calls: number;
+    /** Whether its calls reached a limit (see lib/limits), so there were more than `calls`. */
+    capped: boolean;
     /** What it learned about the device, by kind of detail, the most identifying kind first. */
     learned: LearnedKind[];
     /** Signs that the script hides what it does; empty if there are none. */
@@ -524,6 +526,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         score,
                         tree: scriptTree(script),
                         calls: script.fpMetrics?.intensity ?? 0,
+                        capped: script.capped === true || snapshot.callsCapped === true,
                         learned: learnedKinds(script.fpMetrics?.distinctFpApis ?? [], rare),
                         signals: scriptSignals(script.apiLocations, traits, power, rare),
                         apis,
@@ -808,6 +811,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         score: page.score,
         tree: page.tree,
         calls: scripts.reduce((sum, script) => sum + script.calls, 0),
+        capped: snapshot.callsCapped === true || scripts.some((script) => script.capped),
         learned: learnedKinds(
             apis.map((api) => api.id),
             rareBitsOf(snapshot)

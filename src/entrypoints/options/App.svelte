@@ -21,6 +21,7 @@
     import { percent, percentFromInput, positiveFromInput, unitFromInput } from './inputs';
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
     import BlockingSettings from './BlockingSettings.svelte';
+    import PerformanceSettings from './PerformanceSettings.svelte';
     import SitesSettings from './SitesSettings.svelte';
     import ThemeSwitch from './ThemeSwitch.svelte';
 
@@ -158,6 +159,11 @@
     <section class="squircle">
         <h2>Blocking</h2>
         <BlockingSettings />
+    </section>
+
+    <section class="squircle">
+        <h2>Performance</h2>
+        <PerformanceSettings />
     </section>
 
     {#if settings}

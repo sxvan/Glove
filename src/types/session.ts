@@ -16,8 +16,10 @@ export interface ScriptState {
     fpEvents: FpMonkeyEvent[];
     /** Its calls per API, counted as they arrive. */
     calls: Record<string, ApiCalls>;
-    /** How many calls it made, counted as they arrive. */
+    /** How many calls it made, counted as they arrive, up to the limit (see lib/limits). */
     callCount: number;
+    /** Set once it reached the limit of calls kept per script: further ones weren't kept. */
+    capped?: boolean;
     httpEvents: HttpMonkeyEvent[];
     httpConsolidatedEvents: HttpConsolidatedEvent[];
     fpSpikes: FpSpike[];

@@ -35,7 +35,8 @@ export function statements(script: ScriptDetail): Statement[] {
     const list: Statement[] = [
         {
             key: 'read',
-            text: ['Read ', { value: plural(script.apis.length, 'fingerprinting API') }, ' in ', { value: plural(script.calls, 'call') }],
+            // Past a limit of calls kept (see lib/limits), at least that many.
+            text: ['Read ', { value: plural(script.apis.length, 'fingerprinting API') }, ' in ', { value: script.capped ? `${script.calls}+ calls` : plural(script.calls, 'call') }],
             detail: kinds ? `About ${kinds}` : '',
             explanation:
                 'Fingerprinting APIs are the browser\u2019s features that reveal details of the device, such as the graphics card, the screen or the fonts. Every call to them is noted with the script that made it. Ordinary scripts read some too: what counts toward the score is how rare and identifying they are. The kinds of detail are named the most identifying first.',

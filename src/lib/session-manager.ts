@@ -159,8 +159,16 @@ export function dropPreviousPageFrames(session: Session, tabId: number, committe
     }
 }
 
-export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: FpMonkeyEvent) {
+/**
+ * Keeps a call for its script, unless the script already has `maxCalls` (see lib/limits); then it
+ * is marked as capped. Whether it was kept.
+ */
+export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: FpMonkeyEvent, maxCalls = Infinity): boolean {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
+    if (script.callCount >= maxCalls) {
+        script.capped = true;
+        return false;
+    }
 
     script.fpEvents.push(event);
     script.callCount += 1;
@@ -175,6 +183,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
         location.calls += 1;
         location.generated ||= event.generated === true;
     }
+    return true;
 }
 
 /**
