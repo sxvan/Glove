@@ -1,6 +1,7 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { createStackReader } from '@/lib/call-stack';
 import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
+import { recordingDocument } from '@/lib/recording-document';
 import type { HttpMonkeyEvent } from '@/types/events';
 
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
@@ -16,6 +17,7 @@ export default defineContentScript({
     world: 'MAIN',
 
     main() {
+        recordTo = recordingDocument();
         readStack = createStackReader(STACK_FRAMES);
         installDisguise();
         hookFetch();
@@ -31,6 +33,8 @@ export default defineContentScript({
 const STACK_FRAMES = 30;
 
 let readStack: ReturnType<typeof createStackReader>;
+// The document whose bridge gets the events: this frame's, or the one a blank frame belongs to.
+let recordTo: Document;
 
 // Captured before page scripts run, so a page replacing it can't see or break the check.
 const startsWith = String.prototype.startsWith;
@@ -61,7 +65,7 @@ function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: 
         credentials: credentials,
     };
 
-    document.documentElement.dispatchEvent(new CustomEvent('http-monkey', { detail: httpMonkeyEvent }));
+    recordTo.documentElement.dispatchEvent(new CustomEvent('http-monkey', { detail: httpMonkeyEvent }));
 }
 
 /**

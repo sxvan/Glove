@@ -1010,6 +1010,13 @@ function describeScript(
         return { name: 'Inline script', path: false, origin: `Embedded in ${host}`, host, linkable: false, inline: true };
     }
 
+    // Code of a frame without an address of its own, which the page filled itself and is recorded
+    // with (see lib/recording-document): inline, but not in the page's source, so not shown there.
+    if (/^about:/i.test(url)) {
+        const host = documentUrl ? hostOf(documentUrl) : '';
+        return { name: 'Inline script', path: false, origin: host ? `In a frame of ${host}` : 'In a frame', host: host || null, linkable: false, inline: false };
+    }
+
     if (/^(blob|data):/i.test(url)) {
         // A blob: URL keeps the origin of the page that created it; a data: URL has none.
         let creator = '';

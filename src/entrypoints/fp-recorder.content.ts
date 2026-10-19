@@ -5,6 +5,7 @@ import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import type { FpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
 import type { StorageKind } from '@/types/snapshot';
 import { STORED_VALUE_MAX } from '@/lib/identifiers';
+import { recordingDocument } from '@/lib/recording-document';
 
 // Captured before page scripts run, so a page replacing it can't see the hooks' calls.
 const reflectApply = Reflect.apply;
@@ -29,9 +30,12 @@ export default defineContentScript({
 // so a page that patches them can't see, delay or break recording.
 let nativeSetTimeout: (handler: () => void, timeout: number) => number;
 let readStack: (hook: Function) => StackLocation[];
+// The document whose bridge gets the events: this frame's, or the one a blank frame belongs to.
+let recordTo: Document;
 
 function installFpHooks() {
     installDisguise();
+    recordTo = recordingDocument();
     nativeSetTimeout = window.setTimeout.bind(window);
     readStack = createStackReader(STACK_FRAMES);
     isConnected = nativeGetter(Node.prototype, 'isConnected');
@@ -140,10 +144,10 @@ function recordFpEvent(id: string, hook: Function) {
 function flushFpEvents() {
     flushScheduled = false;
     if (pendingEvents.length > 0) {
-        document.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: pendingEvents.splice(0) }));
+        recordTo.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: pendingEvents.splice(0) }));
     }
     if (pendingStored.length > 0) {
-        document.documentElement.dispatchEvent(new CustomEvent('storage-monkey', { detail: pendingStored.splice(0) }));
+        recordTo.documentElement.dispatchEvent(new CustomEvent('storage-monkey', { detail: pendingStored.splice(0) }));
     }
 }
 
