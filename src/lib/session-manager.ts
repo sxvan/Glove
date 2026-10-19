@@ -1,5 +1,5 @@
 import { placeKey } from './call-stack';
-import type { FpMonkeyEvent, HttpMonkeyEvent } from '@/types/events';
+import type { FpMonkeyEvent, HttpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
 import type { DocumentState, FrameState, ScriptState, Session, TabState } from '@/types/session';
 
 export function createSession(): Session {
@@ -60,6 +60,7 @@ export function ensureDocument(
             httpRequests: [],
             scripts: {},
             spikes: [],
+            blockedScripts: {},
         };
     } else if (url !== null) {
         const document = frame.documents[documentId];
@@ -90,6 +91,7 @@ export function ensureScript(
             httpEvents: [],
             httpConsolidatedEvents: [],
             fpSpikes: [],
+            stored: {},
         };
     }
 
@@ -186,4 +188,15 @@ export function storeHttpEvent(session: Session, tabId: number, frameId: number,
         const { script } = ensureScript(session, tabId, frameId, documentId, url, scriptUrl);
         script.httpEvents.push(event);
     }
+}
+
+/** Notes a value the script stored, keeping the latest value of each cookie or item. */
+export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: StorageMonkeyEvent) {
+    const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
+    const item = (script.stored[`${event.kind}|${event.name}`] ??= { kind: event.kind, name: event.name, value: null, expires: null, writes: 0, first: event.timeStamp, last: event.timeStamp });
+    item.value = event.value;
+    item.expires = event.expires;
+    item.writes += 1;
+    item.first = Math.min(item.first, event.timeStamp);
+    item.last = Math.max(item.last, event.timeStamp);
 }

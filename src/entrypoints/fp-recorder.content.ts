@@ -2,7 +2,9 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { FP_APIS, type FpApiOwner, type SpecialRead } from '@/lib/fp-apis';
 import { createStackReader, type StackLocation } from '@/lib/call-stack';
 import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
-import type { FpMonkeyEvent } from '@/types/events';
+import type { FpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
+import type { StorageKind } from '@/types/snapshot';
+import { STORED_VALUE_MAX } from '@/lib/identifiers';
 
 // Captured before page scripts run, so a page replacing it can't see the hooks' calls.
 const reflectApply = Reflect.apply;
@@ -44,6 +46,7 @@ function installFpHooks() {
         const proto = getProtoForOwner(target.owner);
         hookAny(proto, target.prop, target.id);
     }
+    installStorageHooks();
 
     // Hand over buffered events before the page is unloaded or put into the back/forward cache.
     window.addEventListener('pagehide', flushFpEvents);
@@ -125,21 +128,24 @@ function recordFpEvent(id: string, hook: Function) {
         innerLine: caller?.inner?.line ?? null,
         innerColumn: caller?.inner?.column ?? null,
     });
-
-    if (!flushScheduled) {
-        flushScheduled = true;
-        nativeSetTimeout(flushFpEvents, FLUSH_INTERVAL_MS);
-    }
+    scheduleFlush();
 }
 
 function flushFpEvents() {
     flushScheduled = false;
-    if (pendingEvents.length === 0) {
-        return;
+    if (pendingEvents.length > 0) {
+        document.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: pendingEvents.splice(0) }));
     }
+    if (pendingStored.length > 0) {
+        document.documentElement.dispatchEvent(new CustomEvent('storage-monkey', { detail: pendingStored.splice(0) }));
+    }
+}
 
-    const batch = pendingEvents.splice(0);
-    document.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: batch }));
+function scheduleFlush() {
+    if (!flushScheduled) {
+        flushScheduled = true;
+        nativeSetTimeout(flushFpEvents, FLUSH_INTERVAL_MS);
+    }
 }
 
 function hookAny(proto: any, prop: string, id: string) {
@@ -325,4 +331,138 @@ const STACK_FRAMES = 4;
 /** The script and position the hooked API was called from: the first page script on the stack. */
 function getCallerLocation(hook: Function): StackLocation | null {
     return readStack(hook)[0] ?? null;
+}
+
+// ---------- what scripts store ----------
+// Writes to cookies and the page's storage, by the script that made them, buffered and handed over
+// with the API calls: a script can keep the identifier it computed there, so it needn't fingerprint
+// again, and a cookie keeps being sent after the script is blocked. Only writes through the hooked
+// calls are seen: `localStorage.id = value` assigns without one. Shown as recorded, for the user to
+// see; what the browser holds can differ, e.g. after a cookie was rejected or deleted.
+// A write counts for the innermost page script on the stack, as an API call does; a framework that
+// wraps the storage calls for the whole page is then credited with the writes passing through it.
+
+const pendingStored: StorageMonkeyEvent[] = [];
+
+// The page's storages, to tell which one setItem was called on; null where they can't be used,
+// e.g. in a sandboxed frame.
+let localStorageOf: Storage | null = null;
+let sessionStorageOf: Storage | null = null;
+let storeName: (store: unknown) => string | undefined;
+let storeTransaction: (store: unknown) => IDBTransaction | undefined;
+let transactionDb: (transaction: unknown) => IDBDatabase | undefined;
+let databaseName: (database: unknown) => string | undefined;
+
+function installStorageHooks() {
+    try {
+        localStorageOf = window.localStorage;
+    } catch {}
+    try {
+        sessionStorageOf = window.sessionStorage;
+    } catch {}
+    storeName = nativeGetter(IDBObjectStore.prototype, 'name');
+    storeTransaction = nativeGetter(IDBObjectStore.prototype, 'transaction');
+    transactionDb = nativeGetter(IDBTransaction.prototype, 'db');
+    databaseName = nativeGetter(IDBDatabase.prototype, 'name');
+
+    // document.cookie = "name=value; max-age=…"
+    const cookie = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+    const setCookie = cookie?.set;
+    if (cookie && setCookie && !isDisguised(setCookie)) {
+        const wrapped = Object.getOwnPropertyDescriptor(
+            {
+                set cookie(value: unknown) {
+                    reflectApply(setCookie, this, [value]);
+                    if (typeof value === 'string') recordCookie(value, wrapped);
+                },
+            },
+            'cookie'
+        )!.set!;
+        Object.defineProperty(Document.prototype, 'cookie', { ...cookie, set: disguise(wrapped, setCookie) });
+    }
+
+    // cookieStore.set(name, value) or cookieStore.set({ name, value, expires })
+    const cookieStore = (window as { CookieStore?: { prototype: object } }).CookieStore?.prototype;
+    hookStorageMethod(cookieStore, 'set', (_, args) => {
+        const [first, second] = args;
+        if (typeof first === 'string') return { kind: 'cookie', name: first, value: String(second ?? ''), expires: null };
+        if (!first || typeof first !== 'object') return null;
+        const { name, value, expires } = first as { name?: unknown; value?: unknown; expires?: unknown };
+        if (typeof expires === 'number' && expires <= Date.now()) return null;
+        return { kind: 'cookie', name: String(name ?? ''), value: String(value ?? ''), expires: typeof expires === 'number' ? expires : null };
+    });
+
+    hookStorageMethod(Storage.prototype, 'setItem', (storage, args) => {
+        const kind = storageKind(storage);
+        return kind && { kind, name: String(args[0]), value: String(args[1]), expires: null };
+    });
+
+    // A record put into a database's store: named by the database, the store and its key if given.
+    for (const method of ['put', 'add']) {
+        hookStorageMethod(IDBObjectStore.prototype, method, (store, args) => {
+            const database = databaseName(transactionDb(storeTransaction(store)));
+            const key = args[1];
+            const name = [database, storeName(store), typeof key === 'string' || typeof key === 'number' ? key : null].filter((part) => part != null).join(' › ');
+            return { kind: 'indexedDB', name, value: null, expires: null };
+        });
+    }
+}
+
+type StoredWrite = Pick<StorageMonkeyEvent, 'kind' | 'name' | 'value' | 'expires'>;
+
+function storageKind(storage: unknown): StorageKind | null {
+    return storage === localStorageOf ? 'localStorage' : storage === sessionStorageOf ? 'sessionStorage' : null;
+}
+
+/** Wraps a method that stores something; `describe` tells what from its arguments, or null to skip it. */
+function hookStorageMethod(proto: any, prop: string, describe: (self: unknown, args: unknown[]) => StoredWrite | null) {
+    const original: unknown = proto && proto[prop];
+    if (typeof original !== 'function' || isDisguised(original)) return;
+
+    // Recorded once the call returned: one that threw stored nothing.
+    const wrapped = {
+        [prop](this: unknown, ...args: unknown[]) {
+            const result = reflectApply(original, this, args);
+            let write: StoredWrite | null = null;
+            try {
+                write = describe(this, args);
+            } catch {}
+            if (write) recordStored(write, wrapped);
+            return result;
+        },
+    }[prop]!;
+    proto[prop] = disguise(wrapped, original);
+}
+
+/** A cookie written through document.cookie; one set to expire right away is a deletion and isn't recorded. */
+function recordCookie(text: string, hook: Function) {
+    const [pair = '', ...attributes] = text.split(';');
+    const at = pair.indexOf('=');
+    let maxAge: number | null = null;
+    let expires: number | null = null;
+    for (const attribute of attributes) {
+        const equals = attribute.indexOf('=');
+        const name = (equals >= 0 ? attribute.slice(0, equals) : attribute).trim().toLowerCase();
+        const value = equals >= 0 ? attribute.slice(equals + 1).trim() : '';
+        if (name === 'max-age' && /^-?\d+$/.test(value)) maxAge = Number(value);
+        else if (name === 'expires' && !Number.isNaN(Date.parse(value))) expires = Date.parse(value);
+    }
+    // Max-Age wins over Expires.
+    if (maxAge !== null) expires = Date.now() + maxAge * 1000;
+    if (expires !== null && expires <= Date.now()) return;
+    recordStored({ kind: 'cookie', name: (at >= 0 ? pair.slice(0, at) : '').trim(), value: (at >= 0 ? pair.slice(at + 1) : pair).trim(), expires }, hook);
+}
+
+/** @param hook our wrapper that was called; stack frames from it inward are skipped */
+function recordStored(write: StoredWrite, hook: Function) {
+    const caller = getCallerLocation(hook);
+    pendingStored.push({
+        ...write,
+        value: write.value === null ? null : write.value.slice(0, STORED_VALUE_MAX),
+        timeStamp: Date.now(),
+        scriptUrl: caller?.url ?? null,
+        line: caller?.line ?? null,
+        column: caller?.column ?? null,
+    });
+    scheduleFlush();
 }

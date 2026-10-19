@@ -4,6 +4,7 @@
         DEFAULT_SETTINGS,
         APIS_LEVEL_LABELS,
         BURST_DETECTION_FIELDS,
+        IDENTIFIER_RULE_FIELDS,
         type BurstDetection,
         LEVEL_LABELS,
         loadScoringSettings,
@@ -16,8 +17,10 @@
         type ScoringSettings,
     } from '@/lib/scoring';
     import { FP_APIS, FP_CATEGORIES, type FpApi, type FpCategory } from '@/lib/fp-apis';
+    import type { IdentifierRules } from '@/lib/identifiers';
     import { percent, percentFromInput, positiveFromInput, unitFromInput } from './inputs';
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
+    import BlockingSettings from './BlockingSettings.svelte';
     import ThemeSwitch from './ThemeSwitch.svelte';
 
     // Saves after typing pauses, so every keystroke doesn't re-score all open pages.
@@ -55,6 +58,13 @@
         const value = positiveFromInput(event);
         if (!settings || value === null) return;
         settings.bursts[key] = value;
+        scheduleSave();
+    }
+
+    function setIdentifierRule(key: keyof IdentifierRules, event: Event) {
+        const value = positiveFromInput(event);
+        if (!settings || value === null) return;
+        settings.identifiers[key] = value;
         scheduleSave();
     }
 
@@ -138,6 +148,9 @@
         </div>
     </section>
 
+    <!-- Not scoring settings either. -->
+    <BlockingSettings />
+
     {#if settings}
         <section class="squircle">
             <h2>Likelihood</h2>
@@ -180,6 +193,34 @@
                         <span class="unit">{field.unit}</span>
                     </label>
                     <span class="default" class:changed>default {DEFAULT_SETTINGS.bursts[field.key]} {field.unit}</span>
+                </div>
+            {/each}
+        </section>
+
+        <section class="squircle" id="identifiers">
+            <h2>Stored identifiers</h2>
+            <p class="section-note">
+                What a script stores in cookies and storage is a <strong>possible identifier</strong> when it is kept long enough and holds a part
+                that looks like one: of a length below, with a digit, as words have none. Measurement studies tell identifier cookies apart
+                the same way
+                (<a href="https://senglehardt.com/papers/www15_cookie_surveil.pdf" target="_blank" rel="noopener noreferrer">Englehardt et al.</a>,
+                <a href="https://www.cs.princeton.edu/~arvindn/publications/OpenWPM_1_million_site_tracking_measurement.pdf" target="_blank" rel="noopener noreferrer">Englehardt and Narayanan</a>);
+                whether a value differs between browsers, their last rule, can't be told from one browser. It is a
+                <strong>likely identifier</strong> when the same value is also stored in another place, to restore it from there when one is cleared,
+                or stored right after a burst of calls that scores at least possible fingerprinting on its own (see Bursts of calls).
+            </p>
+            {#each IDENTIFIER_RULE_FIELDS as field (field.key)}
+                {@const changed = settings.identifiers[field.key] !== DEFAULT_SETTINGS.identifiers[field.key]}
+                <div class="row">
+                    <div>
+                        <div class="name">{field.label}</div>
+                        <div class="description">{field.description}</div>
+                    </div>
+                    <label class="field" class:changed>
+                        <input type="number" min="0" step="1" value={settings.identifiers[field.key]} oninput={(e) => setIdentifierRule(field.key, e)} />
+                        <span class="unit">{field.unit}</span>
+                    </label>
+                    <span class="default" class:changed>default {DEFAULT_SETTINGS.identifiers[field.key]} {field.unit}</span>
                 </div>
             {/each}
         </section>

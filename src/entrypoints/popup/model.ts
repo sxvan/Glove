@@ -1,12 +1,14 @@
 // Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
 // key numbers and the strongest evidence.
+import { blockKey } from '@/lib/blocking';
 import { placeKey } from '@/lib/call-stack';
 import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
+import { DEFAULT_IDENTIFIER_RULES, findIdentifier, type IdentifierLevel, type StoredPlace } from '@/lib/identifiers';
 import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
-import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
+import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
 import { duration, listWords, plural } from './format';
 
 /** How likely tracking is; "unknown" while nothing was recorded for the tab yet. */
@@ -328,6 +330,68 @@ export interface ScriptDetail {
     apiDetails: ApiDetail[];
     /** Requests carrying data that the script made right after fingerprinting, the most data first. */
     sent: SentRequest[];
+    /** Cookies and storage items it wrote: likely identifiers first, then possible ones, then the rest, each in the order first written. */
+    stored: StoredDetail[];
+}
+
+/** A cookie or storage item a script wrote, and how likely it is an identifier (see findIdentifier). */
+export interface StoredDetail extends StoredItem {
+    identifier: IdentifierLevel | null;
+    /** Other items on the page holding the same identifier. */
+    copies: StoredPlace[];
+    /** Whether it was stored during or right after one of the script's bursts. */
+    afterReading: boolean;
+    /** On the page's own screen, which of its scripts wrote it, named like their cards. */
+    by?: Pick<ScriptDetail, 'name' | 'path' | 'origin' | 'url'>[];
+}
+
+const IDENTIFIER_ORDER: Record<IdentifierLevel, number> = { likely: 2, possible: 1 };
+
+/** Likely identifiers first, then possible ones, then the rest, each in the order first written. */
+function byIdentifier(a: StoredDetail, b: StoredDetail): number {
+    return (b.identifier ? IDENTIFIER_ORDER[b.identifier] : 0) - (a.identifier ? IDENTIFIER_ORDER[a.identifier] : 0) || a.first - b.first;
+}
+
+/**
+ * What a script stored, as recorded, each judged against all the page's scripts stored and the
+ * script's bursts. Only bursts that are possible fingerprinting on their own count: a few APIs read
+ * together, as analytics and players do, don't make what is stored after them suspicious.
+ */
+function storedDetails(snapshot: TabSnapshot, script: ScriptSnapshot): StoredDetail[] {
+    const page: StoredPlace[] = (snapshot.frames ?? []).flatMap((frame) => frame?.document.scripts.flatMap((other) => other.stored ?? []) ?? []);
+    const possible = cutoffsOf(snapshot).fingerprinting.possible;
+    const bursts = script.fpSpikes
+        .filter((spike) => (spike?.fpMetrics?.score ?? 0) >= possible)
+        .map((spike) => spike?.events.map((event) => event.timeStamp) ?? [])
+        .filter((times) => times.length > 0)
+        .map((times) => ({ start: Math.min(...times), end: Math.max(...times) }));
+    const rules = snapshot.identifiers ?? DEFAULT_IDENTIFIER_RULES;
+    const afterMs = snapshot.rightAfterMs ?? DEFAULT_SETTINGS.bursts.requestWindowMs;
+    return (script.stored ?? [])
+        .map((item): StoredDetail => {
+            const { level, copies, afterReading } = findIdentifier(item, page, bursts, afterMs, rules);
+            return { ...item, identifier: level, copies, afterReading };
+        })
+        .sort(byIdentifier);
+}
+
+/**
+ * What the page's scripts stored, one row per cookie or item with the scripts that wrote it: several
+ * can write the same one. Of their judgments the strongest, as each judges by its own bursts.
+ */
+function pageStored(scripts: ScriptDetail[]): StoredDetail[] {
+    const byItem = new Map<string, StoredDetail & { by: NonNullable<StoredDetail['by']> }>();
+    for (const script of scripts) {
+        for (const item of script.stored) {
+            const key = `${item.kind}|${item.name}`;
+            const known = byItem.get(key);
+            const writer = { name: script.name, path: script.path, origin: script.origin, url: script.url };
+            if (!known) byItem.set(key, { ...item, by: [writer] });
+            else if (byIdentifier(item, known) < 0) byItem.set(key, { ...item, by: [...known.by, writer] });
+            else known.by.push(writer);
+        }
+    }
+    return [...byItem.values()].sort(byIdentifier);
 }
 
 /** A fingerprinting API a script read, with how and when (see apiDetails). */
@@ -380,6 +444,33 @@ export interface SentRequest {
 }
 
 /** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
+/** A blocked script that tried to load on the page (see lib/blocking). */
+export interface BlockedDetail {
+    /** What it is blocked by (see blockKey). */
+    key: string;
+    /** Its URL path, and its host. */
+    name: string;
+    origin: string;
+    url: string;
+    /** How often it tried to load, in all the page's frames. */
+    attempts: number;
+}
+
+/** The blocked scripts that tried to load on the page, the most attempts first. */
+export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
+    const byKey = new Map<string, BlockedDetail>();
+    for (const frame of snapshot.frames ?? []) {
+        for (const attempt of frame?.document.blockedScripts ?? []) {
+            const key = blockKey(attempt.url);
+            if (!key) continue;
+            const known = byKey.get(key);
+            if (known) known.attempts += attempt.attempts;
+            else byKey.set(key, { key, name: urlPath(attempt.url), origin: hostOf(attempt.url), url: attempt.url, attempts: attempt.attempts });
+        }
+    }
+    return [...byKey.values()].sort((a, b) => b.attempts - a.attempts);
+}
+
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
     const cutoffs = cutoffsOf(snapshot);
     const traits = traitsOf(snapshot);
@@ -397,7 +488,10 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                     const { name, path, origin, host, linkable, inline } = describeScript(script.name, frame.document.url);
                     const site = realSite(host, aliases);
                     const score = script.fpMetrics?.score ?? 0;
-                    const correlations = script.fpSpikes.flatMap((spike) => spike?.httpCorrelations ?? []);
+                    // Sent right after reading: only after bursts that are possible fingerprinting on their own, as for what it stored (see storedDetails).
+                    const correlations = script.fpSpikes
+                        .filter((spike) => (spike?.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
+                        .flatMap((spike) => spike?.httpCorrelations ?? []);
                     const apis = apiList(script.apiCounts, script.apiLocations, script.fpMetrics?.distinctFpApis ?? []);
                     // An inline script is shown from its page, which is the script's URL in stack traces.
                     const viewerSource = linkable || inline ? linkableUrl(script.name) : null;
@@ -421,6 +515,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         signals: scriptSignals(script.apiLocations, traits, power, rare),
                         apis,
                         sent: sentRequests(correlations, aliases),
+                        stored: storedDetails(snapshot, script),
                         apiDetails: apiDetails(script, frame.document.startTime, traits, power),
                     };
                 })
@@ -680,6 +775,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         signals,
         apis,
         sent: scripts.flatMap((script) => script.sent).sort((a, b) => b.bytes - a.bytes),
+        stored: pageStored(scripts),
         apiDetails: pageApiDetails(snapshot, scripts),
     };
 }

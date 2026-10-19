@@ -1,6 +1,6 @@
 import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
-import type { CallLocation } from './snapshot';
+import type { CallLocation, StoredItem } from './snapshot';
 
 /** An API's calls by a script: how many, and from where in the code (by "line:column"). */
 export interface ApiCalls {
@@ -22,6 +22,8 @@ export interface ScriptState {
     httpConsolidatedEvents: HttpConsolidatedEvent[];
     fpSpikes: FpSpike[];
     fpMetrics?: FpMetrics | null;
+    /** What it stored in the browser, by kind and name (see storeStorageEvent). */
+    stored: Record<string, StoredItem>;
 }
 
 export interface DocumentState {
@@ -34,6 +36,14 @@ export interface DocumentState {
     scripts: Record<string, ScriptState>;
     spikes: FpSpike[];
     fpMetrics?: FpMetrics | null;
+    /** Blocked scripts that tried to load (see lib/blocking), by what they are blocked by. */
+    blockedScripts: Record<string, BlockedAttempt>;
+}
+
+export interface BlockedAttempt {
+    /** The address it tried to load from, the first time. */
+    url: string;
+    attempts: number;
 }
 
 export interface FrameState {

@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import type { FpMonkeyEvent, HttpMonkeyEvent } from '@/types/events';
+import type { FpMonkeyEvent, HttpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
 import type { RecorderMessage } from '@/types/messages';
 
 // Runs in the isolated world and forwards events dispatched by the main-world recorders
@@ -38,6 +38,15 @@ export default defineContentScript({
             (event) => {
                 const { detail } = event as CustomEvent<FpMonkeyEvent[]>;
                 if (Array.isArray(detail) && detail.length > 0) send({ type: 'fp-batch', payload: detail });
+            },
+            { signal: listening.signal }
+        );
+
+        document.documentElement.addEventListener(
+            'storage-monkey',
+            (event) => {
+                const { detail } = event as CustomEvent<StorageMonkeyEvent[]>;
+                if (Array.isArray(detail) && detail.length > 0) send({ type: 'storage-batch', payload: detail });
             },
             { signal: listening.signal }
         );

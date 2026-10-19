@@ -10,6 +10,7 @@
 // So a signal that isn't present changes nothing, adding a signal never needs the others adjusted,
 // and a score can never exceed 1. Strengths and the likelihood cutoffs can be changed by the user on
 // the options page; the defaults and the "full at" limits are defined here.
+import { DEFAULT_IDENTIFIER_RULES, type IdentifierRules } from './identifiers';
 import { browser } from 'wxt/browser';
 import { FP_APIS, FP_APIS_BY_ID } from './fp-apis';
 
@@ -232,6 +233,8 @@ export interface ScoringSettings {
     fullAt: Record<ApisLevel, ApisFullAt>;
     /** What counts as a burst of calls, and which requests count as sent right after one. */
     bursts: BurstDetection;
+    /** What counts as a possible identifier among the values scripts store (see lib/identifiers). */
+    identifiers: IdentifierRules;
 }
 
 export const DEFAULT_SETTINGS: ScoringSettings = {
@@ -277,6 +280,7 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
     // page responsive; measured collections took 13–362 ms with pauses up to 190 ms.
     bursts: { windowMs: 1000, minDistinctApis: 4, requestWindowMs: 1000 },
+    identifiers: DEFAULT_IDENTIFIER_RULES,
 };
 
 // ---------- limits ----------
@@ -313,9 +317,32 @@ export const BURST_DETECTION_FIELDS: { key: keyof BurstDetection; label: string;
     },
     {
         key: 'requestWindowMs',
-        label: 'Requests right after',
-        description: 'Requests with data a script makes up to this long after a burst count as sent right after reading. Collected data is often sent only after processing it (Kasada: 641 ms).',
+        label: 'Right after',
+        description:
+            'Requests with data a script makes, and values it stores, up to this long after a burst count as right after reading. Collected data is often sent only after processing it (Kasada: 641 ms).',
         unit: 'ms',
+    },
+];
+
+/** The identifier rules with their labels and explanations, in the order the options page lists them. */
+export const IDENTIFIER_RULE_FIELDS: { key: keyof IdentifierRules; label: string; description: string; unit: string }[] = [
+    {
+        key: 'lastingDays',
+        label: 'Cookie kept for',
+        description: 'A cookie kept at least this long identifies the browser across visits; 3 months, as in the studies. Local storage stays until cleared, session storage only until the tab closes.',
+        unit: 'days',
+    },
+    {
+        key: 'minLength',
+        label: 'Shortest part',
+        description: 'Values are split into parts at anything but letters, digits and the characters of base64 and UUIDs; shorter parts are too few to tell browsers apart.',
+        unit: 'characters',
+    },
+    {
+        key: 'maxLength',
+        label: 'Longest part',
+        description: 'Longer parts are data rather than an identifier; the longest common identifier, a SHA-512 hash in hex, has 128. Values are recorded up to 400 characters.',
+        unit: 'characters',
     },
 ];
 
@@ -711,5 +738,6 @@ function withDefaults(storedAsIs: StoredSettings | undefined): ScoringSettings {
             page: { ...DEFAULT_SETTINGS.fullAt.page, ...stored?.fullAt?.page },
         },
         bursts: { ...DEFAULT_SETTINGS.bursts, ...stored?.bursts },
+        identifiers: { ...DEFAULT_SETTINGS.identifiers, ...stored?.identifiers },
     };
 }

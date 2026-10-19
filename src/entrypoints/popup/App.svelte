@@ -7,6 +7,7 @@
     import FingerprintCard from './components/FingerprintCard.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
     import {
+        blockedDetails,
         buildCategories,
         buildSummary,
         cnameDetails,
@@ -141,7 +142,7 @@
                 <ScriptPage script={shownScript} section={openScript.section} />
             {/key}
         {:else if openCategory.id === 'fingerprinting' && page}
-            <FingerprintingDetail {page} {scripts} onDetails={openScriptPage} />
+            <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openScriptPage} />
         {:else if openCategory.id === 'cname'}
             <CnameDetail aliases={cnameDetails(snapshot)} />
         {:else}

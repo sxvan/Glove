@@ -3,9 +3,12 @@
     // its card, in the same words, with the details behind it. Opens at the section of the line
     // whose "Details" was clicked.
     import { onMount, tick } from 'svelte';
+    import { blockKey } from '@/lib/blocking';
     import ApiTable from '../components/ApiTable.svelte';
+    import BlockToggle from '../components/BlockToggle.svelte';
     import FingerprintCard from '../components/FingerprintCard.svelte';
     import SignalLine from '../components/SignalLine.svelte';
+    import StoredList from '../components/StoredList.svelte';
     import type { ScriptDetail } from '../model';
     import { EVERYONE_BITS, statements } from '../statements';
 
@@ -21,6 +24,13 @@
 
 <FingerprintCard {script} headOnly />
 
+<!-- Only a script loaded from an address can be blocked; not the page as a whole, nor inline or generated code. -->
+{#if script.path && blockKey(script.url)}
+    <section class="card">
+        <BlockToggle url={script.url} label="Block this script" detail="On every site, from its next load" />
+    </section>
+{/if}
+
 {#each statements(script) as statement (statement.key)}
     <section class="card section" id={sectionId(statement.key)}>
         <ul class="heading">
@@ -28,6 +38,8 @@
         </ul>
         {#if statement.key === 'read'}
             <ApiTable apis={script.apiDetails} />
+        {:else if statement.key === 'stored'}
+            <StoredList items={script.stored} />
         {:else if statement.key === 'identifying'}
             <p class="explanation">
                 The bits of each API read, added up, those revealing the same value once. Of details that overlap, such as the screen's and the window's sizes, or the

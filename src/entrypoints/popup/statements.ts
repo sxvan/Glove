@@ -4,6 +4,7 @@ import { EVERYONE_BITS } from '@/lib/scoring';
 import { bytes, listWords, plural, roughCount } from './format';
 import { identifyingBits, type ScriptDetail } from './model';
 import type { TextPart } from './text-parts';
+import type { StorageKind } from '@/types/snapshot';
 
 /** A statement about a script, shown as an info line: the card's rating is its only judgment, in color. */
 export interface Statement {
@@ -58,7 +59,50 @@ export function statements(script: ScriptDetail): Statement[] {
     if (sent) list.push(sent);
     const alias = sentThroughAliasStatement(script);
     if (alias) list.push(alias);
+    const stored = storedStatement(script);
+    if (stored) list.push(stored);
     return list;
+}
+
+/** Where values are stored, as named under "Stored …": cookies by count, other storage by place. */
+export const STORAGE_WORDS: Record<StorageKind, string> = {
+    cookie: 'cookie',
+    localStorage: 'local storage',
+    sessionStorage: 'session storage',
+    indexedDB: 'IndexedDB',
+};
+
+/**
+ * What the script wrote to cookies and storage, where it could keep what it computed. With
+ * identifiers (see findIdentifier), the most likely ones: "Stored 2 likely identifiers in the
+ * browser" over "1 cookie and 1 in local storage, besides 1 possible identifier and 2 other
+ * values"; without, all: "Stored 3 values in the browser" over "2 cookies and 1 in local storage".
+ */
+function storedStatement(script: ScriptDetail): Statement | null {
+    if (script.stored.length === 0) return null;
+    const likely = script.stored.filter((item) => item.identifier === 'likely');
+    const possible = script.stored.filter((item) => item.identifier === 'possible');
+    const shown = likely.length > 0 ? likely : possible;
+    if (shown.length === 0) {
+        return { key: 'stored', text: ['Stored ', { value: plural(script.stored.length, 'value') }, ' in the browser'], detail: storagePlaces(script.stored) };
+    }
+    const others = script.stored.length - likely.length - possible.length;
+    const besides = [
+        likely.length > 0 && possible.length > 0 ? plural(possible.length, 'possible identifier') : '',
+        others > 0 ? plural(others, 'other value') : '',
+    ].filter(Boolean);
+    return {
+        key: 'stored',
+        text: ['Stored ', { value: plural(shown.length, `${likely.length > 0 ? 'likely' : 'possible'} identifier`) }, ' in the browser'],
+        detail: `${storagePlaces(shown)}${besides.length > 0 ? `, besides ${listWords(besides)}` : ''}`,
+    };
+}
+
+/** Where items are, by count: "2 cookies and 1 in local storage". */
+function storagePlaces(items: { kind: StorageKind }[]): string {
+    const counts = new Map<StorageKind, number>();
+    for (const item of items) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+    return listWords([...counts.entries()].map(([kind, count]) => (kind === 'cookie' ? plural(count, 'cookie') : `${count} in ${STORAGE_WORDS[kind]}`)));
 }
 
 // Items named in a list under a statement, the rest as "and N more": kinds of detail are short
@@ -90,7 +134,8 @@ function identifyingStatement(script: ScriptDetail): Statement | null {
  * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com", like "About …"
  * under what it read; past SHOWN_SITES, "and N more". A single site is named in the line itself.
  * Aliases the data went through have a line of their own (see sentThroughAliasStatement). Only
- * requests from a burst until shortly after it count (see fp-analysis); the requests themselves
+ * requests from a burst until shortly after it count (see fp-analysis), and only after bursts that
+ * are possible fingerprinting on their own (see fingerprintingDetails); the requests themselves
  * are for a screen of their own.
  */
 function sentStatement(script: ScriptDetail): Statement | null {

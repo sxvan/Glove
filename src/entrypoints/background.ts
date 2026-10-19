@@ -1,14 +1,15 @@
 import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { blockKey, loadBlocked, loadBlockingOptions, setBlocked, syncBlockingRules, watchBlocked, type BlockedScript } from '@/lib/blocking';
 import { createScheduler } from '@/lib/scheduler';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showScoreIcon } from '@/lib/toolbar-icon';
-import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, documentExists } from '@/lib/session-manager';
+import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
-import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage } from '@/types/messages';
+import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
 import type { CallLocation, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
@@ -55,6 +56,72 @@ export default defineBackground(() => {
         settings = changed;
         reanalyzeAll();
     });
+
+    // The scripts the user blocked (see lib/blocking), by what they are blocked by; the browser's
+    // rules follow the list.
+    let blocked = new Set<string>();
+    function applyBlocked(list: BlockedScript[]) {
+        blocked = new Set(list.map((script) => script.key));
+        syncBlockingRules(list).catch((error) => console.warn('Could not update the blocking rules', error));
+    }
+    loadBlocked().then(applyBlocked, (error) => console.warn('Could not load the blocked scripts', error));
+    watchBlocked(applyBlocked);
+
+    browser.runtime.onMessage.addListener((msg: SetBlockedMessage, _sender, sendResponse) => {
+        if (msg?.type !== 'SET_BLOCKED') return;
+        changeBlocked(msg).then(sendResponse, (error) => {
+            console.warn('Could not block or unblock the script', error);
+            sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
+        });
+        // Answered once done.
+        return true;
+    });
+
+    /**
+     * Blocks a script or lets it run again, with the rules in place before the page loads again;
+     * then, as the user chose, loads the tab's page again, after blocking with the site's data
+     * cleared first (see reloadCleared).
+     */
+    async function changeBlocked({ url, blocked: block, tabId }: SetBlockedMessage): Promise<SetBlockedResult> {
+        await setBlocked(url, block);
+        const list = await loadBlocked();
+        blocked = new Set(list.map((script) => script.key));
+        await syncBlockingRules(list);
+        const options = await loadBlockingOptions();
+        if (tabId === null || !(options.reload || (block && options.clearData))) return { reloaded: false, cleared: false };
+        if (block && options.clearData) {
+            await reloadCleared(tabId, url);
+            return { reloaded: true, cleared: true };
+        }
+        await browser.tabs.reload(tabId);
+        return { reloaded: true, cleared: false };
+    }
+
+    /**
+     * Loads the tab's page again with its site's data cleared: the cookies of the whole site, storage,
+     * IndexedDB and caches, of the page's site and of each frame's the blocked script ran in. The old
+     * page is left for an empty one first: while it runs, its scripts (the blocked one too, already
+     * loaded) could store again between clearing and loading.
+     */
+    async function reloadCleared(tabId: number, scriptUrl: string) {
+        const tab = await browser.tabs.get(tabId);
+        const pageUrl = tab.url;
+        if (!pageUrl || !/^https?:/.test(pageUrl)) return;
+        const origins = new Set([new URL(pageUrl).origin]);
+        const key = blockKey(scriptUrl);
+        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
+            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+            if (!document?.currentUrl || !/^https?:/.test(document.currentUrl)) continue;
+            if (Object.keys(document.scripts).some((name) => blockKey(name) === key)) origins.add(new URL(document.currentUrl).origin);
+        }
+        await navigateAndWait(tabId, 'about:blank');
+        await browser.browsingData.remove(
+            // Never empty: the page's own origin is in it.
+            { origins: [...origins] as [string, ...string[]] },
+            { cookies: true, localStorage: true, indexedDB: true, cacheStorage: true, serviceWorkers: true, fileSystems: true }
+        );
+        await browser.tabs.update(tabId, { url: pageUrl });
+    }
 
     /** Resolves once a DNS result for the host is cached; rejects if the lookup failed (it is retried later). */
     function lookUpHost(hostname: string): Promise<void> {
@@ -129,6 +196,15 @@ export default defineBackground(() => {
             return;
         }
 
+        if (msg.type === 'storage-batch') {
+            for (const event of msg.payload) {
+                storeStorageEvent(session, tabId, frameId, sender.documentId, sender.url, event);
+            }
+
+            scheduleAnalysis(document, tabId);
+            return;
+        }
+
         if (msg.type === 'http') {
             storeHttpEvent(session, tabId, frameId, sender.documentId, sender.url, msg.payload);
 
@@ -162,6 +238,23 @@ export default defineBackground(() => {
         ['requestBody']
     );
 
+    // A blocked script that tried to load: the browser refused it (see lib/blocking), so the page's
+    // list of scripts can show it, to unblock it there.
+    browser.webRequest.onErrorOccurred.addListener(
+        (details) => {
+            const { tabId, frameId, documentId } = details;
+            if (tabId === -1 || frameId === -1 || !documentId || details.error !== 'net::ERR_BLOCKED_BY_CLIENT') return;
+            const key = blockKey(details.url);
+            if (!key || !blocked.has(key) || !documentExists(session, tabId, frameId, documentId)) return;
+
+            const { document } = ensureDocument(session, tabId, frameId, documentId, null);
+            const attempt = (document.blockedScripts[key] ??= { url: details.url, attempts: 0 });
+            attempt.attempts++;
+            broadcastTabSnapshot(session, tabId);
+        },
+        { urls: ['<all_urls>'], types: ['script'] }
+    );
+
     browser.webNavigation.onHistoryStateUpdated.addListener((details) => {
         const { tabId, frameId, url, documentId } = details;
 
@@ -189,6 +282,23 @@ export default defineBackground(() => {
         forgetTabIcon(tabId);
     });
 });
+
+/** Loads `url` in the tab and waits until it has loaded, at most a few seconds. */
+function navigateAndWait(tabId: number, url: string): Promise<void> {
+    return new Promise((resolve) => {
+        const done = () => {
+            browser.tabs.onUpdated.removeListener(listener);
+            clearTimeout(timer);
+            resolve();
+        };
+        const listener = (id: number, change: Browser.tabs.OnUpdatedInfo) => {
+            if (id === tabId && change.status === 'complete') done();
+        };
+        const timer = setTimeout(done, 3000);
+        browser.tabs.onUpdated.addListener(listener);
+        browser.tabs.update(tabId, { url }).catch(done);
+    });
+}
 
 /** The size of a request's body in bytes: raw data, or form fields as sent. */
 function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']): number {
@@ -254,6 +364,8 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
         cutoffs: settings.cutoffs,
         apis: settings.apis,
         rarityPower: settings.rarityPower,
+        identifiers: settings.identifiers,
+        rightAfterMs: settings.bursts.requestWindowMs,
     };
 
     return tabSnapshot;
@@ -281,6 +393,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
         fpMetrics: convertToMetricsSnapshot(document.fpMetrics),
         spikes: document.spikes.map((spike) => convertToMetricsSnapshot(spike.fpMetrics)).filter((metrics) => metrics !== null),
         scripts: Object.entries(document.scripts).map(([scriptName, script]) => scriptSnapshotFromScript(script, scriptName)),
+        blockedScripts: Object.values(document.blockedScripts).map((attempt) => ({ ...attempt })),
     };
 }
 
@@ -303,6 +416,9 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         apiCounts,
         apiLocations,
         apiTimes,
+        stored: Object.values(script.stored ?? {})
+            .map((item) => ({ ...item }))
+            .sort((a, b) => a.first - b.first),
     };
 }
 

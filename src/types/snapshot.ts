@@ -1,3 +1,4 @@
+import type { IdentifierRules } from '@/lib/identifiers';
 import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { ScoringSettings, SignalPart } from '@/lib/scoring';
 import type { FpMonkeyEvent } from './events';
@@ -33,6 +34,24 @@ export interface ScriptSnapshot {
     apiLocations: Record<string, CallLocation[]>;
     /** When each API was first and last called (ms since the epoch); missing from an older background. */
     apiTimes?: Record<string, { first: number; last: number }>;
+    /** What it stored in the browser, in the order first stored; missing from an older background. */
+    stored?: StoredItem[];
+}
+
+export type StorageKind = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB';
+
+/** A cookie or storage item a script wrote, with its latest value. */
+export interface StoredItem {
+    kind: StorageKind;
+    name: string;
+    /** The latest value written, cut to a length; null for IndexedDB records. */
+    value: string | null;
+    /** When a cookie expires (ms since the epoch), as last written; null until the browser closes, or for other storage. */
+    expires: number | null;
+    writes: number;
+    /** When it was first and last written (ms since the epoch). */
+    first: number;
+    last: number;
 }
 
 /** A position in a script's source (1-based, as in stack traces) and how often an API was called there. */
@@ -55,6 +74,8 @@ export interface DocumentSnapshot {
     /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
     spikes: MetricsSnapshot[];
     scripts: ScriptSnapshot[];
+    /** Blocked scripts that tried to load (see lib/blocking); missing from an older background. */
+    blockedScripts?: { url: string; attempts: number }[];
 }
 
 export interface FrameSnapshot {
@@ -72,4 +93,7 @@ export interface TabSnapshot {
     apis?: ScoringSettings['apis'];
     /** The exponent rarity counts with (see ScoringSettings.rarityPower); missing from an older background. */
     rarityPower?: number;
+    /** What counts as a possible identifier among stored values, and how long after a burst counts as right after it; missing from an older background. */
+    identifiers?: IdentifierRules;
+    rightAfterMs?: number;
 }
