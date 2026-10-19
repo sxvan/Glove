@@ -1,6 +1,6 @@
 {
   "name": "web-tracking-extension",
-  "description": "Detects browser fingerprinting, CNAME cloaking and DNS-based tracking on visited websites.",
+  "description": "Detects browser fingerprinting on visited websites, per script.",
   "private": true,
   "version": "1.0.0",
   "license": "GPL-3.0-only",

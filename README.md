@@ -1,10 +1,10 @@
 # web-tracking-extension
 
-A Chrome extension that detects web tracking on the pages you visit:
-
-- **Fingerprinting**: records calls to fingerprinting-related browser APIs (canvas, WebGL, audio, navigator, screen, …), attributes them to the calling script, and scores bursts of activity.
-- **CNAME cloaking**: flags first-party-looking requests whose DNS CNAME chain ends at a different domain.
-- **DNS tracking**: scores high-entropy subdomains that look like encoded identifiers.
+A Chrome extension that detects browser fingerprinting on the pages you visit: it records calls to
+fingerprinting-related browser APIs (canvas, WebGL, audio, navigator, screen, …), attributes them to
+the calling script, and scores each script by how rare and identifying what it reads is. A script
+also scores more when it is served or sends its data through a CNAME alias of the site (CNAME
+cloaking), and the values it stores in the browser that look like identifiers are shown.
 
 Built with [WXT](https://wxt.dev), TypeScript and [Svelte](https://svelte.dev).
 

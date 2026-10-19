@@ -1,7 +1,7 @@
 import type { DnsResult, HttpConsolidatedEvent, HttpRequest } from '@/types/analysis';
 import type { HttpMonkeyEvent } from '@/types/events';
 import type { DocumentState } from '@/types/session';
-import { getEtld1, getHostname, isCrossOrigin } from './http-utils';
+import { getEtld1, getHostname } from './http-utils';
 
 function isCnameCloaked(httpRequest: HttpRequest): boolean {
     return !!(httpRequest.isCrossHost && httpRequest.looksFirstParty && httpRequest.endsThirdParty && httpRequest.cNameDepth! > 0);
@@ -31,7 +31,6 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
         enrichedHttpRequest.looksFirstParty = pageHostEtld1 === requestHostEtld1;
         enrichedHttpRequest.endsThirdParty = pageHostEtld1 !== dnsEntry.finalEtld1;
 
-        enrichedHttpRequest.isCrossOrigin = isCrossOrigin(enrichedHttpRequest.documentUrl, enrichedHttpRequest.url);
         enrichedHttpRequest.cNameDepth = dnsEntry.cNameDepth;
         enrichedHttpRequest.cRecords = dnsEntry.cRecords;
         enrichedHttpRequest.isCrossHost = pageHost !== enrichedHttpRequest.hostname;

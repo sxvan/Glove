@@ -132,14 +132,6 @@ export const SIGNALS = {
             strength: 0.25,
         },
     },
-    hostname: {
-        randomness: { label: 'Random-looking', description: 'How random the longest part of the hostname looks, counting only long parts.', strength: 0.5 },
-        digits: { label: 'Many digits', description: 'A high share of digits in it.', strength: 0.2 },
-        fewVowels: { label: 'Few vowels', description: 'A low share of vowels, unlike words.', strength: 0.15 },
-        encodedId: { label: 'Looks like an encoded ID', description: 'It looks like hex, base32, base64 or a UUID.', strength: 0.2 },
-        length: { label: 'Length', description: 'How long it is beyond 25 characters.', strength: 0.15 },
-        hyphens: { label: 'Hyphens', description: 'A high share of hyphens.', strength: 0.05 },
-    },
 } satisfies Record<string, Record<string, SignalDefinition>>;
 
 export type ScoreLevel = keyof typeof SIGNALS;
@@ -167,7 +159,6 @@ export const LEVEL_LABELS: Record<ScoreLevel, string> = {
     script: 'Script',
     scriptBeyondBurst: 'Script outside its burst',
     burst: 'Burst of calls',
-    hostname: 'ID-like hostname',
 };
 
 /** Where a score counts as possible or likely. */
@@ -205,7 +196,7 @@ export interface ApiTraits {
 
 export interface ScoringSettings {
     strengths: { [L in ScoreLevel]: SignalValues<L> };
-    cutoffs: { fingerprinting: Cutoffs; hostname: Cutoffs };
+    cutoffs: { fingerprinting: Cutoffs };
     /** Bits and rarity per fingerprinting API, by API id (see FpApi and apisSums). */
     apis: Record<string, ApiTraits>;
     /**
@@ -239,7 +230,6 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
         // to 77 (Google's sign-in and ad-traffic checks, Amazon's device script), YouTube's player 31
         // to 34, analytics up to about 20 (Apple's, BBC's, Microsoft Clarity).
         fingerprinting: { possible: 0.3, likely: 0.65 },
-        hostname: { possible: 0.3, likely: 0.6 },
     },
     apis: Object.fromEntries(FP_APIS.map((api) => [api.id, { bits: api.bits, adds: api.overlap?.adds ?? api.bits, rarity: api.rarity }])),
     rarityPower: 4,
@@ -328,7 +318,7 @@ export const IDENTIFIER_RULE_FIELDS: { key: keyof IdentifierRules; label: string
 // ---------- combining ----------
 
 /** Combines a level's signal values into a score from 0 to 1, using the settings' strengths. */
-export function combine<L extends ScoreLevel>(level: L, values: SignalValues<L>, settings: ScoringSettings): number {
+function combine<L extends ScoreLevel>(level: L, values: SignalValues<L>, settings: ScoringSettings): number {
     const strengths = settings.strengths[level];
     let remaining = 1;
     for (const key of Object.keys(values) as SignalKey<L>[]) {
@@ -704,7 +694,6 @@ function withDefaults(storedAsIs: StoredSettings | undefined): ScoringSettings {
         strengths,
         cutoffs: {
             fingerprinting: { ...DEFAULT_SETTINGS.cutoffs.fingerprinting, ...stored?.cutoffs?.fingerprinting },
-            hostname: { ...DEFAULT_SETTINGS.cutoffs.hostname, ...stored?.cutoffs?.hostname },
         },
         apis: Object.fromEntries(
             Object.entries(DEFAULT_SETTINGS.apis).map(([id, traits]) => [id, { ...traits, ...stored?.apis?.[id] }])

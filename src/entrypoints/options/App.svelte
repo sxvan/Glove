@@ -136,7 +136,6 @@
         { level: 'script', note: 'The fingerprinting score of a script: its strongest burst, and what it read outside it.' },
         { level: 'scriptBeyondBurst', note: 'What a script read outside its strongest burst, on top of what the burst read.' },
         { level: 'burst', note: 'A burst of calls: one collection of details, read in quick succession.' },
-        { level: 'hostname', note: 'How much a hostname looks like it carries an ID.' },
     ];
     const APIS_LEVELS: ApisLevel[] = ['page', 'script', 'pageBurst', 'burst'];
 
@@ -268,7 +267,7 @@
                 <section class="squircle">
                     <SectionHead title="Likelihood" changed={differs(settings.cutoffs, DEFAULT_SETTINGS.cutoffs)} onreset={() => resetPart('cutoffs')} />
                     <p class="section-note">Where a score counts as possible or likely tracking.</p>
-                    {#each [['fingerprinting', 'Fingerprinting (pages and scripts)'], ['hostname', 'ID-like hostnames']] as const as [kind, label] (kind)}
+                    {#each [['fingerprinting', 'Fingerprinting (pages and scripts)']] as const as [kind, label] (kind)}
                         <div class="row cutoffs">
                             <div class="name">{label}</div>
                             <label class="field">

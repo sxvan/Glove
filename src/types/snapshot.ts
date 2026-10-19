@@ -88,7 +88,6 @@ export interface FrameSnapshot {
 
 export interface TabSnapshot {
     cNameRequests: HttpRequest[];
-    dnsTrackingRequests: HttpRequest[];
     frames: (FrameSnapshot | null)[];
     /** Where scores count as possible or likely, from the user's scoring settings. */
     cutoffs: ScoringSettings['cutoffs'];

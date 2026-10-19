@@ -16,8 +16,7 @@
     let status = $state<Status>('loading');
     let snapshot = $state<TabSnapshot | undefined>();
 
-    // The main screen is fingerprinting: the page's card, then its scripts' (see FingerprintingDetail).
-    // CNAME cloaking and DNS tracking have no screens for now; their detection stays (see background).
+    // The page's card, then its scripts' (see FingerprintingDetail).
     const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
     const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 

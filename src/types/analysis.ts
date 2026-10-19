@@ -2,7 +2,7 @@ import type { Browser } from 'wxt/browser';
 import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
 import type { SignalPart } from '@/lib/scoring';
 
-/** One entry of the `Answer` array returned by DNS-over-HTTPS JSON APIs. */
+/** One answer record of a DNS response (see dns-lookup). */
 export interface DnsAnswer {
     name: string;
     type: number;
@@ -19,7 +19,6 @@ export interface DnsResult {
     hostname: string;
     cRecords: CnameRecord[];
     cNameDepth: number;
-    eTld1: string | null;
     finalEtld1: string | null;
 }
 
@@ -38,11 +37,9 @@ export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
     looksFirstParty?: boolean;
     endsThirdParty?: boolean;
     isCnameCloaked?: boolean;
-    isCrossOrigin?: boolean;
     isCrossHost?: boolean;
     cRecords?: CnameRecord[];
     cNameDepth?: number;
-    subdomainScore?: number;
 }
 
 export interface FpMetrics {

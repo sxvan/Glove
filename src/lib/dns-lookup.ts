@@ -19,15 +19,6 @@ export async function dnsLookup(url: string | null): Promise<DnsResult> {
         throw new Error(`Cannot resolve DNS for invalid URL: ${url}`);
     }
 
-    if (hostname.endsWith('.test')) {
-        const testDnsData: DnsAnswer[] = [
-            { name: 'tracker.site.test.', type: 5, TTL: 3600, data: 'tracker.test.' },
-            { name: 'tracker.test.', type: 1, TTL: 3600, data: '127.0.0.1' },
-        ];
-
-        return enrichDnsAnswer(testDnsData, hostname);
-    }
-
     // Asking for its address: the resolver answers with the CNAME chain leading to it.
     const resp = await fetch(`${RESOLVER}?dns=${base64Url(queryMessage(hostname, TYPE_A))}`, {
         method: 'GET',
@@ -135,7 +126,6 @@ function enrichDnsAnswer(dnsAnswer: DnsAnswer[], hostname: string): DnsResult {
         hostname,
         cRecords,
         cNameDepth: cRecords.length,
-        eTld1: getEtld1(hostname),
         finalEtld1: getEtld1(finalDomain),
     };
 }

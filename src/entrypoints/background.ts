@@ -20,7 +20,7 @@ import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
-import { extractSubdomain, getEtld1, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
+import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists } from '@/lib/session-manager';
@@ -543,7 +543,6 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
 
     const tabSnapshot: TabSnapshot = {
         cNameRequests: collectCnameCloakedRequestsForTab(session, tabId),
-        dnsTrackingRequests: collectDnsTrackingRequestsForTab(session, tabId),
         frames: Object.entries(tabState.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
         cutoffs: settings.cutoffs,
         apis: settings.apis,
@@ -631,33 +630,6 @@ function collectCnameCloakedRequestsForTab(session: Session, tabId: number): Htt
             }
         }
     }
-
-    return results;
-}
-
-function collectDnsTrackingRequestsForTab(session: Session, tabId: number): HttpRequest[] {
-    const tab = session.tabs[tabId];
-    if (!tab) return [];
-
-    const results: HttpRequest[] = [];
-
-    for (const frame of Object.values(tab.frames)) {
-        const docId = frame.currentDocumentId;
-        if (!docId) continue;
-
-        const doc = frame.documents[docId];
-        if (!doc || !doc.httpRequests) continue;
-
-        for (const req of doc.httpRequests) {
-            const subdomainScore = scoreSubdomainEntropy(extractSubdomain(req.hostname), settings);
-            req.subdomainScore = subdomainScore;
-            if (req.subdomainScore >= settings.cutoffs.hostname.possible) {
-                results.push(req);
-            }
-        }
-    }
-
-    results.sort((a, b) => (b.subdomainScore || 0) - (a.subdomainScore || 0));
 
     return results;
 }
