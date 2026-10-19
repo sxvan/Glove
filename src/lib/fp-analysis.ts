@@ -4,7 +4,7 @@ import type { DocumentState, ScriptState } from '@/types/session';
 import { placeKey } from './call-stack';
 import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
-import { LIMITS, apisSums, apisSumsBeyond, combine, combineParts, saturate, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
+import { apisSums, apisSumsBeyond, combineParts, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
 
 /**
@@ -37,10 +37,6 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
         documentFpEvents.push(...script.fpEvents);
 
         script.httpConsolidatedEvents = consolidateHttpEvents(script.httpEvents, document.httpRequests, requestIndex);
-
-        for (const consolidatedHttp of script.httpConsolidatedEvents) {
-            consolidatedHttp.suspicionScore = httpFpScore(consolidatedHttp, settings);
-        }
 
         script.fpSpikes = detectSpikes(script.fpEvents, settings.bursts, burstWeight('burst', settings));
 
@@ -128,8 +124,6 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
  * add up over scripts like the APIs read do.
  */
 function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: ScoringSettings, apisLevel: ApisLevel = 'burst', known?: Set<string>): ScoredParts {
-    const maxRequestScore = Math.max(...(spike.httpCorrelations ?? []).map((corr) => corr.suspicionScore || 0), 0);
-
     const apis = known ? apiSignalsBeyond(known, metrics.distinctFpApis, apisLevel, settings) : apiSignals(metrics.distinctFpApis, apisLevel, settings);
     const events = known ? spike.events.filter((event) => !known.has(event.id)) : spike.events;
     const onePlace = onePlaceSum(events, 'burst', settings);
@@ -137,7 +131,7 @@ function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: Scori
 
     return combineParts(
         'burst',
-        { ...apis.values, onePlace: onePlace.value, generatedCode: generated.value, dataSent: maxRequestScore },
+        { ...apis.values, onePlace: onePlace.value, generatedCode: generated.value },
         settings,
         { ...apis.sums, onePlace, generatedCode: generated }
     );
@@ -319,33 +313,3 @@ function getCorrelatedHttpCandidates(fpSpike: FpSpike, consolidatedHttps: HttpCo
     return consolidatedHttps.filter((c) => c.httpEvent.timeStamp >= start && c.httpEvent.timeStamp <= end && carriesData(c));
 }
 
-// A recorded request's score, worked out again only when what it depends on changes: the request
-// it's matched to, the settings, or the request's DNS fields arriving.
-const httpScores = new WeakMap<object, { request: object; settings: ScoringSettings; enriched: boolean; score: number }>();
-
-function httpFpScore(consolidatedHttp: HttpConsolidatedEvent, settings: ScoringSettings): number {
-    const { httpEvent, httpRequest } = consolidatedHttp;
-    const enriched = httpRequest.cNameDepth !== undefined;
-    const known = httpScores.get(httpEvent);
-    if (known && known.request === httpRequest && known.settings === settings && known.enriched === enriched) return known.score;
-    const score = computeHttpFpScore(consolidatedHttp, settings);
-    httpScores.set(httpEvent, { request: httpRequest, settings, enriched, score });
-    return score;
-}
-
-function computeHttpFpScore(consolidatedHttp: HttpConsolidatedEvent, settings: ScoringSettings): number {
-    const { httpRequest, httpEvent } = consolidatedHttp;
-
-    return combine(
-        'request',
-        {
-            cnameCloaked: httpRequest.isCnameCloaked ? 1 : 0,
-            thirdParty: httpRequest.endsThirdParty ? 1 : 0,
-            crossOrigin: httpRequest.isCrossOrigin ? 1 : 0,
-            sendsData: ['POST', 'PUT', 'PATCH'].includes(httpEvent.method ?? '') ? 1 : 0,
-            parameters: saturate(new URL(httpRequest.url).searchParams.size, LIMITS.request.parameters),
-            bodySize: saturate(httpRequest.bodyBytes ?? 0, LIMITS.request.bodyBytes),
-        },
-        settings
-    );
-}

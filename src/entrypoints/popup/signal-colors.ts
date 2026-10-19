@@ -8,7 +8,6 @@ const SIGNAL_COLORS: Record<string, string> = {
     rareIdentifying: '#6366f1',
     generatedCode: '#14b8a6',
     onePlace: '#ec4899',
-    dataSent: '#d4a106',
     cnameCloaked: '#0ea5e9',
     sentThroughAlias: '#0284c7',
     // Signals standing for a whole score: calmer slate tones, as they sum up the signals below them.

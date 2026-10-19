@@ -94,7 +94,6 @@
         { level: 'script', note: 'The fingerprinting score of a script: its strongest burst, and what it read outside it.' },
         { level: 'scriptBeyondBurst', note: 'What a script read outside its strongest burst, on top of what the burst read.' },
         { level: 'burst', note: 'A burst of calls: one collection of details, read in quick succession.' },
-        { level: 'request', note: 'A request a script makes right after a burst of calls.' },
         { level: 'hostname', note: 'How much a hostname looks like it carries an ID.' },
     ];
     const APIS_LEVELS: ApisLevel[] = ['page', 'script', 'pageBurst', 'burst'];

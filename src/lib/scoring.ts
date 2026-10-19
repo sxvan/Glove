@@ -42,11 +42,6 @@ export const SIGNALS = {
                 'How many rare identifying fingerprinting APIs it reads from a single place in the code, counted like "Rare identifying fingerprinting APIs": ordinary code reads each where it needs it, fingerprinting collects through one loop or virtual machine instruction.',
             strength: 0.25,
         },
-        dataSent: {
-            label: 'Data sent right after',
-            description: 'How suspicious the most suspicious request is that the script made right after the burst.',
-            strength: 0,
-        },
     },
     script: {
         strongestBurst: { label: 'Strongest burst', description: 'The score of its most suspicious burst of calls.', strength: 1 },
@@ -137,14 +132,6 @@ export const SIGNALS = {
             strength: 0.25,
         },
     },
-    request: {
-        cnameCloaked: { label: 'CNAME-cloaked host', description: 'The request goes to a site address that is an alias for another company.', strength: 0.4 },
-        thirdParty: { label: 'Third party', description: 'The request ends up at another site.', strength: 0.3 },
-        crossOrigin: { label: 'Other origin', description: 'The request goes to another origin than the page.', strength: 0.15 },
-        sendsData: { label: 'Sends data', description: 'The request is a POST, PUT or PATCH.', strength: 0.3 },
-        parameters: { label: 'URL parameters', description: 'How many parameters its address carries.', strength: 0.2 },
-        bodySize: { label: 'Body size', description: 'How much data the request sends in its body, up to 4 KB.', strength: 0.3 },
-    },
     hostname: {
         randomness: { label: 'Random-looking', description: 'How random the longest part of the hostname looks, counting only long parts.', strength: 0.5 },
         digits: { label: 'Many digits', description: 'A high share of digits in it.', strength: 0.2 },
@@ -170,7 +157,7 @@ export const SIGNAL_SOURCES: { [L in ScoreLevel]?: Partial<Record<SignalKey<L>, 
     otherScriptsBeyondBurst: { rareIdentifying: 'apis', onePlace: 'apis', generatedCode: 'apis' },
     script: { strongestBurst: 'burst', beyondBurst: 'scriptBeyondBurst' },
     scriptBeyondBurst: { rareIdentifying: 'apis', onePlace: 'apis', generatedCode: 'apis' },
-    burst: { rareIdentifying: 'apis', generatedCode: 'apis', onePlace: 'apis', dataSent: 'request' },
+    burst: { rareIdentifying: 'apis', generatedCode: 'apis', onePlace: 'apis' },
 };
 
 export const LEVEL_LABELS: Record<ScoreLevel, string> = {
@@ -180,7 +167,6 @@ export const LEVEL_LABELS: Record<ScoreLevel, string> = {
     script: 'Script',
     scriptBeyondBurst: 'Script outside its burst',
     burst: 'Burst of calls',
-    request: 'Request after a burst',
     hostname: 'ID-like hostname',
 };
 
@@ -282,13 +268,6 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     bursts: { windowMs: 1000, minDistinctApis: 4, requestWindowMs: 1000 },
     identifiers: DEFAULT_IDENTIFIER_RULES,
 };
-
-// ---------- limits ----------
-// Where the other signals' values reach 1 ("full at"). Not user settings: they say what "a lot" means.
-
-export const LIMITS = {
-    request: { parameters: 5, bodyBytes: 4096 },
-} as const;
 
 /** What counts as a burst of calls: one collection of details (see spike-detection). */
 export interface BurstDetection {

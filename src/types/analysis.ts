@@ -62,7 +62,6 @@ export interface HttpConsolidatedEvent {
     httpEvent: HttpMonkeyEvent;
     httpRequest: HttpRequest;
     timeDeltaMs: number;
-    suspicionScore?: number;
 }
 
 export interface FpSpike {
