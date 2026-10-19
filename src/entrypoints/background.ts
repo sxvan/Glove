@@ -1,6 +1,18 @@
 import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import { blockKey, loadBlocked, loadBlockingOptions, setBlocked, syncBlockingRules, watchBlocked, type BlockedScript } from '@/lib/blocking';
+import {
+    blockKey,
+    DEFAULT_BLOCKING_OPTIONS,
+    loadBlocked,
+    loadBlockingOptions,
+    loadExempt,
+    setBlocked,
+    syncBlockingRules,
+    watchBlocked,
+    watchBlockingOptions,
+    watchExempt,
+    type BlockedScript,
+} from '@/lib/blocking';
 import { createScheduler } from '@/lib/scheduler';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
@@ -31,6 +43,7 @@ export default defineBackground(() => {
         fpScheduler.notify(document.documentId, () => {
             analyzeDocumentFp(document, session.dnsResults, settings);
             broadcastTabSnapshot(session, tabId);
+            blockAutomatically(tabId);
         });
     }
 
@@ -67,9 +80,58 @@ export default defineBackground(() => {
     loadBlocked().then(applyBlocked, (error) => console.warn('Could not load the blocked scripts', error));
     watchBlocked(applyBlocked);
 
+    // What to do after blocking, and the scripts never to block automatically (see lib/blocking).
+    // A change seen while loading is newer than what the load read, so the load doesn't overwrite it.
+    let blockingOptions = DEFAULT_BLOCKING_OPTIONS;
+    let exempt = new Set<string>();
+    let optionsChanged = false;
+    let exemptChanged = false;
+    loadBlockingOptions().then((loaded) => {
+        if (!optionsChanged) blockingOptions = loaded;
+    });
+    watchBlockingOptions((changed) => {
+        optionsChanged = true;
+        blockingOptions = changed;
+    });
+    loadExempt().then((keys) => {
+        if (!exemptChanged) exempt = new Set(keys);
+    });
+    watchExempt((keys) => {
+        exemptChanged = true;
+        exempt = new Set(keys);
+    });
+
+    // Scripts being blocked automatically: analyses meanwhile don't block them again.
+    const autoBlocking = new Set<string>();
+
+    /**
+     * If the user chose so, blocks every script of the tab that reached the score set, as the switch
+     * would, all of them at once: one reload, one clearing. Not those that can't be blocked by address,
+     * are blocked already, or that the user let run again.
+     */
+    function blockAutomatically(tabId: number) {
+        if (!blockingOptions.autoBlock) return;
+        const found = new Map<string, number>();
+        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
+            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+            for (const [name, script] of Object.entries(document?.scripts ?? {})) {
+                const score = script.fpMetrics?.score ?? 0;
+                const key = blockKey(name);
+                if (score < blockingOptions.autoBlockFrom || !key || blocked.has(key) || exempt.has(key) || autoBlocking.has(key)) continue;
+                found.set(name, score);
+            }
+        }
+        if (found.size === 0) return;
+        const keys = [...found.keys()].map((name) => blockKey(name)!);
+        for (const key of keys) autoBlocking.add(key);
+        changeBlocked([...found.keys()], true, tabId, found)
+            .catch((error) => console.warn('Could not block scripts automatically', error))
+            .finally(() => keys.forEach((key) => autoBlocking.delete(key)));
+    }
+
     browser.runtime.onMessage.addListener((msg: SetBlockedMessage, _sender, sendResponse) => {
         if (msg?.type !== 'SET_BLOCKED') return;
-        changeBlocked(msg).then(sendResponse, (error) => {
+        changeBlocked([msg.url], msg.blocked, msg.tabId).then(sendResponse, (error) => {
             console.warn('Could not block or unblock the script', error);
             sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
         });
@@ -78,19 +140,19 @@ export default defineBackground(() => {
     });
 
     /**
-     * Blocks a script or lets it run again, with the rules in place before the page loads again;
+     * Blocks scripts or lets them run again, with the rules in place before the page loads again;
      * then, as the user chose, loads the tab's page again, after blocking with the site's data
-     * cleared first (see reloadCleared).
+     * cleared first (see reloadCleared). `auto`: the scores of scripts blocked automatically, by URL.
      */
-    async function changeBlocked({ url, blocked: block, tabId }: SetBlockedMessage): Promise<SetBlockedResult> {
-        await setBlocked(url, block);
+    async function changeBlocked(urls: string[], block: boolean, tabId: number | null, auto?: Map<string, number>): Promise<SetBlockedResult> {
+        await setBlocked(urls, block, auto);
         const list = await loadBlocked();
         blocked = new Set(list.map((script) => script.key));
         await syncBlockingRules(list);
         const options = await loadBlockingOptions();
         if (tabId === null || !(options.reload || (block && options.clearData))) return { reloaded: false, cleared: false };
         if (block && options.clearData) {
-            await reloadCleared(tabId, url);
+            await reloadCleared(tabId, urls);
             return { reloaded: true, cleared: true };
         }
         await browser.tabs.reload(tabId);
@@ -99,20 +161,20 @@ export default defineBackground(() => {
 
     /**
      * Loads the tab's page again with its site's data cleared: the cookies of the whole site, storage,
-     * IndexedDB and caches, of the page's site and of each frame's the blocked script ran in. The old
+     * IndexedDB and caches, of the page's site and of each frame's a blocked script ran in. The old
      * page is left for an empty one first: while it runs, its scripts (the blocked one too, already
      * loaded) could store again between clearing and loading.
      */
-    async function reloadCleared(tabId: number, scriptUrl: string) {
+    async function reloadCleared(tabId: number, scriptUrls: string[]) {
         const tab = await browser.tabs.get(tabId);
         const pageUrl = tab.url;
         if (!pageUrl || !/^https?:/.test(pageUrl)) return;
         const origins = new Set([new URL(pageUrl).origin]);
-        const key = blockKey(scriptUrl);
+        const keys = new Set(scriptUrls.map(blockKey));
         for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
             const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
             if (!document?.currentUrl || !/^https?:/.test(document.currentUrl)) continue;
-            if (Object.keys(document.scripts).some((name) => blockKey(name) === key)) origins.add(new URL(document.currentUrl).origin);
+            if (Object.keys(document.scripts).some((name) => keys.has(blockKey(name)))) origins.add(new URL(document.currentUrl).origin);
         }
         await navigateAndWait(tabId, 'about:blank');
         await browser.browsingData.remove(

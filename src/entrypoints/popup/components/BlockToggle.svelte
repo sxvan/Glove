@@ -12,7 +12,10 @@
 
     const key = $derived(blockKey(url));
     let list = $state<BlockedScript[]>([]);
-    const blocked = $derived(list.some((script) => script.key === key));
+    const entry = $derived(list.find((script) => script.key === key));
+    const blocked = $derived(entry !== undefined);
+    // Blocked by the extension when it reached the score set (see BlockingOptions.autoBlock).
+    const autoText = $derived(entry?.auto ? `Blocked automatically at score ${Math.round(entry.auto.score * 100)}` : '');
     // What was done after it was switched while the popup is open (see changeBlocked in background);
     // null until then.
     let done = $state<SetBlockedResult | null>(null);
@@ -42,8 +45,8 @@
         <span class="label">{label}</span>
         {#if done}
             <span class="detail">{doneText(done)}</span>
-        {:else if detail}
-            <span class="detail">{detail}</span>
+        {:else if detail || autoText}
+            <span class="detail">{[autoText, detail].filter(Boolean).join(' · ')}</span>
         {/if}
     </span>
     <button type="button" class="switch" role="switch" aria-checked={blocked} aria-label={label} onclick={toggle}></button>

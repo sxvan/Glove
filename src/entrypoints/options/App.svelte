@@ -149,7 +149,10 @@
     </section>
 
     <!-- Not scoring settings either. -->
-    <BlockingSettings />
+    <section class="squircle">
+        <h2>Blocking</h2>
+        <BlockingSettings />
+    </section>
 
     {#if settings}
         <section class="squircle">
