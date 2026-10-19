@@ -72,7 +72,7 @@
             <!-- Like the overview's other cards: the card leads on to a screen. -->
             <span class="opens-chevron" aria-hidden="true"></span>
         {:else}
-        <!-- Opens what the score was combined from (the chevron after the likelihood says it can). -->
+        <!-- Also opens what the score was combined from, as the row below says it does. -->
         <button
             type="button"
             class="rating"
@@ -82,17 +82,21 @@
             onclick={() => (breakdown = !breakdown)}
         >
             <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
-            <span class="likelihood">
-                <LikelihoodLabel likelihood={script.likelihood} />
-                <!-- In a box as wide as the info lines' chevron buttons, so the chevrons line up down the card. -->
-                {#if script.tree.length > 0}<span class="chevron-box" aria-hidden="true"><span class="chevron" class:open={breakdown}></span></span>{/if}
-            </span>
+            <LikelihoodLabel likelihood={script.likelihood} />
         </button>
         {/if}
     </div>
 
+    <!-- What the score was combined from: a row that says so, as the ring alone wasn't seen to open it. -->
+    {#if !onOpen && script.tree.length > 0}
+        <button type="button" class="breakdown squircle" aria-expanded={breakdown} onclick={() => (breakdown = !breakdown)}>
+            <span>How the score came about</span>
+            <span class="chevron-box" aria-hidden="true"><span class="chevron" class:open={breakdown}></span></span>
+        </button>
+    {/if}
     {#if breakdown}
-        <ScoreTree nodes={script.tree} />
+        <!-- Its strongest part open at first, showing that the parts open. -->
+        <ScoreTree nodes={script.tree} openStrongest />
     {/if}
 
     {#if !headOnly}
@@ -161,9 +165,33 @@
         cursor: default;
     }
 
-    .likelihood {
-        display: inline-flex;
+    /* A row in the fill color, like the API table's "everyday reads": its text, then its chevron, with
+       room inside on both sides. */
+    .breakdown {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 20px;
         align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 8px 8px 12px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--fill);
+        color: color-mix(in srgb, var(--text) 70%, var(--muted));
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .breakdown:hover {
+        color: var(--text);
+    }
+
+    /* Open, a little more room before the tree, which starts under it. */
+    .breakdown[aria-expanded='true'] {
+        margin-bottom: 8px;
     }
 
     /* As wide as the info lines' chevron buttons (see SignalLine), the chevron in its middle. */
@@ -174,8 +202,8 @@
         height: 20px;
     }
 
-    /* Points down while the breakdown is closed, up while it is open; muted, so the likelihood
-       keeps its color to itself. The size of the card's other chevrons: they differ in direction. */
+    /* Points down while the breakdown is closed, up while it is open; muted, as the row's text is.
+       The size of the card's other chevrons: they differ in direction. */
     .chevron {
         width: 6px;
         height: 6px;
@@ -190,7 +218,7 @@
         transform: rotate(-135deg);
     }
 
-    .rating:hover .chevron {
+    .breakdown:hover .chevron {
         border-color: var(--text);
     }
 

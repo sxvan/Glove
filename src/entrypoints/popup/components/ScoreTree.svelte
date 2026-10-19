@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { untrack } from 'svelte';
     import type { ScoreNode } from '../model';
     import { nodeColor, shareSegments } from '../signal-colors';
     import MiddleTruncate from './MiddleTruncate.svelte';
@@ -11,10 +12,19 @@
     // burst's, and a signal made from the APIs read into those APIs. An API opens into the factors
     // its value is the product of, its bits and its rarity weight, which have no share of their own.
     // Each row hangs off a guide on the left (see .tree), from the row it is under or, at the top,
-    // from the score the tree is of.
-    let { nodes }: { nodes: ScoreNode[] } = $props();
+    // from the score the tree is of. With `openStrongest`, the row adding the most that opens is
+    // open at first, one level, so the tree shows that its rows open.
+    let { nodes, openStrongest = false }: { nodes: ScoreNode[]; openStrongest?: boolean } = $props();
 
-    let open = $state<Record<string, boolean>>({});
+    // Only at first: as the score updates, rows stay as the user left them.
+    let open = $state<Record<string, boolean>>(
+        untrack(() => {
+            const strongest = openStrongest
+                ? [...nodes].filter((node) => node.children.length > 0).sort((a, b) => b.shownShare - a.shownShare)[0]
+                : undefined;
+            return strongest && strongest.shownShare > 0 ? { [strongest.key]: true } : {};
+        })
+    );
 
     // A list of APIs can be long (40 and more), so only those adding the most show at first.
     const SHOWN_APIS = 5;
@@ -82,12 +92,12 @@
 </ul>
 
 <style>
-    /* Indented by 14px at every level, the guide 6px in: under the parent row's chevron, or at
-       the top under the score the tree is of. */
+    /* Indented at every level, the guide under the parent row's chevron (12px in: the row's 6px of
+       room, then the middle of its chevron), or at the top under the score the tree is of. */
     .tree {
         display: grid;
         gap: 6px;
-        margin: 0 0 0 6px;
+        margin: 0 0 0 12px;
         padding: 0 0 0 8px;
         list-style: none;
     }
@@ -99,7 +109,9 @@
         align-items: center;
         gap: 12px;
         width: 100%;
-        padding: 4px 0;
+        /* Room inside, so its highlight on hover doesn't end at its chevron and its share; on the
+           right, so the shares end where the chevron of "How the score came about" above does. */
+        padding: 4px 14px 4px 6px;
         border: 0;
         background: none;
         color: inherit;
@@ -108,17 +120,19 @@
         text-align: left;
     }
 
+    /* A row that opens says so on hover: it lights up in the fill color, like the card's "How the
+       score came about" row. */
     button.row {
+        border-radius: 8px;
         cursor: pointer;
     }
 
-    button.row:hover .label {
-        text-decoration: underline;
-        text-underline-offset: 3px;
+    button.row:hover {
+        background: var(--fill);
     }
 
     /* A disclosure chevron, as in file trees: pointing right while closed, down while open; the
-       same thin chevron as after a card's likelihood. Rows that don't open have none. */
+       size of the card's other chevrons. Rows that don't open have none. */
     .toggle {
         position: relative;
         width: 12px;
@@ -130,8 +144,8 @@
         position: absolute;
         top: 50%;
         left: 50%;
-        width: 5px;
-        height: 5px;
+        width: 6px;
+        height: 6px;
         border-right: 1.5px solid var(--tree-marker);
         border-bottom: 1.5px solid var(--tree-marker);
         transform: translate(-70%, -50%) rotate(-45deg);
@@ -259,7 +273,7 @@
         margin: 6px 0 8px;
     }
 
-    /* Tree lines: a guide down from the parent's chevron (6px into its row, its middle) through the
+    /* Tree lines: a guide down from the parent's chevron (12px into its row, its middle) through the
        6px gaps between rows, and an elbow into each row at its middle, up to its chevron (a row is
        60px: the 52px ring and 4px padding). The last row's guide ends at its elbow. */
     .tree > li {
@@ -290,13 +304,13 @@
 
     .tree > li::after {
         top: 30px;
-        width: 9px;
+        width: 15px;
         border-top-width: 1px;
     }
 
     /* A row without a chevron: the elbow goes on through its empty column, up to the text. */
     .tree > li:has(> .leaf)::after {
-        width: 18px;
+        width: 24px;
     }
 
     /* "Show N more" under APIs is one short line: its elbow and the guide's end at its middle. */
@@ -310,6 +324,6 @@
 
     .tree {
         --tree-line: color-mix(in srgb, var(--muted) 22%, transparent);
-        --tree-marker: color-mix(in srgb, var(--muted) 75%, transparent);
+        --tree-marker: var(--muted);
     }
 </style>
