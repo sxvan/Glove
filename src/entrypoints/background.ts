@@ -19,7 +19,7 @@ import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
-import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
+import { extractSubdomain, getEtld1, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists } from '@/lib/session-manager';
@@ -306,8 +306,13 @@ export default defineBackground(() => {
 
         scheduleAnalysis(document, tabId);
 
-        // Analyze again once the host's DNS result arrives, so the request gets its CNAME details.
-        if (hostname && !session.dnsResults.has(hostname)) {
+        // Analyze again once the host's DNS result arrives, so the request gets its CNAME details. Only
+        // a host of the page's own site, other than the page's, can hide another company behind an
+        // alias (see isCnameCloaked), so only those are looked up: the resolver learns no more than
+        // the site visited, not every tracker it loads.
+        const pageHost = getHostname(pageUrl);
+        const cloakable = hostname !== null && hostname !== pageHost && getEtld1(hostname) === getEtld1(pageHost);
+        if (hostname && cloakable && details.type !== 'main_frame' && !session.dnsResults.has(hostname)) {
             lookUpHost(hostname).then(
                 () => scheduleAnalysis(document, tabId),
                 (error) => console.warn('DNS lookup failed', hostname, error)
