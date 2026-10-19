@@ -5,6 +5,8 @@ export type FpApiOwner =
     | 'Document'
     | 'HTMLCanvasElement'
     | 'CanvasRenderingContext2D'
+    | 'OffscreenCanvas'
+    | 'OffscreenCanvasRenderingContext2D'
     | 'WebGLRenderingContext'
     | 'WebGL2RenderingContext'
     | 'AudioContext'
@@ -109,8 +111,9 @@ export interface FpApi {
      */
     overlap?: { group: OverlapGroup; adds: number };
     /**
-     * How rarely ordinary code needs it, from 0 (read by almost every site) to 1 (read practically
-     * only to fingerprint or detect bots). Reading a rare API shows intent even if it reveals little.
+     * How rarely pages use it, from 0 (on almost every page load) toward 1 (on hardly any): 1 − the
+     * share of page loads using it. It says how rare a use is, not why: ordinary code uses even the
+     * rarest, so it stays below 1. Reading a rare API shows intent even if it reveals little.
      */
     rarity: number;
     /**
@@ -161,7 +164,12 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 // one reached 9.2), the font measurements like its fallback font text. Rarity is 1 − the share of page loads
 // that use the API, from Chrome's use counters (chromestatus.com/data/featurepopularity, 2026-10-16):
 // innerWidth is read on 72% of page loads (0.28), deviceMemory on 43% (0.57), getChannelData on 7%
-// (0.93). Without a counter of its own:
+// (0.93). Where that rounds to 1, a third decimal keeps it: a counter shows a use is rare, never that
+// nothing but fingerprinting uses it. An OffscreenCanvas, a canvas that is never on the page, has
+// counters of its own: convertToBlob 0.29% (0.997), getImageData 2.3% (0.98), measureText 1.3%
+// (0.99), the last two listed as obsolete but still counting; copyFromChannel, reading the audio
+// samples like getChannelData, 0.28% (0.997); getUserMedia 0.22% (0.998), addIceCandidate 0.16%
+// (0.998). Without a counter of its own:
 // - related: a related feature's counter. The graphics card name needs WEBGL_debug_renderer_info,
 //   which 28% of page loads get (0.72); getShaderPrecisionFormat in WebGL 2 from WebGL 1;
 //   createDataChannel from creating an RTCPeerConnection (8%); resolvedOptions from creating a
@@ -179,8 +187,8 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 //   content: maps, games); getTimezoneOffset on 266,303, most of the web with date libraries on top
 //   (0.1). (Chrome counts no use of navigator.webdriver: its IDL has no MeasureAs.)
 // - bound: a particular read is at most as common as the API it uses. Hidden canvases are read
-//   through toDataURL (14%), getImageData (8%) and toBlob (1%), most of those reads fingerprinting
-//   (0.9, 0.95, 1); font probing through measureText (8%), most of which is laying out text (0.96);
+//   through toDataURL (14%), getImageData (8%) and toBlob (0.6%), most of those reads fingerprinting
+//   (0.9, 0.95; toBlob's own 0.994 leaves no room above it, so its hidden read has that); font probing through measureText (8%), most of which is laying out text (0.96);
 //   the WebGPU adapter's info after requestAdapter (10%; 0.95).
 // - estimate: the detailed client hints (Google Analytics asks for them by default, so about half
 //   of the 64% asking for client hints at all) and document.referrer.
@@ -264,7 +272,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'canvas.toDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.86 },
     { id: 'canvas.hiddenToDataURL', owner: 'HTMLCanvasElement', prop: 'toDataURL', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.9, same: 'canvas.toDataURL', readOf: { api: 'canvas.toDataURL', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     { id: 'canvas.toBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.99, same: 'canvas.toDataURL' },
-    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 1, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
+    { id: 'canvas.hiddenToBlob', owner: 'HTMLCanvasElement', prop: 'toBlob', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.994, same: 'canvas.toDataURL', readOf: { api: 'canvas.toBlob', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     { id: 'canvas.getImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'canvas image', bits: 7.8, rarity: 0.92, same: 'canvas.toDataURL' },
     { id: 'canvas.hiddenGetImageData', owner: 'CanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.95, same: 'canvas.toDataURL', readOf: { api: 'canvas.getImageData', read: 'hiddenCanvas' }, rarityBasis: 'bound' },
     // Whether a point lies in a path drawn with the even-odd rule: the same in practically every
@@ -273,6 +281,12 @@ export const FP_APIS: FpApi[] = [
     // Measuring text is everyday; measuring it in many different fonts is finding out which are installed.
     { id: 'canvas.measureText', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'text measurements', bits: 4, rarity: 0.92, overlap: { group: 'fonts', adds: 0.5 } },
     { id: 'canvas.fontProbing', owner: 'CanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', bits: 6.7, rarity: 0.96, readOf: { api: 'canvas.measureText', read: 'fontProbing' }, overlap: { group: 'fonts', adds: 2.4 }, rarityBasis: 'bound' },
+    // The same reads on an OffscreenCanvas (in the page; in a worker they aren't recorded): it is
+    // never on the page, so its image is always a hidden canvas's.
+    { id: 'offscreencanvas.convertToBlob', owner: 'OffscreenCanvas', prop: 'convertToBlob', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.997, same: 'canvas.toDataURL' },
+    { id: 'offscreencanvas.getImageData', owner: 'OffscreenCanvasRenderingContext2D', prop: 'getImageData', category: 'CanvasImage', reveals: 'hidden canvas image', bits: 7.8, rarity: 0.98, same: 'canvas.toDataURL' },
+    { id: 'offscreencanvas.measureText', owner: 'OffscreenCanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'text measurements', bits: 4, rarity: 0.99, same: 'canvas.measureText', overlap: { group: 'fonts', adds: 0.5 } },
+    { id: 'offscreencanvas.fontProbing', owner: 'OffscreenCanvasRenderingContext2D', prop: 'measureText', category: 'Fonts', reveals: 'installed fonts', bits: 6.7, rarity: 0.99, same: 'canvas.fontProbing', readOf: { api: 'offscreencanvas.measureText', read: 'fontProbing' }, overlap: { group: 'fonts', adds: 2.4 }, rarityBasis: 'bound' },
 
     // WebGL: 3D engines check capabilities and shader precision when they start, and read pixels
     // back to find what was clicked. The graphics card's maker and model (through
@@ -306,6 +320,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'audiocontext.createOscillator', owner: 'AudioContext', prop: 'createOscillator', category: 'Audio', reveals: 'audio setup', bits: 0.8, rarity: 0.93 },
     { id: 'offlineaudiocontext.startRendering', owner: 'OfflineAudioContext', prop: 'startRendering', category: 'Audio', reveals: 'rendered audio', bits: 3.4, rarity: 0.93 },
     { id: 'audiobuffer.getChannelData', owner: 'AudioBuffer', prop: 'getChannelData', category: 'Audio', reveals: 'rendered audio', bits: 3.4, rarity: 0.93, same: 'offlineaudiocontext.startRendering' },
+    { id: 'audiobuffer.copyFromChannel', owner: 'AudioBuffer', prop: 'copyFromChannel', category: 'Audio', reveals: 'rendered audio', bits: 3.4, rarity: 0.997, same: 'offlineaudiocontext.startRendering' },
 
     // Codecs: which audio and video formats the browser plays, which depends on the browser, its
     // build and the operating system. Video players ask too, for the formats they have.
@@ -314,11 +329,11 @@ export const FP_APIS: FpApi[] = [
     // Media devices: the list of cameras and microphones is read silently; without permission it
     // only tells how many of each kind there are. getUserMedia asks first.
     { id: 'mediadevices.enumerateDevices', owner: 'MediaDevices', prop: 'enumerateDevices', category: 'MediaDevices', reveals: 'cameras and microphones', bits: 1.2, rarity: 0.86, bitsBasis: 'estimate' },
-    { id: 'mediadevices.getUserMedia', owner: 'MediaDevices', prop: 'getUserMedia', category: 'MediaDevices', reveals: 'camera or microphone access', bits: 0.4, rarity: 1, bitsBasis: 'estimate' },
+    { id: 'mediadevices.getUserMedia', owner: 'MediaDevices', prop: 'getUserMedia', category: 'MediaDevices', reveals: 'camera or microphone access', bits: 0.4, rarity: 0.998, bitsBasis: 'estimate' },
 
     // WebRTC: can reveal local network addresses; video calls use it legitimately.
     { id: 'webrtc.createDataChannel', owner: 'RTCPeerConnection', prop: 'createDataChannel', category: 'Network', reveals: 'WebRTC connection', bits: 0.4, rarity: 0.93, rarityBasis: 'related', bitsBasis: 'estimate' },
-    { id: 'webrtc.addIceCandidate', owner: 'RTCPeerConnection', prop: 'addIceCandidate', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 1, same: 'webrtc.setLocalDescription', bitsBasis: 'adjusted' },
+    { id: 'webrtc.addIceCandidate', owner: 'RTCPeerConnection', prop: 'addIceCandidate', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 0.998, same: 'webrtc.setLocalDescription', bitsBasis: 'adjusted' },
     { id: 'webrtc.setLocalDescription', owner: 'RTCPeerConnection', prop: 'setLocalDescription', category: 'Network', reveals: 'local network addresses', bits: 2.4, rarity: 0.94, bitsBasis: 'adjusted' },
 
     // Intl: the time zone; date libraries read it too.

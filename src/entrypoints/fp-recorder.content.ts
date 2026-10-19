@@ -36,7 +36,11 @@ function installFpHooks() {
     readStack = createStackReader(STACK_FRAMES);
     isConnected = nativeGetter(Node.prototype, 'isConnected');
     contextCanvas = nativeGetter(CanvasRenderingContext2D.prototype, 'canvas');
-    contextFont = nativeGetter(CanvasRenderingContext2D.prototype, 'font');
+    const font2d = nativeGetter<string>(CanvasRenderingContext2D.prototype, 'font');
+    const offscreen2d = (window as { OffscreenCanvasRenderingContext2D?: { prototype: object } }).OffscreenCanvasRenderingContext2D;
+    const fontOffscreen = offscreen2d ? nativeGetter<string>(offscreen2d.prototype, 'font') : () => undefined;
+    // A canvas's context or an OffscreenCanvas's: each has its own getter, failing on the other.
+    contextFont = (context) => font2d(context) ?? fontOffscreen(context);
     createElement = Document.prototype.createElement;
     canvasWidth = nativeGetter(HTMLCanvasElement.prototype, 'width');
     canvasHeight = nativeGetter(HTMLCanvasElement.prototype, 'height');
@@ -86,6 +90,8 @@ function getProtoForOwner(owner: FpApiOwner): any {
             return Intl.DateTimeFormat.prototype;
         case 'NavigatorUAData':
             return (window as { NavigatorUAData?: { prototype: unknown } }).NavigatorUAData?.prototype ?? null;
+        case 'OffscreenCanvas':
+        case 'OffscreenCanvasRenderingContext2D':
         case 'GPU':
         case 'GPUAdapter':
         case 'SpeechSynthesis':
