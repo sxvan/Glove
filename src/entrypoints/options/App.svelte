@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, tick } from 'svelte';
     import {
         DEFAULT_SETTINGS,
         APIS_LEVEL_LABELS,
@@ -38,8 +38,45 @@
     let status = $state('');
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // The pages, in the order of the navigation: everyday settings first, then those for tuning
+    // detection and scoring.
+    type PageId = 'general' | 'blocking' | 'detection' | 'scoring' | 'apis';
+    const PAGES: { id: PageId; title: string }[] = [
+        { id: 'general', title: 'General' },
+        { id: 'blocking', title: 'Blocking' },
+        { id: 'detection', title: 'Detection' },
+        { id: 'scoring', title: 'Scoring' },
+        { id: 'apis', title: 'Fingerprinting APIs' },
+    ];
+
+    // Every page stays in the document, only the current one shown, so each section keeps following
+    // its settings (see anyChanged).
+    let page = $state<PageId>('general');
+
+    /**
+     * Shows what the address's hash names: a page, or a section on one, such as a "made from" link's,
+     * scrolled to. A section's page is the one it is in.
+     */
+    async function follow() {
+        const id = decodeURIComponent(location.hash.slice(1));
+        const named = PAGES.find((p) => p.id === id);
+        const section = named ? null : document.getElementById(id);
+        page = named?.id ?? (section?.closest<HTMLElement>('[data-page]')?.dataset.page as PageId | undefined) ?? 'general';
+        await tick();
+        if (section) section.scrollIntoView();
+        else window.scrollTo(0, 0);
+    }
+
+    onMount(() => {
+        window.addEventListener('hashchange', follow);
+        return () => window.removeEventListener('hashchange', follow);
+    });
+
+    // Once the scoring settings are there, their sections are too: a hash may name one of them.
     onMount(async () => {
         settings = await loadScoringSettings();
+        await tick();
+        follow();
     });
 
     function setStrength(level: ScoreLevel, key: string, value: number) {
@@ -179,239 +216,324 @@
     );
 </script>
 
-<main>
-    <header>
+<div class="layout">
+    <nav aria-label="Settings pages">
         <h1>Settings</h1>
-        <button type="button" disabled={!anyChanged} title={anyChanged ? undefined : 'All settings are at their defaults'} onclick={reset}>Reset all to defaults</button>
-    </header>
-
-    <p class="intro">
-        Every score is built from signals: things the extension observes, such as how many unusual fingerprinting APIs a script reads. For
-        each signal you set how likely tracking is <strong>from this signal alone</strong>. Signals add up as independent
-        evidence: each one closes its share of the remaining gap, so a score can never exceed 100%, and a signal that isn't
-        present changes nothing. Some signals are made from another score, such as a script's strongest burst of calls:
-        "made from" links to the settings that go into it.
-    </p>
-    <p class="status" role="status">{status}</p>
-
-    <section class="squircle">
-        <SectionHead title="Appearance" changed={theme !== 'system'} onreset={resetTheme} />
-        <div class="row">
-            <div>
-                <div class="name">Theme</div>
-                <div class="description">The extension's pages in light or dark, or as the system is set.</div>
-            </div>
-            <ThemeSwitch bind:theme />
-        </div>
-    </section>
-
-    <!-- Not scoring settings: each section titles itself, and resets its own settings. -->
-    <section class="squircle">
-        <SitesSettings />
-    </section>
-
-    <section class="squircle">
-        <PrivacySettings bind:changed={privacyChanged} />
-    </section>
-
-    <section class="squircle">
-        <BlockingSettings bind:changed={blockingChanged} />
-    </section>
-
-    <section class="squircle">
-        <PerformanceSettings bind:changed={limitsChanged} />
-    </section>
-
-    {#if settings}
-        <section class="squircle">
-            <SectionHead title="Likelihood" changed={differs(settings.cutoffs, DEFAULT_SETTINGS.cutoffs)} onreset={() => resetPart('cutoffs')} />
-            <p class="section-note">Where a score counts as possible or likely tracking.</p>
-            {#each [['fingerprinting', 'Fingerprinting (pages and scripts)'], ['hostname', 'ID-like hostnames']] as const as [kind, label] (kind)}
-                <div class="row cutoffs">
-                    <div class="name">{label}</div>
-                    <label class="field">
-                        Possible from
-                        <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].possible)} oninput={(e) => setCutoff(kind, 'possible', e)} />
-                        %
-                    </label>
-                    <label class="field">
-                        Likely from
-                        <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].likely)} oninput={(e) => setCutoff(kind, 'likely', e)} />
-                        %
-                    </label>
-                </div>
+        <ul>
+            {#each PAGES as p (p.id)}
+                <li><a href="#{p.id}" aria-current={page === p.id ? 'page' : undefined}>{p.title}</a></li>
             {/each}
-            {#if invalidCutoffs}
-                <p class="warning">"Likely" should be above "possible".</p>
-            {/if}
-        </section>
+        </ul>
+        <button type="button" class="reset-all" disabled={!anyChanged} title={anyChanged ? undefined : 'All settings are at their defaults'} onclick={reset}>
+            Reset all to defaults
+        </button>
+        <p class="status" role="status">{status}</p>
+    </nav>
 
-        <section class="squircle" id="bursts">
-            <SectionHead title="Bursts of calls" changed={differs(settings.bursts, DEFAULT_SETTINGS.bursts)} onreset={() => resetPart('bursts')} />
-            <p class="section-note">
-                What counts as a burst: fingerprinting APIs read in quick succession, one collection of details. Bursts are found in
-                each script and across the page, all scripts together.
-            </p>
-            {#each BURST_DETECTION_FIELDS as field (field.key)}
-                {@const changed = settings.bursts[field.key] !== DEFAULT_SETTINGS.bursts[field.key]}
+    <main>
+        <!-- Each section that isn't a scoring setting titles itself and resets its own settings. -->
+        <div class="page" data-page="general" hidden={page !== 'general'}>
+            <section class="squircle">
+                <SectionHead title="Appearance" changed={theme !== 'system'} onreset={resetTheme} />
                 <div class="row">
                     <div>
-                        <div class="name">{field.label}</div>
-                        <div class="description">{field.description}</div>
+                        <div class="name">Theme</div>
+                        <div class="description">The extension's pages in light or dark, or as the system is set.</div>
                     </div>
-                    <label class="field" class:changed>
-                        <input type="number" min="0" step="1" value={settings.bursts[field.key]} oninput={(e) => setBurstDetection(field.key, e)} />
-                        <span class="unit">{field.unit}</span>
-                    </label>
-                    <span class="default" class:changed>default {DEFAULT_SETTINGS.bursts[field.key]} {field.unit}</span>
+                    <ThemeSwitch bind:theme />
                 </div>
-            {/each}
-        </section>
-
-        <section class="squircle" id="identifiers">
-            <SectionHead title="Stored identifiers" changed={differs(settings.identifiers, DEFAULT_SETTINGS.identifiers)} onreset={() => resetPart('identifiers')} />
-            <p class="section-note">
-                What a script stores in cookies and storage is a <strong>possible identifier</strong> when it is kept long enough and holds a part
-                that looks like one: of a length below, with a digit, as words have none. Measurement studies tell identifier cookies apart
-                the same way
-                (<a href="https://senglehardt.com/papers/www15_cookie_surveil.pdf" target="_blank" rel="noopener noreferrer">Englehardt et al.</a>,
-                <a href="https://www.cs.princeton.edu/~arvindn/publications/OpenWPM_1_million_site_tracking_measurement.pdf" target="_blank" rel="noopener noreferrer">Englehardt and Narayanan</a>);
-                whether a value differs between browsers, their last rule, can't be told from one browser. It is a
-                <strong>likely identifier</strong> when the same value is also stored in another place, to restore it from there when one is cleared,
-                or stored right after a burst of calls that scores at least possible fingerprinting on its own (see Bursts of calls).
-            </p>
-            {#each IDENTIFIER_RULE_FIELDS as field (field.key)}
-                {@const changed = settings.identifiers[field.key] !== DEFAULT_SETTINGS.identifiers[field.key]}
-                <div class="row">
-                    <div>
-                        <div class="name">{field.label}</div>
-                        <div class="description">{field.description}</div>
-                    </div>
-                    <label class="field" class:changed>
-                        <input type="number" min="0" step="1" value={settings.identifiers[field.key]} oninput={(e) => setIdentifierRule(field.key, e)} />
-                        <span class="unit">{field.unit}</span>
-                    </label>
-                    <span class="default" class:changed>default {DEFAULT_SETTINGS.identifiers[field.key]} {field.unit}</span>
-                </div>
-            {/each}
-        </section>
-
-        {#each LEVELS as { level, note } (level)}
-            <section class="squircle" id={sectionId(level)}>
-                <SectionHead title={LEVEL_LABELS[level]} changed={differs(settings.strengths[level], DEFAULT_SETTINGS.strengths[level])} onreset={() => resetLevel(level)} />
-                <p class="section-note">{note}</p>
-                <LevelSettings {level} {settings} onStrength={setStrength} />
             </section>
-        {/each}
 
-        <section class="squircle" id="apis">
-            <SectionHead
-                title="Fingerprinting APIs"
-                changed={differs(settings.apis, DEFAULT_SETTINGS.apis) || settings.rarityPower !== DEFAULT_SETTINGS.rarityPower || differs(settings.fullAt, DEFAULT_SETTINGS.fullAt)}
-                onreset={resetApis}
-            />
-            <p class="section-note">
-                Each fingerprinting API has its <strong>bits</strong>: how much identifying information it reveals on its own, its entropy,
-                so 6 bits tell one browser in 64 apart. They come from a study of 4 million fingerprints
-                (<a href="https://arxiv.org/abs/2006.09511" target="_blank" rel="noopener noreferrer">Andriamilanto et al.</a>), lowered where
-                Chrome has changed since, with the time zone and languages from
-                <a href="https://amiunique.org/fingerprints-global-statistics" target="_blank" rel="noopener noreferrer">AmIUnique</a>'s worldwide statistics.
-                APIs whose values overlap, such as the screen's and the window's sizes, also have what they <strong>add</strong> once another of
-                them is known, from the same study: of those read together, the one with the most bits counts all of them, the others only
-                what they add. <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
-                Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
-                October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. Together they make
-                "Rare identifying fingerprinting APIs": each API's bits times its rarity, rare ones counting more (see below), added up. What
-                reveals a lot but everyone reads counts little, and so does what is rarely read but reveals little; what a fingerprinter
-                collects is both. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions of a call or a canvas
-                exported in two formats, count once.
-            </p>
+            <section class="squircle">
+                <PrivacySettings bind:changed={privacyChanged} />
+            </section>
 
-            <div class="row">
-                <div>
-                    <div class="name">Rare APIs count more</div>
-                    <div class="description">
-                        Each API's bits count times its rarity to this power. 1 counts rarity as it is; at 4, rarity 0.6 counts 0.13
-                        and 0.93 counts 0.75, so everyday reads add up to little.
-                    </div>
-                </div>
-                <label class="field">
-                    rarity ^
-                    <input type="number" min="0" step="0.25" value={settings.rarityPower} oninput={setRarityPower} />
-                </label>
-                <span class="default" class:changed={settings.rarityPower !== DEFAULT_SETTINGS.rarityPower}>default {DEFAULT_SETTINGS.rarityPower}</span>
-            </div>
+            <section class="squircle">
+                <PerformanceSettings bind:changed={limitsChanged} />
+            </section>
+        </div>
 
-            {#each APIS_LEVELS as level (level)}
-                {@const fullAt = settings.fullAt[level]}
-                {@const defaults = DEFAULT_SETTINGS.fullAt[level]}
-                <div class="row cutoffs">
-                    <div class="name">{APIS_LEVEL_LABELS[level]}</div>
-                    <label class="field" class:changed={fullAt.rareIdentifying !== defaults.rareIdentifying} title="Default {defaults.rareIdentifying}">
-                        Rare identifying full at
-                        <input type="number" min="0" step="1" value={fullAt.rareIdentifying} oninput={(e) => setFullAt(level, 'rareIdentifying', e)} />
-                        bits
-                    </label>
-                </div>
-            {/each}
+        <div class="page" data-page="blocking" hidden={page !== 'blocking'}>
+            <section class="squircle">
+                <BlockingSettings bind:changed={blockingChanged} />
+            </section>
 
-            <div class="apis">
-            {#each API_GROUPS as [category, apis] (category)}
-                <h3>{FP_CATEGORIES[category].name} <span class="category-key">{category}</span></h3>
-                {#each apis as api (api.id)}
-                    {@const defaults = DEFAULT_SETTINGS.apis[api.id] ?? { bits: api.bits, adds: api.bits, rarity: api.rarity }}
-                    {@const traits = settings.apis[api.id] ?? defaults}
-                    <div class="row api">
-                        <div class="api-id">{api.id}</div>
-                        <label class="field" class:changed={traits.bits !== defaults.bits} title="Default {defaults.bits}">
-                            bits
-                            <input type="number" min="0" step="0.1" value={traits.bits} oninput={(e) => setApiTrait(api.id, 'bits', e)} />
-                        </label>
-                        <!-- Only APIs overlapping with others have what they add beside them. -->
-                        {#if api.overlap}
-                            <label class="field" class:changed={traits.adds !== defaults.adds} title="Default {defaults.adds}: what it adds beside the other {api.overlap.group} APIs">
-                                adds
-                                <input type="number" min="0" step="0.1" value={traits.adds} oninput={(e) => setApiTrait(api.id, 'adds', e)} />
+            <section class="squircle">
+                <SitesSettings />
+            </section>
+        </div>
+
+        <div class="page" data-page="detection" hidden={page !== 'detection'}>
+            {#if settings}
+                <section class="squircle">
+                    <SectionHead title="Likelihood" changed={differs(settings.cutoffs, DEFAULT_SETTINGS.cutoffs)} onreset={() => resetPart('cutoffs')} />
+                    <p class="section-note">Where a score counts as possible or likely tracking.</p>
+                    {#each [['fingerprinting', 'Fingerprinting (pages and scripts)'], ['hostname', 'ID-like hostnames']] as const as [kind, label] (kind)}
+                        <div class="row cutoffs">
+                            <div class="name">{label}</div>
+                            <label class="field">
+                                Possible from
+                                <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].possible)} oninput={(e) => setCutoff(kind, 'possible', e)} />
+                                %
                             </label>
-                        {:else}
-                            <span></span>
-                        {/if}
-                        <!-- What it counts alone with these settings: its bits times its rarity to the power. -->
-                        <span class="counts" title="Its bits times its rarity to the power {settings.rarityPower}: the rare bits it counts when read alone">
-                            {+(traits.bits * traits.rarity ** settings.rarityPower).toFixed(2)} rare bits
-                        </span>
-                        <label class="field" class:changed={traits.rarity !== defaults.rarity} title="Default {defaults.rarity}">
-                            rarity
-                            <input type="number" min="0" max="1" step="0.05" value={traits.rarity} oninput={(e) => setApiTrait(api.id, 'rarity', e)} />
-                        </label>
-                    </div>
+                            <label class="field">
+                                Likely from
+                                <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].likely)} oninput={(e) => setCutoff(kind, 'likely', e)} />
+                                %
+                            </label>
+                        </div>
+                    {/each}
+                    {#if invalidCutoffs}
+                        <p class="warning">"Likely" should be above "possible".</p>
+                    {/if}
+                </section>
+
+                <section class="squircle" id="bursts">
+                    <SectionHead title="Bursts of calls" changed={differs(settings.bursts, DEFAULT_SETTINGS.bursts)} onreset={() => resetPart('bursts')} />
+                    <p class="section-note">
+                        What counts as a burst: fingerprinting APIs read in quick succession, one collection of details. Bursts are found in
+                        each script and across the page, all scripts together.
+                    </p>
+                    {#each BURST_DETECTION_FIELDS as field (field.key)}
+                        {@const changed = settings.bursts[field.key] !== DEFAULT_SETTINGS.bursts[field.key]}
+                        <div class="row">
+                            <div>
+                                <div class="name">{field.label}</div>
+                                <div class="description">{field.description}</div>
+                            </div>
+                            <label class="field" class:changed>
+                                <input type="number" min="0" step="1" value={settings.bursts[field.key]} oninput={(e) => setBurstDetection(field.key, e)} />
+                                <span class="unit">{field.unit}</span>
+                            </label>
+                            <span class="default" class:changed>default {DEFAULT_SETTINGS.bursts[field.key]} {field.unit}</span>
+                        </div>
+                    {/each}
+                </section>
+
+                <section class="squircle" id="identifiers">
+                    <SectionHead title="Stored identifiers" changed={differs(settings.identifiers, DEFAULT_SETTINGS.identifiers)} onreset={() => resetPart('identifiers')} />
+                    <p class="section-note">
+                        What a script stores in cookies and storage is a <strong>possible identifier</strong> when it is kept long enough and holds a part
+                        that looks like one: of a length below, with a digit, as words have none. Measurement studies tell identifier cookies apart
+                        the same way
+                        (<a href="https://senglehardt.com/papers/www15_cookie_surveil.pdf" target="_blank" rel="noopener noreferrer">Englehardt et al.</a>,
+                        <a href="https://www.cs.princeton.edu/~arvindn/publications/OpenWPM_1_million_site_tracking_measurement.pdf" target="_blank" rel="noopener noreferrer">Englehardt and Narayanan</a>);
+                        whether a value differs between browsers, their last rule, can't be told from one browser. It is a
+                        <strong>likely identifier</strong> when the same value is also stored in another place, to restore it from there when one is cleared,
+                        or stored right after a burst of calls that scores at least possible fingerprinting on its own (see Bursts of calls).
+                    </p>
+                    {#each IDENTIFIER_RULE_FIELDS as field (field.key)}
+                        {@const changed = settings.identifiers[field.key] !== DEFAULT_SETTINGS.identifiers[field.key]}
+                        <div class="row">
+                            <div>
+                                <div class="name">{field.label}</div>
+                                <div class="description">{field.description}</div>
+                            </div>
+                            <label class="field" class:changed>
+                                <input type="number" min="0" step="1" value={settings.identifiers[field.key]} oninput={(e) => setIdentifierRule(field.key, e)} />
+                                <span class="unit">{field.unit}</span>
+                            </label>
+                            <span class="default" class:changed>default {DEFAULT_SETTINGS.identifiers[field.key]} {field.unit}</span>
+                        </div>
+                    {/each}
+                </section>
+            {/if}
+        </div>
+
+        <div class="page" data-page="scoring" hidden={page !== 'scoring'}>
+            <p class="intro">
+                Every score is built from signals: things the extension observes, such as how many unusual fingerprinting APIs a script reads. For
+                each signal you set how likely tracking is <strong>from this signal alone</strong>. Signals add up as independent
+                evidence: each one closes its share of the remaining gap, so a score can never exceed 100%, and a signal that isn't
+                present changes nothing. Some signals are made from another score, such as a script's strongest burst of calls:
+                "made from" links to the settings that go into it.
+            </p>
+            {#if settings}
+                {#each LEVELS as { level, note } (level)}
+                    <section class="squircle" id={sectionId(level)}>
+                        <SectionHead title={LEVEL_LABELS[level]} changed={differs(settings.strengths[level], DEFAULT_SETTINGS.strengths[level])} onreset={() => resetLevel(level)} />
+                        <p class="section-note">{note}</p>
+                        <LevelSettings {level} {settings} onStrength={setStrength} />
+                    </section>
                 {/each}
-            {/each}
-            </div>
-        </section>
-    {/if}
-</main>
+            {/if}
+        </div>
+
+        <div class="page" data-page="apis" hidden={page !== 'apis'}>
+            {#if settings}
+                <section class="squircle" id="apis">
+                    <SectionHead
+                        title="Fingerprinting APIs"
+                        changed={differs(settings.apis, DEFAULT_SETTINGS.apis) || settings.rarityPower !== DEFAULT_SETTINGS.rarityPower || differs(settings.fullAt, DEFAULT_SETTINGS.fullAt)}
+                        onreset={resetApis}
+                    />
+                    <p class="section-note">
+                        Each fingerprinting API has its <strong>bits</strong>: how much identifying information it reveals on its own, its entropy,
+                        so 6 bits tell one browser in 64 apart. They come from a study of 4 million fingerprints
+                        (<a href="https://arxiv.org/abs/2006.09511" target="_blank" rel="noopener noreferrer">Andriamilanto et al.</a>), lowered where
+                        Chrome has changed since, with the time zone and languages from
+                        <a href="https://amiunique.org/fingerprints-global-statistics" target="_blank" rel="noopener noreferrer">AmIUnique</a>'s worldwide statistics.
+                        APIs whose values overlap, such as the screen's and the window's sizes, also have what they <strong>add</strong> once another of
+                        them is known, from the same study: of those read together, the one with the most bits counts all of them, the others only
+                        what they add. <strong>Rarity</strong> is how rarely pages use it: 1 minus the share of page loads in Chrome that use it, from
+                        Chrome's usage statistics (<a href="https://chromestatus.com/metrics/feature/popularity" target="_blank" rel="noopener noreferrer">chromestatus.com</a>,
+                        October 2026). The user agent, read on 91% of page loads, has 0.09; reading audio samples, on 7%, has 0.93. Together they make
+                        "Rare identifying fingerprinting APIs": each API's bits times its rarity, rare ones counting more (see below), added up. What
+                        reveals a lot but everyone reads counts little, and so does what is rarely read but reveals little; what a fingerprinter
+                        collects is both. Fingerprinting APIs that reveal the same value, such as the WebGL and WebGL2 versions of a call or a canvas
+                        exported in two formats, count once.
+                    </p>
+
+                    <div class="row">
+                        <div>
+                            <div class="name">Rare APIs count more</div>
+                            <div class="description">
+                                Each API's bits count times its rarity to this power. 1 counts rarity as it is; at 4, rarity 0.6 counts 0.13
+                                and 0.93 counts 0.75, so everyday reads add up to little.
+                            </div>
+                        </div>
+                        <label class="field">
+                            rarity ^
+                            <input type="number" min="0" step="0.25" value={settings.rarityPower} oninput={setRarityPower} />
+                        </label>
+                        <span class="default" class:changed={settings.rarityPower !== DEFAULT_SETTINGS.rarityPower}>default {DEFAULT_SETTINGS.rarityPower}</span>
+                    </div>
+
+                    {#each APIS_LEVELS as level (level)}
+                        {@const fullAt = settings.fullAt[level]}
+                        {@const defaults = DEFAULT_SETTINGS.fullAt[level]}
+                        <div class="row cutoffs">
+                            <div class="name">{APIS_LEVEL_LABELS[level]}</div>
+                            <label class="field" class:changed={fullAt.rareIdentifying !== defaults.rareIdentifying} title="Default {defaults.rareIdentifying}">
+                                Rare identifying full at
+                                <input type="number" min="0" step="1" value={fullAt.rareIdentifying} oninput={(e) => setFullAt(level, 'rareIdentifying', e)} />
+                                bits
+                            </label>
+                        </div>
+                    {/each}
+
+                    <div class="apis">
+                    {#each API_GROUPS as [category, apis] (category)}
+                        <h3>{FP_CATEGORIES[category].name} <span class="category-key">{category}</span></h3>
+                        {#each apis as api (api.id)}
+                            {@const defaults = DEFAULT_SETTINGS.apis[api.id] ?? { bits: api.bits, adds: api.bits, rarity: api.rarity }}
+                            {@const traits = settings.apis[api.id] ?? defaults}
+                            <div class="row api">
+                                <div class="api-id">{api.id}</div>
+                                <label class="field" class:changed={traits.bits !== defaults.bits} title="Default {defaults.bits}">
+                                    bits
+                                    <input type="number" min="0" step="0.1" value={traits.bits} oninput={(e) => setApiTrait(api.id, 'bits', e)} />
+                                </label>
+                                <!-- Only APIs overlapping with others have what they add beside them. -->
+                                {#if api.overlap}
+                                    <label class="field" class:changed={traits.adds !== defaults.adds} title="Default {defaults.adds}: what it adds beside the other {api.overlap.group} APIs">
+                                        adds
+                                        <input type="number" min="0" step="0.1" value={traits.adds} oninput={(e) => setApiTrait(api.id, 'adds', e)} />
+                                    </label>
+                                {:else}
+                                    <span></span>
+                                {/if}
+                                <!-- What it counts alone with these settings: its bits times its rarity to the power. -->
+                                <span class="counts" title="Its bits times its rarity to the power {settings.rarityPower}: the rare bits it counts when read alone">
+                                    {+(traits.bits * traits.rarity ** settings.rarityPower).toFixed(2)} rare bits
+                                </span>
+                                <label class="field" class:changed={traits.rarity !== defaults.rarity} title="Default {defaults.rarity}">
+                                    rarity
+                                    <input type="number" min="0" max="1" step="0.05" value={traits.rarity} oninput={(e) => setApiTrait(api.id, 'rarity', e)} />
+                                </label>
+                            </div>
+                        {/each}
+                    {/each}
+                    </div>
+                </section>
+            {/if}
+        </div>
+    </main>
+</div>
 
 <style>
-    main {
-        max-width: 760px;
-        margin: 0 auto;
+    /* The navigation beside the pages, both centered; a page is as wide as reads well. */
+    .layout {
+        display: grid;
+        grid-template-columns: auto minmax(0, 760px);
+        justify-content: center;
+        align-items: start;
+        gap: 32px;
         padding: 24px 20px 48px;
     }
 
-    header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+    /* Stays in view while a long page scrolls. */
+    nav {
+        position: sticky;
+        top: 24px;
+        display: grid;
         gap: 16px;
     }
 
     h1 {
-        margin: 0;
+        margin: 0 12px;
         font-size: 20px;
     }
 
-    header button {
+    nav ul {
+        display: grid;
+        gap: 2px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    /* The current page raised like a card, the others muted until hovered. */
+    nav a {
+        display: block;
+        padding: 6px 12px;
+        border-radius: 8px;
+        color: var(--muted);
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    nav a:hover {
+        color: var(--text);
+    }
+
+    nav a[aria-current='page'] {
+        background: var(--surface);
+        color: var(--text);
+        font-weight: 600;
+    }
+
+    /* A narrow window: the pages as a row of tabs above them. */
+    @media (max-width: 760px) {
+        .layout {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 16px;
+        }
+
+        nav {
+            position: static;
+        }
+
+        nav ul {
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        .reset-all {
+            justify-self: start;
+        }
+    }
+
+    .page {
+        display: grid;
+        gap: 24px;
+    }
+
+    .page[hidden] {
+        display: none;
+    }
+
+    .reset-all {
         padding: 6px 12px;
         border: 1px solid var(--border);
         border-radius: 8px;
@@ -419,19 +541,19 @@
         cursor: pointer;
     }
 
-    header button:hover:not(:disabled) {
+    .reset-all:hover:not(:disabled) {
         border-color: var(--muted);
     }
 
     /* Like a section's Reset with nothing to reset (see SectionHead). */
-    header button:disabled {
+    .reset-all:disabled {
         color: var(--muted);
         opacity: 0.6;
         cursor: default;
     }
 
     .intro {
-        margin: 12px 0 0;
+        margin: 0;
         color: var(--muted);
         line-height: 1.5;
     }
@@ -442,15 +564,13 @@
     }
 
     .status {
-        min-height: 18px;
-        margin: 8px 0 0;
+        margin: 0 12px;
         color: var(--unlikely);
         font-size: 12px;
     }
 
     /* Sections are cards: no border, room inside, squircle corners (the .squircle class). */
     section {
-        margin-top: 24px;
         padding: 20px 24px;
         border-radius: 18px;
         background: var(--surface);
