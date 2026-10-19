@@ -1,15 +1,20 @@
+import { getDomain, getSubdomain } from 'tldts';
 import type { DnsAnswer } from '@/types/analysis';
 import { combine, type ScoringSettings } from './scoring';
 
+// Sites by the Public Suffix List, as browsers tell them apart: its private part included, so a
+// customer's name under a hosting service (d1234.cloudfront.net, user.github.io) is a site of its
+// own, as for the browser's cookies.
+const PSL = { allowPrivateDomains: true };
+
+/**
+ * The site a host belongs to, its registrable domain: shop.example.co.uk is example.co.uk. A host
+ * without one, such as localhost or an IP address, is its own site.
+ */
 export function getEtld1(hostname: string | null): string | null {
     if (!hostname) return null;
-
     const normalizedHostname = normalizeHostname(hostname);
-    const parts = normalizedHostname.split('.').filter(Boolean);
-
-    if (parts.length <= 2) return normalizedHostname;
-
-    return parts.slice(-2).join('.');
+    return getDomain(normalizedHostname, PSL) ?? normalizedHostname;
 }
 
 export function isSameEtld1(hostA: string | null, hostB: string | null): boolean {
@@ -176,18 +181,8 @@ export function scoreSubdomainEntropy(subdomain: string | null, settings: Scorin
     );
 }
 
-/**
- * Returns the subdomain part of a hostname using a simple heuristic:
- * everything left of the last two labels.
- */
+/** The part of a hostname before its site (see getEtld1): "a.b" of a.b.example.co.uk; null without one. */
 export function extractSubdomain(hostname: string | null): string | null {
     if (!hostname) return null;
-
-    const labels = hostname.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
-
-    if (labels.length <= 2) {
-        return null;
-    }
-
-    return labels.slice(0, -2).join('.');
+    return getSubdomain(normalizeHostname(hostname), PSL) || null;
 }
