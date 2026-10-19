@@ -46,6 +46,12 @@ export async function loadExempt(): Promise<string[]> {
     return Array.isArray(stored) ? (stored as string[]) : [];
 }
 
+/** Lets scripts the user let run again be blocked automatically again, by what they are blocked by. */
+export async function removeExempt(keys: string[]): Promise<void> {
+    const exempt = (await loadExempt()).filter((key) => !keys.includes(key));
+    await browser.storage.local.set({ [EXEMPT_KEY]: exempt });
+}
+
 /**
  * Blocks the scripts at `urls`, or lets them run again; takes effect on their next load. `auto`
  * gives the score each was blocked automatically at, by URL. Letting a script run again exempts it

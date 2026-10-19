@@ -7,9 +7,12 @@
         DEFAULT_BLOCKING_OPTIONS,
         loadBlocked,
         loadBlockingOptions,
+        loadExempt,
+        removeExempt,
         saveBlockingOptions,
         setBlocked,
         watchBlocked,
+        watchExempt,
         type BlockedScript,
         type BlockingOptions,
     } from '@/lib/blocking';
@@ -41,32 +44,71 @@
 
     let options = $state<BlockingOptions>({ ...DEFAULT_BLOCKING_OPTIONS });
 
-    // The blocked scripts, the latest first; the list shows once opened.
+    // The blocked scripts, the latest first, those blocked automatically apart from those blocked by
+    // hand; and, with automatic blocking, the scripts the user let run again, which it leaves alone.
+    // The lists show once opened. Each group has its action: unblocking, or letting a script be
+    // blocked automatically again.
     let blocked = $state<BlockedScript[]>([]);
-    let listOpen = $state(false);
-    const sorted = $derived([...blocked].sort((a, b) => b.since - a.since));
+    let exempt = $state<string[]>([]);
+    let blockedOpen = $state(false);
+    let exemptOpen = $state(false);
+
+    interface Group {
+        id: string;
+        title: string;
+        scripts: { key: string; detail: string }[];
+        action: 'Unblock' | 'Remove';
+        /** Asked before acting on all of them. */
+        confirm: (count: string) => string;
+        act: (keys: string[]) => void;
+    }
+
+    const unblocking = {
+        action: 'Unblock' as const,
+        confirm: (count: string) => `Unblock the ${count}? They load again on every site, and none of them is blocked automatically after that.`,
+        // As their switch would: they aren't blocked automatically after that.
+        act: (keys: string[]) => setBlocked(keys, false),
+    };
+
+    const blockedGroups = $derived.by((): Group[] => {
+        const sorted = [...blocked].sort((a, b) => b.since - a.since);
+        const item = (script: BlockedScript) => ({ key: script.key, detail: how(script) });
+        return [
+            { id: 'auto', title: 'Blocked automatically', scripts: sorted.filter((script) => script.auto).map(item), ...unblocking },
+            { id: 'hand', title: 'Blocked by hand', scripts: sorted.filter((script) => !script.auto).map(item), ...unblocking },
+        ].filter((group) => group.scripts.length > 0);
+    });
+
+    const exemptGroup = $derived<Group>({
+        id: 'exempt',
+        title: 'Never blocked automatically',
+        scripts: exempt.map((key) => ({ key, detail: '' })),
+        action: 'Remove',
+        confirm: (count: string) => `Remove the ${count}? They are blocked automatically again when they reach the score.`,
+        act: (keys: string[]) => removeExempt(keys),
+    });
 
     onMount(() => {
         loadBlockingOptions().then((loaded) => (options = loaded));
         loadBlocked().then((list) => (blocked = list));
-        return watchBlocked((list) => (blocked = list));
+        loadExempt().then((keys) => (exempt = keys));
+        const stopBlocked = watchBlocked((list) => (blocked = list));
+        const stopExempt = watchExempt((keys) => (exempt = keys));
+        return () => {
+            stopBlocked();
+            stopExempt();
+        };
     });
 
-    /** Lets the scripts run again, as their switch would: they aren't blocked automatically after that. */
-    function unblock(keys: string[]) {
-        setBlocked(keys, false);
+    function actOnAll(group: Group) {
+        const count = `${group.scripts.length} ${group.scripts.length === 1 ? 'script' : 'scripts'} ${group.title.toLowerCase()}`;
+        if (confirm(group.confirm(count))) group.act(group.scripts.map((script) => script.key));
     }
 
-    function unblockAll() {
-        if (confirm(`Unblock all ${blocked.length} scripts? They load again on every site, and none of them is blocked automatically after that.`)) {
-            unblock(blocked.map((script) => script.key));
-        }
-    }
-
-    /** How and when it was blocked: "Automatically at score 91, 18 Oct 2026", "By hand, 18 Oct 2026". */
+    /** When it was blocked, and if automatically at which score: "At score 91, 18 Oct 2026", "18 Oct 2026". */
     function how(script: BlockedScript): string {
         const day = new Date(script.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-        return script.auto ? `Automatically at score ${Math.round(script.auto.score * 100)}, ${day}` : `By hand, ${day}`;
+        return script.auto ? `At score ${Math.round(script.auto.score * 100)}, ${day}` : day;
     }
 
     function setSwitch(key: SwitchKey, checked: boolean) {
@@ -74,6 +116,8 @@
         saveBlockingOptions($state.snapshot(options));
     }
 
+    // Saved once the field is left or Enter pressed, not as typed: on the way from 85 to 90, the field
+    // reads 9, which would block nearly every script of a page analyzed meanwhile.
     function setAutoBlockFrom(event: Event) {
         const value = percentFromInput(event);
         if (value === null) return;
@@ -103,38 +147,64 @@
         <div class="description">Scripts scoring this much or more, from 0 to 100, are blocked automatically.</div>
     </div>
     <label class="field" class:changed={fromChanged}>
-        <input type="number" min="0" max="100" step="1" value={percent(options.autoBlockFrom)} oninput={setAutoBlockFrom} />
+        <input type="number" min="0" max="100" step="1" value={percent(options.autoBlockFrom)} onchange={setAutoBlockFrom} />
     </label>
     <span class="default" class:changed={fromChanged}>default {percent(DEFAULT_BLOCKING_OPTIONS.autoBlockFrom)}</span>
 </div>
 
 <div class="row">
     <div>
-        <div class="name">Blocked scripts <span class="count">{blocked.length}</span></div>
-        <div class="description">Blocked on every site. Unblocked scripts load again from their next load.</div>
+        <div class="name">Never blocked automatically <span class="count">{exempt.length}</span></div>
+        <div class="description">Scripts you let run again: blocking them automatically again would undo that. Remove one to let it be blocked automatically again.</div>
     </div>
     <div class="actions">
-        {#if blocked.length > 0}
-            <button type="button" aria-expanded={listOpen} onclick={() => (listOpen = !listOpen)}>{listOpen ? 'Hide' : 'Show'}</button>
-            <button type="button" onclick={unblockAll}>Unblock all</button>
+        {#if exempt.length > 0}
+            <button type="button" aria-expanded={exemptOpen} onclick={() => (exemptOpen = !exemptOpen)}>{exemptOpen ? 'Hide' : 'Show'}</button>
+            <button type="button" onclick={() => actOnAll(exemptGroup)}>Remove all</button>
         {/if}
     </div>
 </div>
-{#if listOpen && blocked.length > 0}
+{#if exemptOpen && exempt.length > 0}
+    {@render scripts(exemptGroup)}
+{/if}
+
+<div class="row">
+    <div>
+        <div class="name">Blocked scripts <span class="count">{blocked.length}</span></div>
+        <div class="description">Blocked on every site; unblocked scripts load again from their next load.</div>
+    </div>
+    <div class="actions">
+        {#if blocked.length > 0}
+            <button type="button" aria-expanded={blockedOpen} onclick={() => (blockedOpen = !blockedOpen)}>{blockedOpen ? 'Hide' : 'Show'}</button>
+        {/if}
+    </div>
+</div>
+{#if blockedOpen}
+    {#each blockedGroups as group (group.id)}
+        <div class="group">
+            <h3>{group.title} <span class="count">{group.scripts.length}</span></h3>
+            <button type="button" onclick={() => actOnAll(group)}>{group.action} all</button>
+        </div>
+        {@render scripts(group)}
+    {/each}
+{/if}
+
+<!-- A group's scripts, each with its action. -->
+{#snippet scripts(group: Group)}
     <ul class="blocked">
-        {#each sorted as script (script.key)}
+        {#each group.scripts as script (script.key)}
             {@const { host, pathname } = new URL(script.key)}
             <!-- Named like the popup's script cards: the path with its file name kept, then who serves it. -->
             <li>
                 <div class="script" title={script.key}>
                     <div class="address"><MiddleTruncate text={pathname} path /></div>
-                    <div class="description">{host} · {how(script)}</div>
+                    <div class="description">{[host, script.detail].filter(Boolean).join(' · ')}</div>
                 </div>
-                <button type="button" onclick={() => unblock([script.key])}>Unblock</button>
+                <button type="button" onclick={() => group.act([script.key])}>{group.action}</button>
             </li>
         {/each}
     </ul>
-{/if}
+{/snippet}
 
 <style>
     .count {
@@ -143,7 +213,7 @@
         font-weight: 400;
     }
 
-    /* Spans the input and default columns: two buttons are wider than one input. */
+    /* Spans the input and default columns, the button at their end, like the groups' buttons below. */
     .actions {
         display: flex;
         grid-column: 2 / 4;
@@ -165,6 +235,21 @@
 
     button:hover {
         border-color: var(--muted);
+    }
+
+    /* A group's heading, with its button at the end. */
+    .group {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 12px;
+        padding: 8px 0;
+    }
+
+    h3 {
+        margin: 0;
+        font-size: 13px;
     }
 
     .blocked {
