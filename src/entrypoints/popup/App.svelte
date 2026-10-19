@@ -1,9 +1,11 @@
 <script lang="ts">
     import { browser } from 'wxt/browser';
-    import type { AnalysisUpdatedMessage, GetTabSnapshotMessage } from '@/types/messages';
+    import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, SetSiteOffMessage } from '@/types/messages';
     import type { TabSnapshot } from '@/types/snapshot';
     import DetailHeader from './components/DetailHeader.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
+    import Switch from './components/Switch.svelte';
+    import { loadOffSites, offEntryFor, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
     import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from './model';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
     import ScriptPage from './screens/ScriptPage.svelte';
@@ -37,8 +39,23 @@
         window.scrollTo(0, scrolledTo);
     }
 
-    const url = $derived(snapshot ? pageUrl(snapshot) : null);
-    const host = $derived(snapshot ? pageHost(snapshot) : '');
+    // The tab, and whether the extension is off for its site (see lib/sites): then nothing was
+    // recorded there, and the popup says so instead of showing scores.
+    let tabId = $state<number | undefined>();
+    let tabUrl = $state<string | undefined>();
+    let offSites = $state<OffSite[]>([]);
+    const tabHost = $derived(switchableHost(tabUrl));
+    const offEntry = $derived(offEntryFor(tabHost, offSites));
+
+    const url = $derived(snapshot ? pageUrl(snapshot) : (tabUrl ?? null));
+    const host = $derived((snapshot ? pageHost(snapshot) : '') || tabHost || '');
+
+    /** Turns the extension off on the tab's site or on again; the background loads the page again. */
+    function setOn(on: boolean) {
+        if (!tabHost || tabId === undefined) return;
+        const message: SetSiteOffMessage = { type: 'SET_SITE_OFF', host: tabHost, off: !on, tabId };
+        browser.runtime.sendMessage(message);
+    }
 
     function show(next: TabSnapshot | undefined) {
         snapshot = next;
@@ -47,6 +64,8 @@
 
     async function getActiveTabId(): Promise<number | undefined> {
         const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        tabUrl = tab?.url;
+        tabId = tab?.id;
         return tab?.id;
     }
 
@@ -54,6 +73,8 @@
         // Tells the background a popup is open, so it sends updates (see broadcastTabSnapshot); the
         // port closes with the popup.
         const port = browser.runtime.connect({ name: 'popup' });
+        loadOffSites().then((sites) => (offSites = sites));
+        const stopOffSites = watchOffSites((sites) => (offSites = sites));
         getActiveTabId().then((tabId) => {
             if (tabId === undefined) {
                 status = 'unavailable';
@@ -79,6 +100,7 @@
         browser.runtime.onMessage.addListener(onMessage);
         return () => {
             browser.runtime.onMessage.removeListener(onMessage);
+            stopOffSites();
             port.disconnect();
         };
     });
@@ -87,6 +109,10 @@
 <header>
     <h1 title={url ?? ''}><MiddleTruncate text={host || 'Web Tracking Detector'} /></h1>
     <div class="actions">
+        <!-- The extension on or off for the site, like an ad blocker's power switch. -->
+        {#if tabHost}
+            <Switch status checked={!offEntry} onchange={setOn} label={offEntry ? `Off for ${offEntry.site}: turn it on` : `On for this site: turn it off`} />
+        {/if}
         <button class="settings" type="button" title="Settings" aria-label="Settings" onclick={() => browser.runtime.openOptionsPage()}>
             <!-- A gear: Lucide's "settings" icon (lucide.dev, ISC license). -->
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -100,7 +126,11 @@
 </header>
 
 <main>
-    {#if status === 'loading'}
+    {#if offEntry}
+        <p class="state">
+            Off for <strong>{offEntry.site}</strong> and its subdomains: nothing on this site is recorded, scored or blocked. Turn it on with the switch above.
+        </p>
+    {:else if status === 'loading'}
         <p class="state">Checking this page…</p>
     {:else if status === 'unavailable'}
         <p class="state">No data for this tab yet. Reload the page to check it.</p>

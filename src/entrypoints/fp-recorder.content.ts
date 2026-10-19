@@ -10,7 +10,9 @@ import { STORED_VALUE_MAX } from '@/lib/identifiers';
 const reflectApply = Reflect.apply;
 
 // Runs in the page's main world so it can wrap the page's own fingerprinting APIs.
+// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
 export default defineContentScript({
+    registration: 'runtime',
     matches: ['<all_urls>'],
     runAt: 'document_start',
     allFrames: true,

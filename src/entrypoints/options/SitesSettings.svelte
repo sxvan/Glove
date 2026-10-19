@@ -1,0 +1,108 @@
+<script lang="ts">
+    // The sites the extension is off for (see lib/sites), to turn it on again there; like the lists
+    // of the Blocking section.
+    import { onMount } from 'svelte';
+    import { loadOffSites, removeOffSites, watchOffSites, type OffSite } from '@/lib/sites';
+
+    let sites = $state<OffSite[]>([]);
+    let open = $state(false);
+    const sorted = $derived([...sites].sort((a, b) => b.since - a.since));
+
+    onMount(() => {
+        loadOffSites().then((loaded) => (sites = loaded));
+        return watchOffSites((changed) => (sites = changed));
+    });
+
+    function turnOnAll() {
+        if (confirm(`Turn the extension on again for ${sites.length === 1 ? 'the site' : `all ${sites.length} sites`}? Their pages are recorded, scored and blocked again from their next load.`)) {
+            removeOffSites(sites.map(({ site }) => site));
+        }
+    }
+
+    const day = (since: number) => new Date(since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+</script>
+
+<div class="row">
+    <div>
+        <div class="name">Off for these sites <span class="count">{sites.length}</span></div>
+        <div class="description">
+            Turned off with the switch in the popup: nothing on them is recorded, scored or blocked, and nothing of the extension is in their pages. Each
+            covers its subdomains too.
+        </div>
+    </div>
+    <div class="actions">
+        {#if sites.length > 0}
+            <button type="button" aria-expanded={open} onclick={() => (open = !open)}>{open ? 'Hide' : 'Show'}</button>
+            <button type="button" onclick={turnOnAll}>Turn on all</button>
+        {/if}
+    </div>
+</div>
+{#if open && sites.length > 0}
+    <ul class="sites">
+        {#each sorted as { site, since } (site)}
+            <li>
+                <div>
+                    <div class="site">{site}</div>
+                    <div class="description">And its subdomains · {day(since)}</div>
+                </div>
+                <button type="button" onclick={() => removeOffSites([site])}>Turn on</button>
+            </li>
+        {/each}
+    </ul>
+{/if}
+
+<style>
+    .count {
+        margin-left: 4px;
+        color: var(--muted);
+        font-weight: 400;
+    }
+
+    /* Spans the input and default columns, the buttons at their end (see BlockingSettings). */
+    .actions {
+        display: flex;
+        grid-column: 2 / 4;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    button {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        border-color: var(--muted);
+    }
+
+    .sites {
+        display: grid;
+        gap: 2px;
+        margin: 0 0 8px;
+        padding: 0;
+        list-style: none;
+    }
+
+    .sites li {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        padding: 8px 0;
+        border-top: 1px solid var(--border);
+    }
+
+    .site {
+        overflow: hidden;
+        font-family: var(--mono);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>

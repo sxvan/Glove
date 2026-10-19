@@ -5,7 +5,9 @@ import type { HttpMonkeyEvent } from '@/types/events';
 
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
 // XMLHttpRequest, beacons and image pixels.
+// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
 export default defineContentScript({
+    registration: 'runtime',
     matches: ['<all_urls>'],
     runAt: 'document_start',
     allFrames: true,

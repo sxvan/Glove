@@ -18,7 +18,7 @@
     } from '@/lib/blocking';
     import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
     import { percent, percentFromInput } from './inputs';
-    import Switch from './Switch.svelte';
+    import Switch from '../popup/components/Switch.svelte';
 
     type SwitchKey = 'reload' | 'clearData' | 'autoBlock';
 

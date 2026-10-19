@@ -13,15 +13,17 @@ import {
     watchExempt,
     type BlockedScript,
 } from '@/lib/blocking';
+import { registerRecorders } from '@/lib/recorders';
 import { createScheduler } from '@/lib/scheduler';
+import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
 import { extractSubdomain, getHostname, scoreSubdomainEntropy } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
-import { forgetTabIcon, showScoreIcon } from '@/lib/toolbar-icon';
+import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
-import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult } from '@/types/messages';
+import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
 import type { CallLocation, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
@@ -70,15 +72,81 @@ export default defineBackground(() => {
         reanalyzeAll();
     });
 
-    // The scripts the user blocked (see lib/blocking), by what they are blocked by; the browser's
-    // rules follow the list.
+    // The scripts the user blocked (see lib/blocking), by what they are blocked by, and the sites the
+    // extension is off for (see lib/sites); the browser's rules and the registered recorders follow
+    // them.
+    let blockedList: BlockedScript[] = [];
     let blocked = new Set<string>();
+    let offSites: OffSite[] = [];
+    let offSitesChanged = false;
+    function syncRules() {
+        return syncBlockingRules(
+            blockedList,
+            offSites.map(({ site }) => site)
+        ).catch((error) => console.warn('Could not update the blocking rules', error));
+    }
     function applyBlocked(list: BlockedScript[]) {
+        blockedList = list;
         blocked = new Set(list.map((script) => script.key));
-        syncBlockingRules(list).catch((error) => console.warn('Could not update the blocking rules', error));
+        return syncRules();
+    }
+    function applyOffSites(sites: OffSite[]) {
+        offSites = sites;
+        return Promise.all([syncRules(), registerRecorders(sites).catch((error) => console.warn('Could not register the recorders', error))]);
     }
     loadBlocked().then(applyBlocked, (error) => console.warn('Could not load the blocked scripts', error));
     watchBlocked(applyBlocked);
+    loadOffSites().then((sites) => {
+        if (!offSitesChanged) applyOffSites(sites);
+    });
+    watchOffSites((sites) => {
+        offSitesChanged = true;
+        applyOffSites(sites);
+    });
+
+    /** How many different blocked scripts tried to load on the tab's page, in all its frames. */
+    function blockedOnPage(tabId: number): number {
+        const keys = new Set<string>();
+        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
+            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+            for (const key of Object.keys(document?.blockedScripts ?? {})) keys.add(key);
+        }
+        return keys.size;
+    }
+
+    /** Whether the extension is off for the page at `url` (see lib/sites). */
+    const isOff = (url: string | null | undefined) => offEntryFor(switchableHost(url), offSites) !== undefined;
+    /** Whether it is off for the page in the tab, by its top document. */
+    function tabIsOff(tabId: number): boolean {
+        const top = session.tabs[tabId]?.frames[0];
+        return isOff(top?.currentDocumentId ? top.documents[top.currentDocumentId]?.currentUrl : null);
+    }
+
+    /**
+     * Turns the extension off on a tab's site or on again, with the recorders and rules in step
+     * before the page loads again, which it does at once: off, the recording made so far goes.
+     */
+    browser.runtime.onMessage.addListener((msg: SetSiteOffMessage, _sender, sendResponse) => {
+        if (msg?.type !== 'SET_SITE_OFF') return;
+        (async () => {
+            await setSiteOff(msg.host, msg.off);
+            offSitesChanged = true;
+            await applyOffSites(await loadOffSites());
+            if (msg.off) {
+                dropTab(session, msg.tabId);
+                forgetTabIcon(msg.tabId);
+            }
+            await browser.tabs.reload(msg.tabId);
+        })().then(
+            () => sendResponse(true),
+            (error) => {
+                console.warn('Could not turn the extension off or on for the site', error);
+                sendResponse(false);
+            }
+        );
+        // Answered once done.
+        return true;
+    });
 
     // What to do after blocking, and the scripts never to block automatically (see lib/blocking).
     // A change seen while loading is newer than what the load read, so the load doesn't overwrite it.
@@ -110,7 +178,7 @@ export default defineBackground(() => {
      * are blocked already, or that the user let run again.
      */
     function blockAutomatically(tabId: number) {
-        if (!blockingOptions.autoBlock) return;
+        if (!blockingOptions.autoBlock || tabIsOff(tabId)) return;
         const found = new Map<string, number>();
         for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
             const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
@@ -146,9 +214,7 @@ export default defineBackground(() => {
      */
     async function changeBlocked(urls: string[], block: boolean, tabId: number | null, auto?: Map<string, number>): Promise<SetBlockedResult> {
         await setBlocked(urls, block, auto);
-        const list = await loadBlocked();
-        blocked = new Set(list.map((script) => script.key));
-        await syncBlockingRules(list);
+        await applyBlocked(await loadBlocked());
         const options = await loadBlockingOptions();
         if (tabId === null || !(options.reload || (block && options.clearData))) return { reloaded: false, cleared: false };
         if (block && options.clearData) {
@@ -222,6 +288,8 @@ export default defineBackground(() => {
         const top = session.tabs[tabId]?.frames['0'];
         const page = top?.currentDocumentId ? top.documents[top.currentDocumentId] : undefined;
         const pageUrl = page?.currentUrl ?? document.currentUrl;
+        // Nothing is recorded on a site the extension is off for: a page loading counts by its own address.
+        if (isOff(details.type === 'main_frame' ? details.url : pageUrl)) return;
         const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, pageUrl, hostname, bodyBytes: bodySize(details.requestBody) };
         document.httpRequests.push(httpEvent);
 
@@ -244,6 +312,9 @@ export default defineBackground(() => {
         if (!msg || !msg.type || !msg.payload) {
             return;
         }
+
+        // Nothing is recorded on a site the extension is off for, also from frames of other sites in it.
+        if (isOff(sender.tab.url)) return;
 
         const tabId = sender.tab.id!;
         const frameId = sender.frameId!;
@@ -312,6 +383,7 @@ export default defineBackground(() => {
             const { document } = ensureDocument(session, tabId, frameId, documentId, null);
             const attempt = (document.blockedScripts[key] ??= { url: details.url, attempts: 0 });
             attempt.attempts++;
+            showBlockedCount(tabId, blockedOnPage(tabId));
             broadcastTabSnapshot(session, tabId);
         },
         { urls: ['<all_urls>'], types: ['script'] }
@@ -335,7 +407,11 @@ export default defineBackground(() => {
         }
 
         updateCurrentDocument(session, tabId, frameId, documentId, url);
-        if (frameId === 0) dropPreviousPageFrames(session, tabId, details.timeStamp);
+        if (frameId === 0) {
+            dropPreviousPageFrames(session, tabId, details.timeStamp);
+            // A new page has blocked nothing yet.
+            showBlockedCount(tabId, 0);
+        }
     });
 
     // A closed tab's recording is of no more use.

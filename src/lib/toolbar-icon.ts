@@ -1,6 +1,7 @@
 // The toolbar icon of a tab as its page's fingerprinting score: a ring like the popup's, filled by
 // the score and in the likelihood's color, so it can be seen without opening the popup. Tabs without
-// a recording keep the extension's own icon.
+// a recording keep the extension's own icon. On it, a badge counts the page's blocked scripts that
+// tried to load, in the grey and white ad blockers use for their counts (AdGuard's #555555).
 import { browser } from 'wxt/browser';
 import type { Cutoffs } from './scoring';
 
@@ -30,6 +31,20 @@ export function showScoreIcon(tabId: number, pageId: string, score: number, cuto
     const imageData = Object.fromEntries(SIZES.map((size) => [size, ring(size, percent, COLORS[likelihood])]));
     // Fails for a tab closed meanwhile.
     browser.action.setIcon({ tabId, imageData }).catch(() => shown.delete(tabId));
+}
+
+// The badge's colors, set once for all tabs.
+let badgeColored = false;
+
+/** Shows how many of the page's scripts were blocked as they tried to load; none shows no badge. */
+export function showBlockedCount(tabId: number, count: number) {
+    if (!badgeColored) {
+        badgeColored = true;
+        browser.action.setBadgeBackgroundColor({ color: '#555555' }).catch(() => {});
+        browser.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
+    }
+    // Fails for a tab closed meanwhile.
+    browser.action.setBadgeText({ tabId, text: count > 0 ? String(count) : '' }).catch(() => {});
 }
 
 /** Forgets what a closed tab's icon showed. */

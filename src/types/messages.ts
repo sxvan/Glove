@@ -35,3 +35,11 @@ export interface SetBlockedResult {
     reloaded: boolean;
     cleared: boolean;
 }
+
+/** Popup -> background: turns the extension off on the tab's site, or on again (see lib/sites), and loads it again. */
+export interface SetSiteOffMessage {
+    type: 'SET_SITE_OFF';
+    host: string;
+    off: boolean;
+    tabId: number;
+}

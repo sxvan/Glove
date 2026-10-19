@@ -21,6 +21,7 @@
     import { percent, percentFromInput, positiveFromInput, unitFromInput } from './inputs';
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
     import BlockingSettings from './BlockingSettings.svelte';
+    import SitesSettings from './SitesSettings.svelte';
     import ThemeSwitch from './ThemeSwitch.svelte';
 
     // Saves after typing pauses, so every keystroke doesn't re-score all open pages.
@@ -149,6 +150,11 @@
     </section>
 
     <!-- Not scoring settings either. -->
+    <section class="squircle">
+        <h2>Sites</h2>
+        <SitesSettings />
+    </section>
+
     <section class="squircle">
         <h2>Blocking</h2>
         <BlockingSettings />

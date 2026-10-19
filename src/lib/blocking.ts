@@ -93,18 +93,33 @@ export function watchExempt(onChange: (keys: string[]) => void): () => void {
 
 /**
  * Replaces the browser's blocking rules with one per blocked script: its address, with any query
- * after it ("^": the end, or a separator such as "?"), loaded as a script.
+ * after it ("^": the end, or a separator such as "?"), loaded as a script. On the sites the user
+ * turned the extension off for (`offSites`, see lib/sites), a rule of higher priority allows all of a
+ * page's requests, its frames' included, so nothing is blocked there.
  */
-export async function syncBlockingRules(list: BlockedScript[]): Promise<void> {
+export async function syncBlockingRules(list: BlockedScript[], offSites: string[]): Promise<void> {
     const existing = await browser.declarativeNetRequest.getDynamicRules();
+    const blockRules = list.map((script, i) => ({
+        id: i + 1,
+        priority: 1,
+        action: { type: 'block' as const },
+        condition: { urlFilter: `|${script.key}^`, resourceTypes: ['script' as const] },
+    }));
+    // requestDomains covers each name's subdomains too, as an off site does.
+    const allowRules =
+        offSites.length > 0
+            ? [
+                  {
+                      id: blockRules.length + 1,
+                      priority: 2,
+                      action: { type: 'allowAllRequests' as const },
+                      condition: { requestDomains: offSites, resourceTypes: ['main_frame' as const] },
+                  },
+              ]
+            : [];
     await browser.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: existing.map((rule) => rule.id),
-        addRules: list.map((script, i) => ({
-            id: i + 1,
-            priority: 1,
-            action: { type: 'block' as const },
-            condition: { urlFilter: `|${script.key}^`, resourceTypes: ['script' as const] },
-        })),
+        addRules: [...blockRules, ...allowRules],
     });
 }
 

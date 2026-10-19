@@ -5,7 +5,9 @@ import type { RecorderMessage } from '@/types/messages';
 
 // Runs in the isolated world and forwards events dispatched by the main-world recorders
 // (fp-recorder, http-recorder) to the background.
+// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
 export default defineContentScript({
+    registration: 'runtime',
     matches: ['<all_urls>'],
     runAt: 'document_start',
     allFrames: true,
