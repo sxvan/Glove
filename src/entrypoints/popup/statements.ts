@@ -81,24 +81,22 @@ export const STORAGE_WORDS: Record<StorageKind, string> = {
     indexedDB: 'IndexedDB',
 };
 
-/**
- * What the script wrote to cookies and storage, where it could keep what it computed. With
- * identifiers (see findIdentifier), the most likely ones: "Stored 2 likely identifiers in the
- * browser" over "1 cookie and 1 in local storage, besides 1 possible identifier and 2 other
- * values"; without, all: "Stored 3 values in the browser" over "2 cookies and 1 in local storage".
- */
 /** How "Stored …" is judged, for its tip. */
 const STORED_EXPLANATION =
     'Values the script wrote to cookies and the page\u2019s storage, as recorded when written. An identifier stored there lets a script recognize the browser on later visits without fingerprinting again, and a cookie keeps being sent after the script is blocked. A possible identifier is kept long enough (a cookie for 3 months by default; local storage until cleared) and holds a part of 8 to 200 characters with a digit; a likely one is also stored in another place, to restore it from there, or stored right after a fingerprinting burst.';
 
+/**
+ * The identifiers the script wrote to cookies and storage (see findIdentifier), where it could keep
+ * what it computed: the most likely ones, "Stored 2 likely identifiers in the browser" over "1
+ * cookie and 1 in local storage, besides 1 possible identifier and 2 other values". Values that
+ * don't look like an identifier aren't a sign of tracking on their own, so without one there is no
+ * line (and no section listing the values).
+ */
 function storedStatement(script: ScriptDetail): Statement | null {
-    if (script.stored.length === 0) return null;
     const likely = script.stored.filter((item) => item.identifier === 'likely');
     const possible = script.stored.filter((item) => item.identifier === 'possible');
     const shown = likely.length > 0 ? likely : possible;
-    if (shown.length === 0) {
-        return { key: 'stored', text: ['Stored ', { value: plural(script.stored.length, 'value') }, ' in the browser'], detail: storagePlaces(script.stored), explanation: STORED_EXPLANATION };
-    }
+    if (shown.length === 0) return null;
     const others = script.stored.length - likely.length - possible.length;
     const besides = [
         likely.length > 0 && possible.length > 0 ? plural(possible.length, 'possible identifier') : '',
