@@ -13,8 +13,8 @@
         align-self: center;
         display: grid;
         place-items: center;
-        width: 20px;
-        height: 20px;
+        width: var(--chevron-button);
+        height: var(--chevron-button);
         padding: 0;
         border: 0;
         background: none;

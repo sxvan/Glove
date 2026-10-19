@@ -294,9 +294,28 @@
 </div>
 
 <style>
+    /* The API | its bar | the value sorted by | a chevron: the headings, the rows and the everyday
+       reads' row take these columns (subgrid), so they line up. The bar has a part of the width,
+       the value and the chevron as much as they need; everything else spans them all. */
     .api-table {
         display: grid;
-        gap: 12px;
+        grid-template-columns: minmax(0, 4fr) minmax(0, 1fr) auto auto;
+        gap: 12px 10px;
+    }
+
+    .api-table > *,
+    .rows > *,
+    .row > * {
+        grid-column: 1 / -1;
+    }
+
+    .headings,
+    .rows,
+    .row,
+    .head,
+    .everyday {
+        display: grid;
+        grid-template-columns: subgrid;
     }
 
     /* "Sort by" and the menu button on the left, the direction on the right. */
@@ -454,8 +473,7 @@
 
     /* Out into the card's padding by the rows' own, so their text stays in line with the headings. */
     .rows {
-        display: grid;
-        gap: 2px;
+        row-gap: 2px;
         margin: 0 -10px;
         padding: 0;
         list-style: none;
@@ -472,9 +490,6 @@
 
     /* The headings, on the rows' grid and in line with their text; small and muted. */
     .headings {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 72px 58px 10px;
-        gap: 10px;
         margin: 0 -10px -6px;
         padding: 0 10px;
         color: var(--muted);
@@ -486,8 +501,7 @@
         grid-column: 2 / 4;
     }
 
-    /* On one line, ending where the numbers below end; a longer one ("Call time") reaches left
-       into the gap before it. */
+    /* On one line, ending where the numbers below end. */
     .value-heading {
         justify-self: end;
         white-space: nowrap;
@@ -496,11 +510,7 @@
     /* What it is, its bar, what it counts and a chevron to open it: one line of text over its name. */
     .head,
     .everyday {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 72px 58px 10px;
         align-items: center;
-        gap: 10px;
-        width: 100%;
         padding: 8px 10px;
         border: 0;
         background: none;
@@ -620,7 +630,6 @@
     /* The everyday reads' row: like the others, on the fill, quieter. */
     .everyday {
         margin: 0 -10px;
-        width: calc(100% + 20px);
         border-radius: 10px;
         background: var(--fill);
     }

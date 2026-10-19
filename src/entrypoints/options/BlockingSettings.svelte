@@ -107,6 +107,12 @@
 
     // A reset sets the options back, not the lists: those are the user's choices, with their own buttons.
     const optionsChanged = $derived((Object.keys(DEFAULT_BLOCKING_OPTIONS) as (keyof BlockingOptions)[]).some((key) => options[key] !== DEFAULT_BLOCKING_OPTIONS[key]));
+
+    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
+    let { changed = $bindable(false) }: { changed?: boolean } = $props();
+    $effect(() => {
+        changed = optionsChanged;
+    });
     const reset = () => saveBlockingOptions({ ...DEFAULT_BLOCKING_OPTIONS });
 
     function actOnAll(group: Group) {
@@ -227,7 +233,7 @@
     /* Spans the input and default columns, the button at their end, like the groups' buttons below. */
     .actions {
         display: flex;
-        grid-column: 2 / 4;
+        grid-column: 2 / -1;
         justify-content: flex-end;
         gap: 8px;
     }
@@ -289,10 +295,5 @@
         min-width: 0;
         font-family: var(--mono);
         font-size: 12px;
-    }
-
-    /* The switch sits where the other settings have their input, at its end. */
-    .row > :global(input[role='switch']) {
-        justify-self: end;
     }
 </style>

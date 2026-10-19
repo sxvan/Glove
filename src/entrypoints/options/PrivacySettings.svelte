@@ -20,10 +20,16 @@
         savePrivacy($state.snapshot(options));
     }
 
-    const changed = $derived(options.dnsLookups !== DEFAULT_PRIVACY.dnsLookups);
+    const sectionChanged = $derived(options.dnsLookups !== DEFAULT_PRIVACY.dnsLookups);
+
+    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
+    let { changed = $bindable(false) }: { changed?: boolean } = $props();
+    $effect(() => {
+        changed = sectionChanged;
+    });
 </script>
 
-<SectionHead title="Privacy" {changed} onreset={reset} />
+<SectionHead title="Privacy" changed={sectionChanged} onreset={reset} />
 
 <label class="row">
     <div>
@@ -35,12 +41,5 @@
         </div>
     </div>
     <Switch checked={options.dnsLookups} onchange={setDnsLookups} />
-    <span class="default" class:changed>default {DEFAULT_PRIVACY.dnsLookups ? 'on' : 'off'}</span>
+    <span class="default" class:changed={sectionChanged}>default {DEFAULT_PRIVACY.dnsLookups ? 'on' : 'off'}</span>
 </label>
-
-<style>
-    /* The switch sits where the other settings have their input, at its end (see BlockingSettings). */
-    .row > :global(input[role='switch']) {
-        justify-self: end;
-    }
-</style>

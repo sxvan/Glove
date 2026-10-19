@@ -65,7 +65,7 @@
     /* Spans the input and default columns, the buttons at their end (see BlockingSettings). */
     .actions {
         display: flex;
-        grid-column: 2 / 4;
+        grid-column: 2 / -1;
         justify-content: flex-end;
         gap: 8px;
     }

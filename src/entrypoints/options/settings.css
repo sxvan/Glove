@@ -1,17 +1,35 @@
 /* Rows of settings, shared by the options page and its nested levels (LevelSettings). */
 
-/* Name and description | input | default; the inputs line up in one column. */
+/* A section's rows share its columns: name and description | input | default. Each row, and what
+   groups rows, takes them over (subgrid), so a column is as wide as its widest content and lines up
+   from row to row; everything else in a section spans them all. */
+section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 16px;
+}
+
+:where(section, .group, .bracketed, .bracket-rows) > * {
+    grid-column: 1 / -1;
+}
+
+.group,
+.bracketed,
+.bracket-rows,
 .row {
     display: grid;
-    grid-template-columns: 1fr auto 96px;
+    grid-template-columns: subgrid;
+}
+
+.row {
     align-items: center;
-    gap: 4px 16px;
+    row-gap: 4px;
     padding: 12px 0;
 }
 
-/* Two inputs instead of an input and its default. */
-.row.cutoffs {
-    grid-template-columns: 1fr auto auto;
+/* Inputs and switches start on one line (a switch would otherwise stretch). */
+.row > input[role='switch'] {
+    justify-self: start;
 }
 
 .name {
@@ -37,8 +55,9 @@
     color: var(--possible);
 }
 
+/* Room for the largest values, 5 digits (25000), and the arrows. */
 .field input {
-    width: 64px;
+    width: 8ch;
     padding: 4px 6px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -82,7 +101,7 @@
     position: relative;
     display: block;
     width: fit-content;
-    margin: 0 0 10px;
+    margin: 0;
     padding: 6px 0 2px 14px;
     color: var(--muted);
     font-size: 12px;

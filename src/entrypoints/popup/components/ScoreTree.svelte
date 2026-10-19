@@ -60,9 +60,9 @@
                     {/if}
                 </span>
                 <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} text={node.ringText} title={ringTitle(node)} />
-                <!-- A factor multiplies into its parent: no share of its own. -->
+                <!-- A factor multiplies into its parent: no share of its own, but its room. -->
                 {#if node.factor}
-                    <span></span>
+                    <span class="share"></span>
                 {:else}
                     <span class="share" class:none={node.shownShare === 0} title="What it adds to the {node.shareTo}'s score">
                         +{Math.round(node.shownShare * 100)}
@@ -92,26 +92,42 @@
 </ul>
 
 <style>
-    /* Indented at every level, the guide under the parent row's chevron (12px in: the row's 6px of
-       room, then the middle of its chevron), or at the top under the score the tree is of. */
+    /* The tree's measures, which its layout and its lines share: the space between rows, the room
+       inside a row (above and below it, and before its chevron), the chevron's size, the space
+       between a row's columns, and how far the rows are in from the guide. */
+    .tree {
+        --gap: 6px;
+        --room-y: 4px;
+        --room: 6px;
+        --chevron: 12px;
+        --columns-gap: 12px;
+        --indent: 8px;
+        --tree-line: color-mix(in srgb, var(--muted) 22%, transparent);
+        --tree-marker: var(--muted);
+    }
+
+    /* Indented at every level, the guide under the parent row's chevron (its room, then the middle
+       of its chevron), or at the top under the score the tree is of. */
     .tree {
         display: grid;
-        gap: 6px;
-        margin: 0 0 0 12px;
-        padding: 0 0 0 8px;
+        gap: var(--gap);
+        margin: 0 0 0 calc(var(--room) + var(--chevron) / 2);
+        padding: 0 0 0 var(--indent);
         list-style: none;
     }
 
-    /* Chevron | label and detail | ring with how strongly it was observed | share of the score above. */
+    /* Chevron | label and detail | ring with how strongly it was observed | share of the score above:
+       each as wide as it is, the text taking the rest. */
     .row {
+        position: relative;
         display: grid;
-        grid-template-columns: 12px minmax(0, 1fr) 52px 32px;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
         align-items: center;
-        gap: 12px;
+        gap: var(--columns-gap);
         width: 100%;
         /* Room inside, so its highlight on hover doesn't end at its chevron and its share; on the
            right, so the shares end where the chevron of "How the score came about" above does. */
-        padding: 4px 14px 4px 6px;
+        padding: var(--room-y) 14px var(--room-y) var(--room);
         border: 0;
         background: none;
         color: inherit;
@@ -132,11 +148,12 @@
     }
 
     /* A disclosure chevron, as in file trees: pointing right while closed, down while open; the
-       size of the card's other chevrons. Rows that don't open have none. */
+       size of the card's other chevrons. Rows that don't open have none. Its column is the row's
+       full height, for the guide below it. */
     .toggle {
         position: relative;
-        width: 12px;
-        height: 12px;
+        align-self: stretch;
+        width: var(--chevron);
     }
 
     button.row .toggle::before {
@@ -155,14 +172,14 @@
         transform: translate(-50%, -70%) rotate(45deg);
     }
 
-    /* Once open, the guide starts under the chevron: down to the end of the row (60px tall, the
-       chevron in its middle), where the children's guide goes on. */
+    /* Once open, the guide starts under the chevron: down to the end of the row, through its room
+       below, where the children's guide goes on. */
     .toggle.open::after {
         content: '';
         position: absolute;
-        top: 100%;
-        left: 6px;
-        height: 24px;
+        top: calc(50% + var(--chevron) / 2);
+        bottom: calc(-1 * var(--room-y));
+        left: calc(var(--chevron) / 2);
         border-left: 1px solid var(--tree-line);
     }
 
@@ -214,8 +231,10 @@
     }
 
 
-    /* Its share of the score above: secondary to how strongly it was observed. */
+    /* Its share of the score above: secondary to how strongly it was observed. Room for the widest,
+       "+100", so the rings line up at every level of the tree. */
     .share {
+        min-width: 4ch;
         color: var(--muted);
         font-size: 12px;
         font-variant-numeric: tabular-nums;
@@ -230,7 +249,8 @@
        so grey with a tint of the accent and a chevron pointing where the list goes (down to
        expand, up to collapse), but quiet; in full on hover. */
     .more {
-        margin-left: 24px;
+        position: relative;
+        margin-left: calc(var(--room) + var(--chevron) + var(--columns-gap));
         padding: 2px 0;
         border: 0;
         background: none;
@@ -263,8 +283,9 @@
         text-underline-offset: 2px;
     }
 
-    /* Rows adding nothing to their parent, at the bottom: still there, but quieter. */
-    .idle > .row {
+    /* Rows adding nothing to their parent, at the bottom: still there, but quieter; not the tree's
+       lines, which the row draws. */
+    .idle > .row > * {
         opacity: 0.55;
     }
 
@@ -273,57 +294,49 @@
         margin: 6px 0 8px;
     }
 
-    /* Tree lines: a guide down from the parent's chevron (12px into its row, its middle) through the
-       6px gaps between rows, and an elbow into each row at its middle, up to its chevron (a row is
-       60px: the 52px ring and 4px padding). The last row's guide ends at its elbow. */
+    /* Tree lines: a guide down from the parent's chevron through the gaps between rows, and an
+       elbow into each row at its middle, up to its chevron; the last row's guide ends at its elbow.
+       The elbow is drawn from the row (or "Show more"), so it is at the middle whatever the row's
+       height; it starts a gap above, so it also closes the gap to the row before. */
     .tree > li {
         position: relative;
     }
 
-    .tree > li::before,
-    .tree > li::after {
+    .tree > li:not(:last-child)::before,
+    .tree > li > :first-child::before {
         content: '';
         position: absolute;
-        left: -8px;
         border-color: var(--tree-line);
         border-style: solid;
         border-width: 0;
         pointer-events: none;
     }
 
-    .tree > li::before {
-        top: -6px;
+    .tree > li:not(:last-child)::before {
+        top: 0;
         bottom: 0;
+        left: calc(-1 * var(--indent));
         border-left-width: 1px;
     }
 
-    .tree > li:last-child::before {
-        bottom: auto;
-        height: 36px;
+    .tree > li > :first-child::before {
+        top: calc(-1 * var(--gap));
+        bottom: 50%;
+        left: calc(-1 * var(--indent));
+        width: calc(var(--indent) + var(--room) + 1px);
+        border-bottom-width: 1px;
+        border-left-width: 1px;
     }
 
-    .tree > li::after {
-        top: 30px;
-        width: 15px;
-        border-top-width: 1px;
+    /* A row without a chevron: the elbow goes on through its empty column. */
+    .tree > li > .leaf::before {
+        width: calc(var(--indent) + var(--room) + var(--chevron));
     }
 
-    /* A row without a chevron: the elbow goes on through its empty column, up to the text. */
-    .tree > li:has(> .leaf)::after {
-        width: 24px;
-    }
-
-    /* "Show N more" under APIs is one short line: its elbow and the guide's end at its middle. */
-    .tree > li:has(> .more)::before {
-        height: 17px;
-    }
-
-    .tree > li:has(> .more)::after {
-        top: 11px;
-    }
-
-    .tree {
-        --tree-line: color-mix(in srgb, var(--muted) 22%, transparent);
-        --tree-marker: var(--muted);
+    /* "Show more" begins at the names: the elbow reaches back to the guide, and ends a little
+       before the text. */
+    .tree > li > .more::before {
+        left: calc(-1 * (var(--indent) + var(--room) + var(--chevron) + var(--columns-gap)));
+        width: calc(var(--indent) + var(--room) + var(--chevron) + var(--columns-gap) / 2);
     }
 </style>

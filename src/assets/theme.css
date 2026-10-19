@@ -33,6 +33,9 @@
     /* Inter, bundled with the extension (each page's main.ts imports it); the system font until it loads. */
     --font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+    /* The button around a small chevron, larger than it so it is easy to hit (see DetailsButton). */
+    --chevron-button: 20px;
 }
 
 /* The dark palette: chosen, or the system's while following it. */

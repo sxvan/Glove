@@ -160,6 +160,19 @@
     /** Whether a part of the settings differs from its defaults. */
     const differs = (value: unknown, defaults: unknown) => JSON.stringify(value) !== JSON.stringify(defaults);
 
+    // Whether the sections of their own differ from their defaults (each tells), and so whether
+    // "Reset all" has anything to do.
+    let privacyChanged = $state(false);
+    let blockingChanged = $state(false);
+    let limitsChanged = $state(false);
+    const anyChanged = $derived(
+        theme !== 'system' ||
+            privacyChanged ||
+            blockingChanged ||
+            limitsChanged ||
+            (settings !== null && (Object.keys(DEFAULT_SETTINGS) as (keyof ScoringSettings)[]).some((key) => differs(settings![key], DEFAULT_SETTINGS[key])))
+    );
+
     /** True when the cutoffs don't make sense: "likely" has to be above "possible". */
     const invalidCutoffs = $derived(
         settings !== null && Object.values(settings.cutoffs).some((cutoffs) => cutoffs.likely <= cutoffs.possible)
@@ -169,7 +182,7 @@
 <main>
     <header>
         <h1>Settings</h1>
-        <button type="button" onclick={reset}>Reset all to defaults</button>
+        <button type="button" disabled={!anyChanged} title={anyChanged ? undefined : 'All settings are at their defaults'} onclick={reset}>Reset all to defaults</button>
     </header>
 
     <p class="intro">
@@ -198,15 +211,15 @@
     </section>
 
     <section class="squircle">
-        <PrivacySettings />
+        <PrivacySettings bind:changed={privacyChanged} />
     </section>
 
     <section class="squircle">
-        <BlockingSettings />
+        <BlockingSettings bind:changed={blockingChanged} />
     </section>
 
     <section class="squircle">
-        <PerformanceSettings />
+        <PerformanceSettings bind:changed={limitsChanged} />
     </section>
 
     {#if settings}
@@ -342,6 +355,7 @@
                 </div>
             {/each}
 
+            <div class="apis">
             {#each API_GROUPS as [category, apis] (category)}
                 <h3>{FP_CATEGORIES[category].name} <span class="category-key">{category}</span></h3>
                 {#each apis as api (api.id)}
@@ -373,6 +387,7 @@
                     </div>
                 {/each}
             {/each}
+            </div>
         </section>
     {/if}
 </main>
@@ -404,8 +419,15 @@
         cursor: pointer;
     }
 
-    header button:hover {
+    header button:hover:not(:disabled) {
         border-color: var(--muted);
+    }
+
+    /* Like a section's Reset with nothing to reset (see SectionHead). */
+    header button:disabled {
+        color: var(--muted);
+        opacity: 0.6;
+        cursor: default;
     }
 
     .intro {
@@ -456,11 +478,6 @@
         text-underline-offset: 2px;
     }
 
-    /* Room for the widest unit ("APIs"), so the fields line up whatever their unit. */
-    .unit {
-        width: 3ch;
-    }
-
     .row.cutoffs + .row.cutoffs {
         margin-top: 4px;
     }
@@ -479,21 +496,24 @@
     }
 
     /* APIs are listed compactly: one line each, with bits, what they add, the rare bits they count
-       and rarity. */
-    /* Each row is a grid of its own, so its columns have fixed widths: bits, adds, rare bits and
-       rarity line up from row to row, also where an API has no "adds" (an empty column). */
-    .row.api {
-        grid-template-columns: minmax(0, 1fr) 104px 108px 96px 116px;
-        padding: 6px 0;
+       and rarity. The rows share the list's columns (see settings.css), so these line up from row
+       to row, also where an API has no "adds" (an empty cell). */
+    .apis {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) repeat(4, auto);
+        column-gap: 16px;
     }
 
-    .row.api > .field {
-        justify-self: end;
+    .apis > * {
+        grid-column: 1 / -1;
+    }
+
+    .row.api {
+        padding: 6px 0;
     }
 
     /* Computed from the settings around it, not one of them: quieter, the numbers lined up. */
     .counts {
-        min-width: 7.5em;
         color: var(--muted);
         font-size: 12px;
         font-variant-numeric: tabular-nums;

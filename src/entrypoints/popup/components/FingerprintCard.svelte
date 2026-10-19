@@ -169,7 +169,7 @@
        room inside on both sides. */
     .breakdown {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 20px;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 8px;
         width: 100%;
@@ -198,8 +198,8 @@
     .chevron-box {
         display: grid;
         place-items: center;
-        width: 20px;
-        height: 20px;
+        width: var(--chevron-button);
+        height: var(--chevron-button);
     }
 
     /* Points down while the breakdown is closed, up while it is open; muted, as the row's text is.

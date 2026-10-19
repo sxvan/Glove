@@ -10,20 +10,24 @@
 
     const id = $props.id();
 
-    // The tip's width (see .tip) and the room it keeps from the popup's edges.
-    const TIP_WIDTH = 270;
+    // Where the tip starts, left of the icon, when there is room; and the room it keeps from the
+    // popup's edges.
+    const START = -60;
     const MARGIN = 8;
 
     let info = $state<HTMLElement>();
-    let left = $state(-60);
+    let left = $state(START);
     let flip = $state(false);
 
+    // Measured, so the tip's size and its distance from the icon are set in one place (see .tip).
     function place() {
-        if (!info) return;
+        const tip = info?.querySelector<HTMLElement>('.tip');
+        if (!info || !tip) return;
         const icon = info.getBoundingClientRect();
-        const tipHeight = info.querySelector('.tip')?.getBoundingClientRect().height ?? 0;
-        left = Math.min(Math.max(-60, MARGIN - icon.left), window.innerWidth - MARGIN - TIP_WIDTH - icon.left);
-        flip = icon.bottom + 6 + tipHeight > window.innerHeight - MARGIN && icon.top - 6 - tipHeight > MARGIN;
+        const { width, height } = tip.getBoundingClientRect();
+        const gap = parseFloat(getComputedStyle(info).getPropertyValue('--gap'));
+        left = Math.min(Math.max(START, MARGIN - icon.left), window.innerWidth - MARGIN - width - icon.left);
+        flip = icon.bottom + gap + height > window.innerHeight - MARGIN && icon.top - gap - height > MARGIN;
     }
 </script>
 
@@ -39,7 +43,9 @@
 </span>
 
 <style>
+    /* The space between the icon and its tip. */
     .info {
+        --gap: 6px;
         position: relative;
         display: inline-flex;
         vertical-align: middle;
@@ -68,7 +74,7 @@
 
     .tip {
         position: absolute;
-        top: calc(100% + 6px);
+        top: calc(100% + var(--gap));
         z-index: 10;
         width: 270px;
         padding: 9px 11px;
@@ -89,7 +95,7 @@
 
     .tip.above {
         top: auto;
-        bottom: calc(100% + 6px);
+        bottom: calc(100% + var(--gap));
     }
 
     .info:hover .tip,

@@ -15,6 +15,12 @@
     });
 
     const sectionChanged = $derived(LIMIT_FIELDS.some(({ key }) => limits[key] !== DEFAULT_LIMITS[key]));
+
+    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
+    let { changed = $bindable(false) }: { changed?: boolean } = $props();
+    $effect(() => {
+        changed = sectionChanged;
+    });
     const reset = () => saveLimits({ ...DEFAULT_LIMITS });
 
     function set(key: keyof PerformanceLimits, event: Event) {
