@@ -3,7 +3,8 @@
     // text color while on, as a setting is neither good nor bad. As `status`, it says whether
     // something works instead: green while on, red while off, as the extension on or off for a site.
     // A checkbox underneath, so it is labeled, focused and toggled like one; `label` names it where
-    // no text beside it does.
+    // no text beside it does. It shows the setting as it is after a change: `onchange` may decline
+    // one, e.g. when asked to confirm it.
     let {
         checked,
         onchange,
@@ -12,7 +13,10 @@
     }: { checked: boolean; onchange: (checked: boolean) => void; label?: string; status?: boolean } = $props();
 </script>
 
-<input type="checkbox" role="switch" class:status {checked} aria-label={label} title={label} onchange={(event) => onchange(event.currentTarget.checked)} />
+<input type="checkbox" role="switch" class:status {checked} aria-label={label} title={label} onchange={(event) => {
+        onchange(event.currentTarget.checked);
+        event.currentTarget.checked = checked;
+    }} />
 
 <style>
     input {

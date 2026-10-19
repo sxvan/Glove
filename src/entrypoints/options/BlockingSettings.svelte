@@ -24,7 +24,14 @@
 
     type SwitchKey = 'reload' | 'clearData' | 'autoBlock';
 
-    const SWITCHES: { key: SwitchKey; label: string; description: string }[] = [
+    // A switch still being tried out is marked so, with a warning under it and a question before it
+    // is turned on.
+    interface Experimental {
+        warning: string;
+        confirm: string;
+    }
+
+    const SWITCHES: { key: SwitchKey; label: string; description: string; experimental?: Experimental }[] = [
         {
             key: 'reload',
             label: 'Reload the page',
@@ -40,7 +47,13 @@
             key: 'autoBlock',
             label: 'Block scripts automatically',
             description:
-                "Block every script that reaches the score below, as the switch on its page does, with the page reloaded and its site's data cleared as set above. A script you let run again is never blocked automatically after that. Blocking can break sites.",
+                "Block every script that reaches the score below, as the switch on its page does, with the page reloaded and its site's data cleared as set above. A script you let run again is never blocked automatically after that.",
+            experimental: {
+                warning:
+                    'This will break sites. Many sites need the scripts that fingerprint you, to sign in, to pay or to show the page at all, and they are blocked without you seeing which. When a site breaks, let its scripts run again on their page in the popup.',
+                confirm:
+                    'Turn on blocking scripts automatically? It is experimental and will break sites: scripts are blocked by their score alone, also those a site needs to work. When a site breaks, let its scripts run again in the popup.',
+            },
         },
     ];
 
@@ -126,7 +139,8 @@
         return script.auto ? `At score ${Math.round(script.auto.score * 100)}, ${day}` : day;
     }
 
-    function setSwitch(key: SwitchKey, checked: boolean) {
+    function setSwitch(key: SwitchKey, checked: boolean, experimental?: Experimental) {
+        if (checked && experimental && !confirm(experimental.confirm)) return;
         options[key] = checked;
         saveBlockingOptions($state.snapshot(options));
     }
@@ -146,14 +160,15 @@
 
 <SectionHead title="Blocking" changed={optionsChanged} onreset={reset} />
 
-{#each SWITCHES as { key, label, description } (key)}
+{#each SWITCHES as { key, label, description, experimental } (key)}
     {@const changed = options[key] !== DEFAULT_BLOCKING_OPTIONS[key]}
     <label class="row">
         <div>
-            <div class="name">{label}</div>
+            <div class="name">{label}{#if experimental}<span class="experimental">Experimental</span>{/if}</div>
             <div class="description">{description}</div>
+            {#if experimental}<div class="warning">{experimental.warning}</div>{/if}
         </div>
-        <Switch checked={options[key]} onchange={(checked) => setSwitch(key, checked)} />
+        <Switch checked={options[key]} onchange={(checked) => setSwitch(key, checked, experimental)} />
         <span class="default" class:changed>default {onOff(DEFAULT_BLOCKING_OPTIONS[key])}</span>
     </label>
 {/each}
@@ -228,6 +243,26 @@
         margin-left: 4px;
         color: var(--muted);
         font-weight: 400;
+    }
+
+    /* Marks a setting still being tried out: a small tag after its name, in the color of a warning. */
+    .experimental {
+        margin-left: 8px;
+        padding: 1px 7px;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        color: var(--likely);
+        font-size: 11px;
+        font-weight: 600;
+        vertical-align: 1px;
+    }
+
+    /* What it does wrong, under the description: as clear as its name, in the warning's color. */
+    .warning {
+        margin-top: 6px;
+        color: var(--likely);
+        font-size: 12px;
+        font-weight: 500;
     }
 
     /* Spans the input and default columns, the button at their end, like the groups' buttons below. */
