@@ -562,7 +562,10 @@
         font-weight: 600;
     }
 
+    /* As wide as the navigation's links and button make it, wrapping there: its length doesn't
+       change the navigation's width. */
     .status {
+        contain: inline-size;
         margin: 0 12px;
         color: var(--unlikely);
         font-size: 12px;
