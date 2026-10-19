@@ -120,7 +120,7 @@ function base64Url(bytes: Uint8Array): string {
         .replace(/=+$/, '');
 }
 
-export function enrichDnsAnswer(dnsAnswer: DnsAnswer[], hostname: string): DnsResult {
+function enrichDnsAnswer(dnsAnswer: DnsAnswer[], hostname: string): DnsResult {
     const cRecords = dnsAnswer
         .filter((entry) => entry.type === TYPE_CNAME)
         .map((entry) => ({

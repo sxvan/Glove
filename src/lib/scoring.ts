@@ -143,7 +143,7 @@ export const SIGNALS = {
 } satisfies Record<string, Record<string, SignalDefinition>>;
 
 export type ScoreLevel = keyof typeof SIGNALS;
-export type SignalKey<L extends ScoreLevel> = keyof (typeof SIGNALS)[L] & string;
+type SignalKey<L extends ScoreLevel> = keyof (typeof SIGNALS)[L] & string;
 /** A value from 0 to 1 per signal of a level. */
 export type SignalValues<L extends ScoreLevel> = Record<SignalKey<L>, number>;
 
@@ -372,7 +372,7 @@ export function combineParts<L extends ScoreLevel>(
 }
 
 /** `value` relative to where it counts as full, from 0 to 1. */
-export function saturate(value: number, fullAt: number): number {
+function saturate(value: number, fullAt: number): number {
     return fullAt > 0 ? clamp01(value / fullAt) : 0;
 }
 

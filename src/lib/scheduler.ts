@@ -6,7 +6,7 @@ interface ScheduleState {
     timerId: ReturnType<typeof setTimeout> | null;
 }
 
-export interface Scheduler {
+interface Scheduler {
     notify(key: string, taskFn: Task): void;
     cancel(key: string): void;
     clearAll(): void;
@@ -82,7 +82,7 @@ export function createScheduler({ debounceMs = 500, maxIntervalMs = 5000 } = {})
     }
 
     function clearAll() {
-        for (const [key, state] of states) {
+        for (const state of states.values()) {
             if (state.timerId) {
                 clearTimeout(state.timerId);
             }

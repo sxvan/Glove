@@ -7,7 +7,6 @@ import type { FpMonkeyEvent } from './events';
 
 export interface MetricsSnapshot {
     distinctFpApis: string[];
-    distinctFpCategories: string[];
     intensity: number;
     durationMs: number;
     density: number;

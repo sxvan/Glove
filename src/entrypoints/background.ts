@@ -301,10 +301,7 @@ export default defineBackground(() => {
         }
 
         const { document } = ensureDocument(session, tabId, frameId, documentId, null);
-        if (!document) {
-            // console.warn('No document found for HTTP event', { tabId, frameId, documentId, httpEvent });
-            return;
-        }
+        if (!document) return;
 
         const hostname = getHostname(details.url);
         const top = session.tabs[tabId]?.frames['0'];
@@ -562,10 +559,7 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
 function frameSnapshotFromFrame(frame: FrameState, frameId: string): FrameSnapshot | null {
     const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
 
-    if (!document) {
-        console.warn('No current document for frame', frameId);
-        return null;
-    }
+    if (!document) return null;
 
     return {
         frameId: frameId,
@@ -624,7 +618,7 @@ function collectCnameCloakedRequestsForTab(session: Session, tabId: number): Htt
 
     const results: HttpRequest[] = [];
 
-    for (const [frameId, frame] of Object.entries(tab.frames)) {
+    for (const frame of Object.values(tab.frames)) {
         const docId = frame.currentDocumentId;
         if (!docId) continue;
 
@@ -647,7 +641,7 @@ function collectDnsTrackingRequestsForTab(session: Session, tabId: number): Http
 
     const results: HttpRequest[] = [];
 
-    for (const [frameId, frame] of Object.entries(tab.frames)) {
+    for (const frame of Object.values(tab.frames)) {
         const docId = frame.currentDocumentId;
         if (!docId) continue;
 
@@ -675,7 +669,6 @@ function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): Metr
 
     return {
         distinctFpApis: Array.from(fpMetrics.distinctFpApis),
-        distinctFpCategories: Array.from(fpMetrics.distinctFpCategories),
         intensity: fpMetrics.intensity,
         durationMs: fpMetrics.durationMs,
         density: fpMetrics.density,

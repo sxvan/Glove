@@ -7,7 +7,7 @@ import type { TextPart } from './text-parts';
 import type { StorageKind } from '@/types/snapshot';
 
 /** A statement about a script, shown as an info line: the card's rating is its only judgment, in color. */
-export interface Statement {
+interface Statement {
     key: string;
     /** The heading, with its values marked to be emphasized: counts with what they count ("27 fingerprinting APIs"), sizes, sites. */
     text: TextPart[];
@@ -152,9 +152,6 @@ export function bySection(list: Statement[]): Statement[][] {
 // full rather than as "and 1 more" (see listWords): up to 4 sites, from 5 on 3 and the rest.
 const SHOWN_KINDS = 6;
 const SHOWN_SITES = 3;
-
-// Bits that tell everyone apart (see identifyingStatement).
-export { EVERYONE_BITS };
 
 /**
  * How identifying all it read is together, in bits (see identifyingBits): "Up to 18 bits of

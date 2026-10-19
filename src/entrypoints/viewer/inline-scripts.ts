@@ -4,7 +4,7 @@
 import type { SourcePosition, ViewerApi } from '@/lib/script-viewer';
 import { lineStarts } from './locations';
 
-export interface InlineScript {
+interface InlineScript {
     source: string;
     /** Line of the page the script starts on, 1-based. */
     line: number;

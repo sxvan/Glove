@@ -52,8 +52,6 @@ function installFpHooks() {
 
     // Hand over buffered events before the page is unloaded or put into the back/forward cache.
     window.addEventListener('pagehide', flushFpEvents);
-
-    console.log('FP hooks installed');
 }
 
 function getProtoForOwner(owner: FpApiOwner): any {

@@ -137,7 +137,7 @@
     {:else if snapshot && page}
         {@const shownScript = openScript ? [page, ...scripts].find((s) => s.key === openScript?.key) : undefined}
         {#if shownScript && openScript}
-            <DetailHeader onBack={closeScriptPage} backOnly />
+            <DetailHeader onBack={closeScriptPage} />
             {#key openScript}
                 <ScriptPage script={shownScript} section={openScript.section} />
             {/key}

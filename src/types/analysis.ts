@@ -47,7 +47,6 @@ export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
 
 export interface FpMetrics {
     distinctFpApis: Set<string>;
-    distinctFpCategories: Set<string>;
     intensity: number;
     durationMs: number;
     density: number;

@@ -36,7 +36,7 @@ export const DEFAULT_IDENTIFIER_RULES: IdentifierRules = { lastingDays: 90, minL
 
 export type IdentifierLevel = 'possible' | 'likely';
 
-export interface IdentifierFinding {
+interface IdentifierFinding {
     level: IdentifierLevel | null;
     /** The other items on the page holding the same value (see isCopy). */
     copies: StoredPlace[];
@@ -91,7 +91,7 @@ function isLasting(item: StoredItem, rules: IdentifierRules): boolean {
  * lengths of the rules and a digit (words such as "necessary" have none, while hex, base64 and
  * numeric IDs nearly always do).
  */
-export function identifierTokens(value: string, rules: IdentifierRules): string[] {
+function identifierTokens(value: string, rules: IdentifierRules): string[] {
     let decoded = value;
     try {
         decoded = decodeURIComponent(value);

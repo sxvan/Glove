@@ -6,7 +6,7 @@ export function createSession(): Session {
     return { dnsResults: new Map(), tabs: {} };
 }
 
-export function ensureTab(session: Session, tabId: number): TabState {
+function ensureTab(session: Session, tabId: number): TabState {
     if (!session.tabs[tabId]) {
         session.tabs[tabId] = { frames: {} };
     }
@@ -14,7 +14,7 @@ export function ensureTab(session: Session, tabId: number): TabState {
     return session.tabs[tabId];
 }
 
-export function ensureFrame(session: Session, tabId: number, frameId: number): { tab: TabState; frame: FrameState } {
+function ensureFrame(session: Session, tabId: number, frameId: number): { tab: TabState; frame: FrameState } {
     const tab = ensureTab(session, tabId);
 
     if (!tab.frames[frameId]) {
@@ -72,7 +72,7 @@ export function ensureDocument(
     return { tab, frame, document: frame.documents[documentId] };
 }
 
-export function ensureScript(
+function ensureScript(
     session: Session,
     tabId: number,
     frameId: number,

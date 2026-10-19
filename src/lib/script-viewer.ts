@@ -34,7 +34,7 @@ export function viewerUrl(params: ViewerParams): string {
 }
 
 /** Each API is encoded as `id[:calls][@line:column;line:column…]`, separated by commas. */
-export function viewerQuery({ url, name, apis, inline }: ViewerParams): string {
+function viewerQuery({ url, name, apis, inline }: ViewerParams): string {
     const encoded = apis.map(({ id, calls, positions }) => {
         const count = calls === null ? '' : `:${calls}`;
         const at = positions

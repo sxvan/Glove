@@ -43,7 +43,7 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
 const withoutFragment = (url: string) => url.split('#')[0]!;
 
 /** The document's requests by URL without fragment, as indexes into httpRequests in time order. */
-export interface RequestIndex {
+interface RequestIndex {
     byUrl: Map<string, number[]>;
     /** The array indexed: a new one is indexed anew. */
     requests: HttpRequest[];
@@ -115,8 +115,6 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
                 httpRequest: httpRequests[bestIndex]!,
                 timeDeltaMs: bestDelta,
             });
-        } else {
-            // console.warn('No match found for HTTP event', httpEvent);
         }
     }
 

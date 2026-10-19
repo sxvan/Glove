@@ -2,14 +2,14 @@
 // key numbers and the strongest evidence.
 import { blockKey } from '@/lib/blocking';
 import { placeKey } from '@/lib/call-stack';
-import { FP_APIS, FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
+import { FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
 import { DEFAULT_IDENTIFIER_RULES, findIdentifier, type IdentifierLevel, type StoredPlace } from '@/lib/identifiers';
 import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
-import { duration, listWords, plural } from './format';
+import { duration, plural } from './format';
 
 /** How likely tracking is; "unknown" while nothing was recorded for the tab yet. */
 export type Likelihood = 'unknown' | 'unlikely' | 'possible' | 'likely';
@@ -20,40 +20,6 @@ export const LIKELIHOOD_LABELS: Record<Likelihood, string> = {
     possible: 'Possible',
     likely: 'Likely',
 };
-
-export interface Category {
-    id: 'fingerprinting' | 'cname' | 'dns';
-    title: string;
-    /** Plain-language explanation, shown behind the info icon. */
-    explanation: string;
-    likelihood: Likelihood;
-    /** The category's score from 0 to 1, shown as a bar; null where there is none, e.g. for CNAME aliases. */
-    score: number | null;
-    /** One line about what was observed. */
-    summary: string;
-    /** Signs of hiding that any of the category's scripts show; empty if there are none. */
-    signals: string[];
-    /** The strongest evidence: scripts or hosts, most suspicious first. */
-    rows: EvidenceRow[];
-    /** Further evidence not in `rows`. */
-    moreRows: number;
-}
-
-/** A script or host on the overview. */
-export interface EvidenceRow {
-    key: string;
-    /** A script name or hostname, shown in monospace. */
-    name: string;
-    /** True when the name is a URL path: its file name (from the last "/") always shows. */
-    path: boolean;
-    /** E.g. the script's host, or the site an alias leads to; may be empty. */
-    detail: string;
-    /** Full text for the tooltip, e.g. the script URL or the alias chain. */
-    title: string;
-    likelihood: Likelihood | null;
-    /** How suspicious it is, from 0 to 1; null where there is no score, e.g. for CNAME aliases. */
-    score: number | null;
-}
 
 /** Where scores count as possible or likely: the user's settings, sent with the snapshot. */
 function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
@@ -83,9 +49,6 @@ function rareBitsOf(snapshot: TabSnapshot): Record<string, number> {
     return Object.fromEntries(Object.entries(traitsOf(snapshot)).map(([id, traits]) => [id, Math.max(0, traits.bits) * Math.min(1, Math.max(0, traits.rarity)) ** power]));
 }
 
-/** Evidence rows per category on the overview. */
-const OVERVIEW_ROWS = 3;
-
 export function pageUrl(snapshot: TabSnapshot): string | null {
     const frames = (snapshot.frames ?? []).filter((f) => f !== null);
     return (frames.find((f) => f.frameId === '0') ?? frames[0])?.document.url ?? null;
@@ -96,194 +59,9 @@ export function pageHost(snapshot: TabSnapshot): string {
     return hostOf(url) || url || '';
 }
 
-export function buildCategories(snapshot: TabSnapshot): Category[] {
-    return [fingerprinting(snapshot), cnameCloaking(snapshot), dnsTracking(snapshot)];
-}
-
-/** A snapshot of a tab with nothing recorded, for showing the categories before there is data. */
-export const EMPTY_SNAPSHOT: TabSnapshot = { cNameRequests: [], dnsTrackingRequests: [], frames: [], cutoffs: DEFAULT_SETTINGS.cutoffs };
-
-/** The categories while nothing was recorded for the tab: each unknown, not checked yet. */
-export function unknownCategories(): Category[] {
-    return buildCategories(EMPTY_SNAPSHOT).map((category) => ({ ...category, likelihood: 'unknown', score: null, summary: 'Not checked yet', rows: [], signals: [] }));
-}
-
-/** The page's fingerprinting card while nothing was recorded for the tab. */
-export function unknownPageDetail(): ScriptDetail {
-    return { ...fingerprintingPageDetail(EMPTY_SNAPSHOT, []), name: '', likelihood: 'unknown' };
-}
-
-export interface Summary {
-    headline: string;
-    /** Third parties with evidence against them, strongest evidence first. */
-    parties: string[];
-}
-
-/** Which third parties may be tracking on the page. */
-export function buildSummary(snapshot: TabSnapshot): Summary {
-    const cutoffs = cutoffsOf(snapshot);
-    const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
-    const scripts = (snapshot.frames ?? []).filter((f) => f !== null).flatMap((f) => f.document.scripts);
-
-    // A domain counts only with real evidence: a script that fingerprints at "possible" or above,
-    // being the real target of a cloaked first-party address, or using ID-like hostnames.
-    const aliases = cloakedHosts(snapshot);
-    const fingerprinters = scripts.filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible).map((s) => realSite(hostOf(s.name), aliases));
-    const cloaked = [...aliases.values()].map((target) => getEtld1(target) ?? target);
-    const idHosts = unique(
-        (snapshot.dnsTrackingRequests ?? []).filter((r) => (r.subdomainScore ?? 0) >= cutoffs.hostname.possible).map((r) => r.hostname ?? hostOf(r.url))
-    );
-
-    const parties = unique([...fingerprinters, ...cloaked, ...idHosts.map((h) => getEtld1(h))].filter((s): s is string => !!s && s !== pageSite));
-    const siteFingerprints = fingerprinters.some((s) => s === pageSite);
-
-    let headline = 'No signs of tracking so far';
-    if (parties.length > 0) headline = `${plural(parties.length, 'third party', 'third parties')} may be tracking you`;
-    else if (siteFingerprints) headline = 'The site itself may be fingerprinting you';
-
-    return { headline, parties };
-}
-
-function fingerprinting(snapshot: TabSnapshot): Category {
-    const cutoffs = cutoffsOf(snapshot);
-    const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
-    const score = Math.max(...documents.map((d) => d.fpMetrics?.score ?? 0), 0);
-    // Only scripts rated possible or higher count; many scripts read a detail or two, e.g. the user agent.
-    const allScripts = fingerprintingDetails(snapshot);
-    const scripts = allScripts.filter((s) => s.likelihood !== 'unlikely');
-
-    let summary = 'No suspicious scripts';
-    if (scripts.length > 0) {
-        const categories = documents
-            .flatMap((d) => d.scripts)
-            .filter((s) => (s.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
-            .flatMap((s) => s.fpMetrics?.distinctFpCategories ?? []);
-        const techniques = techniqueWords(categories, rareBitsOf(snapshot));
-        const shown = techniques.length <= 3 ? techniques : [...techniques.slice(0, 2), `${techniques.length - 2} other details`];
-
-        const thirdParty = scripts.filter((s) => s.party === 'third').length;
-        const who = plural(scripts.length, 'suspicious script') + (thirdParty > 0 ? ` (${thirdParty} third-party)` : '');
-        summary = `${who} read ${listWords(shown)}`;
-    }
-
-    return {
-        id: 'fingerprinting',
-        title: 'Fingerprinting',
-        explanation:
-            'Scripts read details about your browser and device, such as how it draws graphics or processes audio. ' +
-            'Combined, these details can recognize you across sites without cookies. ' +
-            'The more details a script reads that ordinary sites rarely need, and the more they identify, the more likely it is fingerprinting.',
-        likelihood: fpLikelihood(score, cutoffs),
-        score,
-        summary,
-        // Signs of hiding count for every script, also those not rated suspicious.
-        signals: pageSignals(allScripts),
-        rows: scripts.slice(0, OVERVIEW_ROWS).map((s) => ({
-            key: s.key,
-            name: s.name,
-            path: s.path,
-            detail: s.origin,
-            title: s.url,
-            likelihood: s.likelihood,
-            score: s.score,
-        })),
-        moreRows: Math.max(0, scripts.length - OVERVIEW_ROWS),
-    };
-}
-
-function cnameCloaking(snapshot: TabSnapshot): Category {
-    const aliases = cnameDetails(snapshot);
-    const targets = unique(aliases.map((a) => a.targetSite));
-
-    let summary = 'No first-party addresses hiding another company';
-    if (targets.length > 0) {
-        const shown = targets.length <= 2 ? targets : [targets[0]!, `${targets.length - 1} more`];
-        summary = `Site addresses that lead to ${listWords(shown)}`;
-    }
-
-    return {
-        id: 'cname',
-        title: 'CNAME cloaking',
-        explanation:
-            "A site can route another company's tracker through its own address, such as metrics.example.com, " +
-            'using a DNS alias (CNAME). The tracker then looks like part of the site and slips past blockers. ' +
-            'Content delivery networks use the same setup, so this is never rated above possible.',
-        // Content delivery networks look the same as cloaked trackers, so this is never more than possible.
-        likelihood: aliases.length > 0 ? 'possible' : 'unlikely',
-        score: null,
-        summary,
-        signals: [],
-        rows: aliases.slice(0, OVERVIEW_ROWS).map((a) => ({
-            key: a.host,
-            name: a.host,
-            path: false,
-            detail: `→ ${a.targetSite}`,
-            title: [a.host, ...a.via, a.target].join(' → '),
-            likelihood: null,
-            score: null,
-        })),
-        moreRows: Math.max(0, aliases.length - OVERVIEW_ROWS),
-    };
-}
-
-function dnsTracking(snapshot: TabSnapshot): Category {
-    const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
-    const hosts = dnsDetails(snapshot);
-    // Sites using ID-like hostnames, highest-scoring first.
-    const sites = unique(hosts.map((h) => getEtld1(h.host) ?? h.host));
-
-    let summary = 'No hostnames that look like tracking IDs';
-    if (sites.length === 1 && sites[0] === pageSite) {
-        summary = "ID-like hostnames on the site's own domain";
-    } else if (sites.length > 0) {
-        const shown = sites.length <= 2 ? sites : [sites[0]!, `${sites.length - 1} more`];
-        summary = `ID-like hostnames from ${listWords(shown)}`;
-    }
-
-    return {
-        id: 'dns',
-        title: 'DNS tracking',
-        explanation:
-            'Some hostnames contain a long random-looking part, like a3f9c2e8.tracker.com. ' +
-            'That part can be an ID unique to you, sent along with every DNS lookup and request to that host.',
-        likelihood: hosts.length === 0 ? 'unlikely' : dnsLikelihood(Math.max(...hosts.map((h) => h.score)), cutoffsOf(snapshot)),
-        score: null,
-        summary,
-        signals: [],
-        rows: hosts.slice(0, OVERVIEW_ROWS).map((h) => ({
-            key: h.host,
-            name: h.host,
-            path: false,
-            detail: plural(h.requests.length, 'request'),
-            title: h.host,
-            likelihood: h.likelihood,
-            score: h.score,
-        })),
-        moreRows: Math.max(0, hosts.length - OVERVIEW_ROWS),
-    };
-}
-
 function fpLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Likelihood {
     const { possible, likely } = cutoffs.fingerprinting;
     return score >= likely ? 'likely' : score >= possible ? 'possible' : 'unlikely';
-}
-
-/** For a hostname that already scored above the possible cutoff. */
-function dnsLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Likelihood {
-    return score >= cutoffs.hostname.likely ? 'likely' : 'possible';
-}
-
-/** API categories as words, those counting most toward the score first (e.g. canvas before screen size). */
-function techniqueWords(categories: string[], rare: Record<string, number>): string[] {
-    const counts = categoryRareBits(rare);
-    const sorted = unique(categories).sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
-    return unique(sorted.map(fpCategoryName));
-}
-
-/** The average rare bits of each kind's APIs (see rareBitsOf), for listing kinds in order. */
-function categoryRareBits(rare: Record<string, number>): Record<string, number> {
-    const byCategory = Object.groupBy(FP_APIS, (api) => api.category);
-    return Object.fromEntries(Object.entries(byCategory).map(([category, apis]) => [category, apis!.reduce((sum, api) => sum + (rare[api.id] ?? 0), 0) / apis!.length]));
 }
 
 // ---------- detail screens ----------
@@ -545,7 +323,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
         .sort((a, b) => b.score - a.score || b.calls - a.calls);
 }
 
-export type SignalId = 'generated-code' | 'one-place';
+type SignalId = 'generated-code' | 'one-place';
 
 export interface Signal {
     id: SignalId;
@@ -560,16 +338,6 @@ export interface Signal {
     kinds: string[];
     /** Why it is a sign of fingerprinting, in a sentence; not shown for now. */
     explanation: string;
-}
-
-/** The signals any of the scripts show, for the overview; it only says that they occur, not how often. */
-function pageSignals(scripts: ScriptDetail[]): string[] {
-    const occurs = (id: SignalId) => scripts.some((s) => s.signals.some((signal) => signal.id === id));
-
-    return [
-        occurs('generated-code') ? 'Fingerprinting APIs read from generated code' : '',
-        occurs('one-place') ? 'Fingerprinting APIs read from one place in the code' : '',
-    ].filter(Boolean);
 }
 
 /**
@@ -759,14 +527,14 @@ export interface ScoreNode {
 }
 
 /** The page's fingerprinting score and the signals it was combined from. */
-export interface PageScore {
+interface PageScore {
     score: number;
     likelihood: Likelihood;
     tree: ScoreNode[];
 }
 
 /** The fingerprinting score of the page's most suspicious document (a frame), and its tree. */
-export function fingerprintingPage(snapshot: TabSnapshot): PageScore {
+function fingerprintingPage(snapshot: TabSnapshot): PageScore {
     const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
     const document = documents.sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
     const score = document?.fpMetrics?.score ?? 0;
@@ -1204,65 +972,6 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
     return { detail, children: withShownShares(children, total) };
 }
 
-export interface RequestLine {
-    method: string;
-    path: string;
-}
-
-export interface CnameDetail {
-    host: string;
-    /** The final CNAME target and its site. */
-    target: string;
-    targetSite: string;
-    /** CNAMEs between the host and the final target. */
-    via: string[];
-    requests: RequestLine[];
-}
-
-/** First-party-looking hosts whose DNS points to another site. */
-export function cnameDetails(snapshot: TabSnapshot): CnameDetail[] {
-    const byHost = new Map<string, CnameDetail>();
-    for (const req of snapshot.cNameRequests ?? []) {
-        const host = req.hostname ?? hostOf(req.url);
-        const targets = (req.cRecords ?? []).map((r) => r.target);
-        const target = targets[targets.length - 1];
-        if (!host || !target) continue;
-
-        let detail = byHost.get(host);
-        if (!detail) {
-            detail = { host, target, targetSite: getEtld1(target) ?? target, via: targets.slice(0, -1), requests: [] };
-            byHost.set(host, detail);
-        }
-        detail.requests.push(requestLine(req.method, req.url));
-    }
-    return [...byHost.values()].sort((a, b) => b.requests.length - a.requests.length);
-}
-
-export interface HostnameDetail {
-    host: string;
-    likelihood: Likelihood;
-    score: number;
-    requests: RequestLine[];
-}
-
-/** Hostnames that look like they carry an ID, most suspicious first. */
-export function dnsDetails(snapshot: TabSnapshot): HostnameDetail[] {
-    const cutoffs = cutoffsOf(snapshot);
-    const byHost = new Map<string, HostnameDetail>();
-    for (const req of snapshot.dnsTrackingRequests ?? []) {
-        const score = req.subdomainScore ?? 0;
-        const host = req.hostname ?? hostOf(req.url);
-        if (score < cutoffs.hostname.possible || !host) continue;
-
-        const detail = byHost.get(host) ?? { host, likelihood: dnsLikelihood(score, cutoffs), score, requests: [] };
-        detail.score = Math.max(detail.score, score);
-        detail.likelihood = dnsLikelihood(detail.score, cutoffs);
-        detail.requests.push(requestLine(req.method, req.url));
-        byHost.set(host, detail);
-    }
-    return [...byHost.values()].sort((a, b) => b.score - a.score);
-}
-
 /**
  * APIs with call counts and call positions, most called first. Falls back to the distinct APIs
  * without counts or positions when the snapshot has none, e.g. from a background started before
@@ -1280,15 +989,6 @@ function apiList(
     return counted
         .map(([id, calls]) => ({ id, calls, positions: (apiLocations?.[id] ?? []).map(({ line, column }) => ({ line, column })) }))
         .sort((a, b) => b.calls - a.calls || a.id.localeCompare(b.id));
-}
-
-function requestLine(method: string, url: string): RequestLine {
-    try {
-        const u = new URL(url);
-        return { method, path: u.pathname + u.search };
-    } catch {
-        return { method, path: url };
-    }
 }
 
 /**
@@ -1392,9 +1092,5 @@ function hostOf(url: string | null | undefined): string {
     } catch {
         return '';
     }
-}
-
-function unique<T>(items: T[]): T[] {
-    return [...new Set(items)];
 }
 

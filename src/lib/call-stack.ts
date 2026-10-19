@@ -20,7 +20,7 @@ export interface StackLocation {
 }
 
 /** Where a call was made from, enough to tell places apart (see placeKey). */
-export interface CallPlace {
+interface CallPlace {
     line: number | null;
     column: number | null;
     generated?: boolean;

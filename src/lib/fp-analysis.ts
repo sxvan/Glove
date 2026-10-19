@@ -2,7 +2,6 @@ import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/typ
 import type { FpMonkeyEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
 import { placeKey } from './call-stack';
-import { FP_APIS_BY_ID } from './fp-apis';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { apisSums, apisSumsBeyond, combineParts, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
 import { detectSpikes } from './spike-detection';
@@ -107,7 +106,6 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
 
     return {
         distinctFpApis: getDistinctFpApis(fpEvents),
-        distinctFpCategories: getDistinctFpCategories(fpEvents),
         intensity: intensity,
         startTime: startTime,
         endTime: endTime,
@@ -292,17 +290,6 @@ function getDistinctFpApis(fpEvents: FpMonkeyEvent[]): Set<string> {
     }
 
     return apiSet;
-}
-
-function getDistinctFpCategories(fpEvents: FpMonkeyEvent[]): Set<string> {
-    const categorySet = new Set<string>();
-    for (const event of fpEvents) {
-        // TODO(bug): event ids come from the page, so an unknown id makes this throw.
-        const category = FP_APIS_BY_ID[event.id]!.category;
-        categorySet.add(category);
-    }
-
-    return categorySet;
 }
 
 /** The requests carrying data that the script made from the start of the burst until shortly after it. */

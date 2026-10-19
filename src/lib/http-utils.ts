@@ -1,5 +1,4 @@
 import { getDomain, getSubdomain } from 'tldts';
-import type { DnsAnswer } from '@/types/analysis';
 import { combine, type ScoringSettings } from './scoring';
 
 // Sites by the Public Suffix List, as browsers tell them apart: its private part included, so a
@@ -15,13 +14,6 @@ export function getEtld1(hostname: string | null): string | null {
     if (!hostname) return null;
     const normalizedHostname = normalizeHostname(hostname);
     return getDomain(normalizedHostname, PSL) ?? normalizedHostname;
-}
-
-export function isSameEtld1(hostA: string | null, hostB: string | null): boolean {
-    const etld1A = getEtld1(hostA);
-    const etld1B = getEtld1(hostB);
-
-    return etld1A === etld1B;
 }
 
 export function isCrossOrigin(documentUrl: string | null, requestUrl: string | null): boolean {
@@ -47,8 +39,7 @@ export function getHostname(urlOrHostname: string | null | undefined): string | 
     // 2) Otherwise, try to parse as a URL
     try {
         return new URL(urlOrHostname).hostname;
-    } catch (e) {
-        console.warn('Invalid URL:', urlOrHostname);
+    } catch {
         return null;
     }
 }
@@ -68,38 +59,14 @@ function getOriginSafe(urlOrHostname: string | null): string | null {
         if (u.origin === 'null') return null;
 
         return u.origin; // scheme + host + port
-    } catch (e) {
-        console.warn('Invalid URL in getOriginSafe:', urlOrHostname);
+    } catch {
         return null;
     }
 }
 
-export function normalizeHostname(name: string | null): string {
+function normalizeHostname(name: string | null): string {
     if (!name) return '';
     return name.toLowerCase().replace(/\.$/, '');
-}
-
-export function getDnsMetrics(dnsEntry: DnsAnswer[]) {
-    const aRecords: string[] = [];
-    const cRecords: string[] = [];
-    const chain: string[] = [];
-
-    for (const answer of dnsEntry) {
-        chain.push(answer.name);
-        if (answer.type === 1) {
-            aRecords.push(answer.name);
-        } else if (answer.type === 5) {
-            cRecords.push(answer.name);
-        }
-    }
-
-    return {
-        chain,
-        aRecords,
-        cRecords,
-        cNameDepth: cRecords.length,
-        isSameEtld1: dnsEntry.length > 0 ? isSameEtld1(dnsEntry[0]!.name, dnsEntry[dnsEntry.length - 1]!.name) : null,
-    };
 }
 
 function normalizedEntropy(str: string): number {

@@ -15,7 +15,7 @@ export interface OffSite {
 const STORAGE_KEY = 'offSites';
 
 /** The entry turning the extension off on `host` makes: the host without a leading "www.". */
-export function siteOf(host: string): string {
+function siteOf(host: string): string {
     return host.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
 }
 
