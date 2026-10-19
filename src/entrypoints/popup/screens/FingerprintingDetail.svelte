@@ -33,7 +33,8 @@
     const listed = $derived(blocked.length + suspicious.length);
 </script>
 
-{#if scripts.length === 0}
+<!-- The page's card also without fingerprinting, when it has something to say, such as requests through an alias. -->
+{#if scripts.length === 0 && page.aliased.length === 0}
     <p class="empty">No script on this page has read identifying device details so far.</p>
 {:else}
     <FingerprintCard script={page} onDetails={(section) => onDetails(page.key, section)} />

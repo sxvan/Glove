@@ -605,6 +605,13 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         apiLocations,
         apiTimes,
         capped: script.capped === true,
+        cloakedHosts: [
+            ...new Set(
+                script.httpConsolidatedEvents
+                    .filter(({ httpRequest }) => httpRequest?.isCnameCloaked && httpRequest.hostname)
+                    .map(({ httpRequest }) => httpRequest.hostname!)
+            ),
+        ],
         stored: Object.values(script.stored ?? {})
             .map((item) => ({ ...item }))
             .sort((a, b) => a.first - b.first),

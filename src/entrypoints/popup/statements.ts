@@ -23,9 +23,11 @@ export interface Statement {
  * it sent data right after.
  */
 export function statements(script: ScriptDetail): Statement[] {
-    // Nothing to tell yet: not recorded, or recorded without any fingerprinting API read.
+    // Nothing read yet: not recorded, or recorded without any fingerprinting API read; requests
+    // through an alias are worth telling even so.
     if (script.apis.length === 0) {
-        return [{ key: 'read', text: [script.likelihood === 'unknown' ? 'Not checked yet' : 'No fingerprinting APIs read so far'] }];
+        const alias = sentThroughAliasStatement(script);
+        return [{ key: 'read', text: [script.likelihood === 'unknown' ? 'Not checked yet' : 'No fingerprinting APIs read so far'] }, ...(alias ? [alias] : [])];
     }
     // The most identifying kinds first, so those named are the ones that matter most.
     const kinds = listWords(
@@ -119,16 +121,15 @@ function storagePlaces(items: { kind: StorageKind }[]): string {
 
 /**
  * Statements shown in one section of the script's page together, each under its own line, as they
- * are about the same: how identifying what it read is, is part of what it read; the signs in how the
- * code reads (generated code, one place) go together, whichever of them shows; and where data went
- * through an alias is part of what was sent. On the card, lines of one section share one way to it
- * (see FingerprintCard). Others have a section of their own, by their key.
+ * are about the same: how identifying what it read is, is part of what it read; and the signs in
+ * how the code reads (generated code, one place) go together, whichever of them shows. On the card,
+ * lines of one section share one way to it (see FingerprintCard). Others have a section of their
+ * own, by their key.
  */
 const SECTIONS: Record<string, string> = {
     identifying: 'read',
     'generated-code': 'code',
     'one-place': 'code',
-    'sent-alias': 'sent',
 };
 
 /** The section of the script's page a statement is shown in, by its key. */
@@ -207,17 +208,17 @@ function sentStatement(script: ScriptDetail): Statement | null {
 }
 
 /**
- * The site's own addresses that data went through to another site, as CNAME aliases, written like
- * the sites under "Sent …": "Sent data through smetrics.walgreens.com alias" over "To omtrdc.net
- * (through smetrics.walgreens.com)", several as "Sent data through 2 aliases" over "To omtrdc.net
- * (through smetrics.walgreens.com and target.walgreens.com)", the rest as "and N more". Cookies
- * sent there count as the site's own (see the sentThroughAlias signal).
+ * The site's own addresses that requests went through to another site, as CNAME aliases, at any
+ * time, written like the sites under "Sent …": "Sent data through smetrics.walgreens.com alias" over
+ * "To omtrdc.net (through smetrics.walgreens.com)", several as "Sent data through 2 aliases" over "To
+ * omtrdc.net (through smetrics.walgreens.com and target.walgreens.com)", the rest as "and N more".
+ * Not only right after reading: a tracker hiding behind the site's name is worth seeing whenever it
+ * is sent to; the score counts only those right after reading (see the sentThroughAlias signal).
  */
 function sentThroughAliasStatement(script: ScriptDetail): Statement | null {
     // The aliases by the site they lead to.
     const bySite = new Map<string, string[]>();
-    for (const { site, via } of script.sent) {
-        if (!via) continue;
+    for (const { site, host: via } of script.aliased) {
         const vias = bySite.get(site) ?? [];
         if (!vias.includes(via)) vias.push(via);
         bySite.set(site, vias);
@@ -238,6 +239,6 @@ function sentThroughAliasStatement(script: ScriptDetail): Statement | null {
         text,
         detail,
         explanation:
-            'Data sent right after reading went to an address of the site that is an alias (a CNAME record) for another company\u2019s server. The browser sends the site\u2019s cookies there as its own, often including the login, so the other company gets them too.',
+            'Requests went to an address of the site that is an alias (a CNAME record) for another company\u2019s server, which hides the other company behind the site\u2019s name. The browser sends the site\u2019s cookies there as its own, often including the login, so the other company gets them too, and blockers that only know the other company miss it.',
     };
 }

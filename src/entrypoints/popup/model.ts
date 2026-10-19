@@ -332,6 +332,11 @@ export interface ScriptDetail {
     apiDetails: ApiDetail[];
     /** Requests carrying data that the script made right after fingerprinting, the most data first. */
     sent: SentRequest[];
+    /**
+     * The site's own addresses that are CNAME aliases for another site, which it made requests to at
+     * any time, with the site each leads to; for the page, those of all its requests.
+     */
+    aliased: { host: string; site: string }[];
     /** Cookies and storage items it wrote: likely identifiers first, then possible ones, then the rest, each in the order first written. */
     stored: StoredDetail[];
 }
@@ -531,6 +536,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         signals: scriptSignals(script.apiLocations, traits, power, rare),
                         apis,
                         sent: sentRequests(correlations, aliases),
+                        aliased: (script.cloakedHosts ?? []).map((host) => ({ host, site: realSite(host, aliases) ?? host })),
                         stored: storedDetails(snapshot, script),
                         apiDetails: apiDetails(script, frame.document.startTime, traits, power),
                     };
@@ -819,6 +825,8 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         signals,
         apis,
         sent: pageSent(scripts),
+        // All the page's requests, also those no recorded script made, such as images in its HTML.
+        aliased: [...cloakedHosts(snapshot).keys()].map((host) => ({ host, site: realSite(host, cloakedHosts(snapshot)) ?? host })),
         stored: pageStored(scripts),
         apiDetails: pageApiDetails(snapshot, scripts),
     };
