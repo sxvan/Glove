@@ -798,7 +798,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         key: 'page',
         name: host,
         path: false,
-        origin: 'All activity',
+        origin: 'Page activity',
         originTitle: url,
         url,
         viewer: null,

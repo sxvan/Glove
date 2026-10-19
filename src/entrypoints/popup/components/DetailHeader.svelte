@@ -5,14 +5,14 @@
 
     // As `backOnly`, only the way back, without title, likelihood and explanation: for a screen
     // that shows them itself, like fingerprinting with its page score.
-    let { category, onBack, backOnly = false }: { category: Category; onBack: () => void; backOnly?: boolean } = $props();
+    let { category, onBack, backOnly = false }: { category?: Category; onBack: () => void; backOnly?: boolean } = $props();
 </script>
 
 <div class="head">
     <button class="back" type="button" onclick={onBack}>
         <span class="arrow" aria-hidden="true"></span>Back
     </button>
-    {#if !backOnly}
+    {#if !backOnly && category}
         <div class="title-row">
             <h2>{category.title} <InfoTip label="What is {category.title}?" text={category.explanation} /></h2>
             <LikelihoodLabel likelihood={category.likelihood} />

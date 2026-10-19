@@ -2,46 +2,27 @@
     import { browser } from 'wxt/browser';
     import type { AnalysisUpdatedMessage, GetTabSnapshotMessage } from '@/types/messages';
     import type { TabSnapshot } from '@/types/snapshot';
-    import CategoryCard from './components/CategoryCard.svelte';
     import DetailHeader from './components/DetailHeader.svelte';
-    import FingerprintCard from './components/FingerprintCard.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
-    import {
-        blockedDetails,
-        buildCategories,
-        buildSummary,
-        cnameDetails,
-        dnsDetails,
-        fingerprintingDetails,
-        fingerprintingPageDetail,
-        pageHost,
-        pageUrl,
-        unknownCategories,
-        unknownPageDetail,
-        type Category,
-    } from './model';
-    import CnameDetail from './screens/CnameDetail.svelte';
-    import DnsDetail from './screens/DnsDetail.svelte';
+    import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from './model';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
     import ScriptPage from './screens/ScriptPage.svelte';
     import { onMount, tick } from 'svelte';
 
     type Status = 'loading' | 'ready' | 'unavailable';
 
-    // Third parties listed under the summary before the rest is summed up as "+N".
-    const MAX_PARTIES = 6;
-
     let status = $state<Status>('loading');
     let snapshot = $state<TabSnapshot | undefined>();
-    // The category whose detail screen is open; null shows the overview.
-    let openCategoryId = $state<Category['id'] | null>(null);
 
-    // Without a recording the categories still show, as not checked yet.
-    const categories = $derived(snapshot ? buildCategories(snapshot) : unknownCategories());
-    const openCategory = $derived(categories.find((c) => c.id === openCategoryId));
+    // The main screen is fingerprinting: the page's card, then its scripts' (see FingerprintingDetail).
+    // CNAME cloaking and DNS tracking have no screens for now; their detection stays (see background).
+    const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
+    const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 
-    // A script's page within the fingerprinting screen, and where that screen was scrolled to, to
-    // return there.
+    // Which lists of scripts are unfolded (see FingerprintingDetail), kept across a script's page.
+    let open = $state({ scripts: true, unlikely: false });
+
+    // A script's page, and where the main screen was scrolled to, to return there.
     let openScript = $state<{ key: string; section: string } | null>(null);
     let scrolledTo = 0;
 
@@ -56,12 +37,6 @@
         window.scrollTo(0, scrolledTo);
     }
 
-    function openDetail(id: Category['id'] | null) {
-        openCategoryId = id;
-        openScript = null;
-        window.scrollTo(0, 0);
-    }
-    const summary = $derived(snapshot ? buildSummary(snapshot) : null);
     const url = $derived(snapshot ? pageUrl(snapshot) : null);
     const host = $derived(snapshot ? pageHost(snapshot) : '');
 
@@ -112,68 +87,33 @@
 <header>
     <h1 title={url ?? ''}><MiddleTruncate text={host || 'Web Tracking Detector'} /></h1>
     <div class="actions">
-        {#if status === 'ready'}<span class="live" title="Updates while the page is open">Live</span>{/if}
-        <button class="settings" type="button" title="Scoring settings" aria-label="Scoring settings" onclick={() => browser.runtime.openOptionsPage()}>
-            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-                <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+        <button class="settings" type="button" title="Settings" aria-label="Settings" onclick={() => browser.runtime.openOptionsPage()}>
+            <!-- A gear: Lucide's "settings" icon (lucide.dev, ISC license). -->
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path
-                    d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"
-                    stroke="currentColor"
-                    stroke-width="1.4"
-                    stroke-linecap="round"
+                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
                 />
+                <circle cx="12" cy="12" r="3" />
             </svg>
         </button>
     </div>
 </header>
 
 <main>
-    {#if openCategory && snapshot}
-        {@const scripts = openCategory.id === 'fingerprinting' ? fingerprintingDetails(snapshot) : []}
-        {@const page = openCategory.id === 'fingerprinting' ? fingerprintingPageDetail(snapshot, scripts) : null}
-        {@const shownScript = openScript ? [page, ...scripts].find((s) => s?.key === openScript?.key) : undefined}
-        <DetailHeader
-            category={openCategory}
-            onBack={() => (shownScript ? closeScriptPage() : openDetail(null))}
-            backOnly={openCategory.id === 'fingerprinting'}
-        />
+    {#if status === 'loading'}
+        <p class="state">Checking this page…</p>
+    {:else if status === 'unavailable'}
+        <p class="state">No data for this tab yet. Reload the page to check it.</p>
+    {:else if snapshot && page}
+        {@const shownScript = openScript ? [page, ...scripts].find((s) => s.key === openScript?.key) : undefined}
         {#if shownScript && openScript}
+            <DetailHeader onBack={closeScriptPage} backOnly />
             {#key openScript}
                 <ScriptPage script={shownScript} section={openScript.section} />
             {/key}
-        {:else if openCategory.id === 'fingerprinting' && page}
-            <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openScriptPage} />
-        {:else if openCategory.id === 'cname'}
-            <CnameDetail aliases={cnameDetails(snapshot)} />
         {:else}
-            <DnsDetail hosts={dnsDetails(snapshot)} />
+            <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openScriptPage} bind:open />
         {/if}
-    {:else}
-        {#if status === 'loading'}
-            <p class="state">Checking this page…</p>
-        {:else if status === 'unavailable'}
-            <p class="state">No data for this tab yet. Reload the page to check it.</p>
-        {:else if summary}
-            <div class="summary">
-                <p class="headline">{summary.headline}</p>
-                {#if summary.parties.length > 0}
-                    <p class="parties" title={summary.parties.join(', ')}>
-                        {summary.parties.slice(0, MAX_PARTIES).join('  ')}{#if summary.parties.length > MAX_PARTIES}<span class="more">
-                                +{summary.parties.length - MAX_PARTIES}</span
-                            >{/if}
-                    </p>
-                {/if}
-            </div>
-        {/if}
-        {#each categories as category, i (category.id)}
-            {#if category.id === 'fingerprinting'}
-                <!-- The page's card from the fingerprinting screen, titled by what it is about. -->
-                {@const page = snapshot ? fingerprintingPageDetail(snapshot, fingerprintingDetails(snapshot)) : unknownPageDetail()}
-                <FingerprintCard script={{ ...page, name: category.title }} onOpen={snapshot ? () => openDetail(category.id) : undefined} />
-            {:else}
-                <CategoryCard {category} tipAbove={i > 0} onOpen={snapshot ? () => openDetail(category.id) : undefined} />
-            {/if}
-        {/each}
     {/if}
 </main>
 
@@ -216,51 +156,10 @@
         color: var(--text);
     }
 
-    .live {
-        display: flex;
-        flex-shrink: 0;
-        align-items: center;
-        gap: 6px;
-        color: var(--muted);
-        font-size: 12px;
-    }
-
-    .live::before {
-        content: '';
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--unlikely);
-    }
-
     main {
         display: grid;
         gap: 16px;
         padding: 16px 16px 24px;
-    }
-
-    .summary {
-        margin-bottom: 8px;
-    }
-
-    .headline {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
-        line-height: 1.3;
-    }
-
-    .parties {
-        margin: 6px 0 0;
-        color: var(--muted);
-        font-family: var(--mono);
-        font-size: 12px;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-    }
-
-    .more {
-        opacity: 0.8;
     }
 
     .state {

@@ -146,9 +146,10 @@ export function bySection(list: Statement[]): Statement[][] {
 }
 
 // Items named in a list under a statement, the rest as "and N more": kinds of detail are short
-// words, sites long names, so fewer of them fit in about two lines.
+// words, sites long names, so fewer of them fit in about two lines. One more than these is named in
+// full rather than as "and 1 more" (see listWords): up to 4 sites, from 5 on 3 and the rest.
 const SHOWN_KINDS = 6;
-const SHOWN_SITES = 4;
+const SHOWN_SITES = 3;
 
 // Bits that tell everyone apart (see identifyingStatement).
 export { EVERYONE_BITS };
