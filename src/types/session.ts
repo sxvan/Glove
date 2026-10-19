@@ -40,6 +40,17 @@ export interface DocumentState {
     fpMetrics?: FpMetrics | null;
     /** Blocked scripts that tried to load (see lib/blocking), by what they are blocked by. */
     blockedScripts: Record<string, BlockedAttempt>;
+    /**
+     * For a document the page made itself rather than loaded (see notePageMade): the document of the
+     * frame above it, which made it. What happens in it is recorded there (see recordingTarget).
+     */
+    madeBy?: DocumentRef;
+}
+
+/** A document of a tab, by its frame and its id. */
+export interface DocumentRef {
+    frameId: number;
+    documentId: string;
 }
 
 export interface BlockedAttempt {

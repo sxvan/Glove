@@ -1,6 +1,6 @@
 import { placeKey } from './call-stack';
 import type { FpMonkeyEvent, HttpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
-import type { DocumentState, FrameState, ScriptState, Session, TabState } from '@/types/session';
+import type { DocumentRef, DocumentState, FrameState, ScriptState, Session, TabState } from '@/types/session';
 
 export function createSession(): Session {
     return { dnsResults: new Map(), tabs: {} };
@@ -138,6 +138,41 @@ function dropEndedDocuments(frame: FrameState, currentId: string) {
     }
 }
 
+// Addresses of documents a page makes itself rather than loads: a blank frame, its srcdoc, and
+// data: and blob: URLs.
+const PAGE_MADE = /^(about|data|blob):/i;
+
+/**
+ * Notes, as a frame commits a new document, which document made it if the page made it itself
+ * (see PAGE_MADE): the one of the frame above it, `parent`. Its scripts made it, often only to read
+ * from it, so what happens in it belongs to them. The recorders already hand over what happens in
+ * frames the page can reach (see lib/recording-document); this joins those they can't, data: and
+ * sandboxed frames, which always commit with their parent.
+ */
+export function notePageMade(session: Session, tabId: number, frameId: number, documentId: string, url: string, parent: DocumentRef | null) {
+    if (!parent || !PAGE_MADE.test(url)) return;
+    const document = session.tabs[tabId]?.frames[frameId]?.documents[documentId];
+    if (document) document.madeBy = parent;
+}
+
+/**
+ * Where what happens in a document is recorded: in the document itself, or for one the page made
+ * (see notePageMade), in the nearest document above it with an address of its own, so a script
+ * reading through frames it made is scored as a whole, not once per frame. Without a link, or with
+ * one to a document no longer kept, a document is recorded as itself.
+ */
+export function recordingTarget(session: Session, tabId: number, frameId: number, documentId: string): DocumentRef {
+    const frames = session.tabs[tabId]?.frames ?? {};
+    let target: DocumentRef = { frameId, documentId };
+    // Each link leads to a frame above, so at most as many steps as there are frames.
+    for (let steps = Object.keys(frames).length; steps > 0; steps--) {
+        const madeBy = frames[target.frameId]?.documents[target.documentId]?.madeBy;
+        if (!madeBy || !frames[madeBy.frameId]?.documents[madeBy.documentId]) break;
+        target = madeBy;
+    }
+    return target;
+}
+
 /** Forgets all a closed tab recorded. */
 export function dropTab(session: Session, tabId: number) {
     delete session.tabs[tabId];
@@ -163,7 +198,7 @@ export function dropPreviousPageFrames(session: Session, tabId: number, committe
  * Keeps a call for its script, unless the script already has `maxCalls` (see lib/limits); then it
  * is marked as capped. Whether it was kept.
  */
-export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: FpMonkeyEvent, maxCalls = Infinity): boolean {
+export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: FpMonkeyEvent, maxCalls = Infinity): boolean {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     if (script.callCount >= maxCalls) {
         script.capped = true;
@@ -190,7 +225,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
  * Stores the request for every script on its stack: a script wrapping fetch or XHR (monitoring,
  * bot protection) sits above the one that made the request, and both should see it.
  */
-export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: HttpMonkeyEvent) {
+export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: HttpMonkeyEvent) {
     // An older recorder only sends scriptUrl.
     const scriptUrls = event.scriptUrls?.length ? event.scriptUrls : [event.scriptUrl];
     for (const scriptUrl of scriptUrls) {
@@ -200,7 +235,7 @@ export function storeHttpEvent(session: Session, tabId: number, frameId: number,
 }
 
 /** Notes a value the script stored, keeping the latest value of each cookie or item. */
-export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | undefined, event: StorageMonkeyEvent) {
+export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: StorageMonkeyEvent) {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     const item = (script.stored[`${event.kind}|${event.name}`] ??= { kind: event.kind, name: event.name, value: null, expires: null, writes: 0, first: event.timeStamp, last: event.timeStamp });
     item.value = event.value;

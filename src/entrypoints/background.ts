@@ -23,7 +23,7 @@ import { dnsLookup } from '@/lib/dns-lookup';
 import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
-import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists } from '@/lib/session-manager';
+import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
@@ -291,10 +291,13 @@ export default defineBackground(() => {
         return lookup;
     }
 
-    function storeHttpRequest(tabId: number, frameId: number, documentId: string, details: Browser.webRequest.OnBeforeRequestDetails) {
+    function storeHttpRequest(tabId: number, requestFrameId: number, requestDocumentId: string, details: Browser.webRequest.OnBeforeRequestDetails) {
         if (details.url.startsWith('chrome-extension://')) {
             return;
         }
+
+        // A request of a frame the page made is recorded with the document that made it, as its calls are.
+        const { frameId, documentId } = recordingTarget(session, tabId, requestFrameId, requestDocumentId);
 
         if (!documentExists(session, tabId, frameId, documentId)) {
             return;
@@ -341,8 +344,11 @@ export default defineBackground(() => {
         if (isOff(sender.tab.url)) return;
 
         const tabId = sender.tab.id!;
-        const frameId = sender.frameId!;
-        const { document } = ensureDocument(session, tabId, frameId, sender.documentId, sender.url);
+        // A frame the page made is recorded with the document that made it (see recordingTarget),
+        // which keeps its own address.
+        const { frameId, documentId } = recordingTarget(session, tabId, sender.frameId!, sender.documentId);
+        const url = documentId === sender.documentId ? sender.url : null;
+        const { document } = ensureDocument(session, tabId, frameId, documentId, url);
 
         if (msg.type === 'fp-batch') {
             // Up to the limits (see lib/limits): what wasn't kept isn't scored again either.
@@ -350,7 +356,7 @@ export default defineBackground(() => {
             let kept = 0;
             for (const fpEvent of msg.payload) {
                 if (pageCalls >= limits.callsPerPage) break;
-                if (storeFpEvent(session, tabId, frameId, sender.documentId, sender.url, fpEvent, limits.callsPerScript)) {
+                if (storeFpEvent(session, tabId, frameId, documentId, url, fpEvent, limits.callsPerScript)) {
                     kept++;
                     pageCalls++;
                 }
@@ -367,7 +373,7 @@ export default defineBackground(() => {
 
         if (msg.type === 'storage-batch') {
             for (const event of msg.payload) {
-                storeStorageEvent(session, tabId, frameId, sender.documentId, sender.url, event);
+                storeStorageEvent(session, tabId, frameId, documentId, url, event);
             }
 
             scheduleAnalysis(document, tabId);
@@ -375,7 +381,7 @@ export default defineBackground(() => {
         }
 
         if (msg.type === 'http') {
-            storeHttpEvent(session, tabId, frameId, sender.documentId, sender.url, msg.payload);
+            storeHttpEvent(session, tabId, frameId, documentId, url, msg.payload);
 
             scheduleAnalysis(document, tabId);
             return;
@@ -411,9 +417,10 @@ export default defineBackground(() => {
     // list of scripts can show it, to unblock it there.
     browser.webRequest.onErrorOccurred.addListener(
         (details) => {
-            const { tabId, frameId, documentId } = details;
-            if (tabId === -1 || frameId === -1 || !documentId || details.error !== 'net::ERR_BLOCKED_BY_CLIENT') return;
+            const { tabId } = details;
+            if (tabId === -1 || details.frameId === -1 || !details.documentId || details.error !== 'net::ERR_BLOCKED_BY_CLIENT') return;
             const key = blockKey(details.url);
+            const { frameId, documentId } = recordingTarget(session, tabId, details.frameId, details.documentId);
             if (!key || !blocked.has(key) || !documentExists(session, tabId, frameId, documentId)) return;
 
             const { document } = ensureDocument(session, tabId, frameId, documentId, null);
@@ -443,6 +450,8 @@ export default defineBackground(() => {
         }
 
         updateCurrentDocument(session, tabId, frameId, documentId, url);
+        const parent = details.parentFrameId >= 0 && details.parentDocumentId ? { frameId: details.parentFrameId, documentId: details.parentDocumentId } : null;
+        notePageMade(session, tabId, frameId, documentId, url, parent);
         if (frameId === 0) {
             dropPreviousPageFrames(session, tabId, details.timeStamp);
             // A new page has blocked nothing yet.
