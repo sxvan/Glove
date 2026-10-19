@@ -429,7 +429,17 @@ export interface LearnedKind {
 
 /** A request with data, as the extension saw it: its contents are unknown, only its size. */
 export interface SentRequest {
+    /** Its whole address, for the tooltip. */
+    url: string;
     method: string;
+    /** How the script sent it; null if the page's recorder didn't see it, only the browser. */
+    how: 'fetch' | 'xhr' | 'beacon' | 'image' | null;
+    /** How long after the burst before it it was sent, in ms: 0 for during it; null if unknown. */
+    afterMs: number | null;
+    /** The names of its URL's parameters, in their order; the values aren't shown, only what they are called. */
+    params: string[];
+    /** On the page's own screen, which of its scripts sent it, named like their cards. */
+    by?: Pick<ScriptDetail, 'name' | 'path' | 'origin' | 'url'>[];
     /** The site the request really ends on (see realSite). */
     site: string;
     /** The host it went to if that is a CNAME alias for site, which it then went "through"; null otherwise. */
@@ -490,8 +500,11 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                     const score = script.fpMetrics?.score ?? 0;
                     // Sent right after reading: only after bursts that are possible fingerprinting on their own, as for what it stored (see storedDetails).
                     const correlations = script.fpSpikes
-                        .filter((spike) => (spike?.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
-                        .flatMap((spike) => spike?.httpCorrelations ?? []);
+                        .filter((spike) => spike !== null && (spike.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
+                        .flatMap((spike) => {
+                            const burstEnd = Math.max(...spike!.events.map((event) => event.timeStamp));
+                            return (spike!.httpCorrelations ?? []).map((correlation) => ({ ...correlation, burstEnd }));
+                        });
                     const apis = apiList(script.apiCounts, script.apiLocations, script.fpMetrics?.distinctFpApis ?? []);
                     // An inline script is shown from its page, which is the script's URL in stack traces.
                     const viewerSource = linkable || inline ? linkableUrl(script.name) : null;
@@ -636,18 +649,25 @@ function capitalize(text: string): string {
 }
 
 /** The requests with data a script made right after fingerprinting, the most data first; one per URL. */
-function sentRequests(correlations: HttpConsolidatedEvent[], aliases: Map<string, string>): SentRequest[] {
+function sentRequests(correlations: (HttpConsolidatedEvent & { burstEnd: number })[], aliases: Map<string, string>): SentRequest[] {
     const byUrl = new Map<string, SentRequest>();
-    for (const { httpRequest, httpEvent } of correlations) {
+    for (const { httpRequest, httpEvent, burstEnd } of correlations) {
         const url = httpRequest?.url ?? httpEvent?.requestUrl;
         if (!url) continue;
         const method = (httpRequest?.method ?? httpEvent?.method ?? 'GET').toUpperCase();
         let query = '';
+        let params: string[] = [];
         try {
-            query = new URL(url).search.slice(1);
+            const parsed = new URL(url);
+            query = parsed.search.slice(1);
+            params = [...new Set(parsed.searchParams.keys())];
         } catch {}
         const request: SentRequest = {
+            url,
             method,
+            how: httpEvent?.id ?? null,
+            afterMs: httpEvent ? Math.max(0, httpEvent.timeStamp - burstEnd) : null,
+            params,
             site: realSite(hostOf(url), aliases) ?? hostOf(url),
             via: aliases.has(hostOf(url)) ? hostOf(url) : null,
             path: urlPath(url),
@@ -657,6 +677,25 @@ function sentRequests(correlations: HttpConsolidatedEvent[], aliases: Map<string
         if ((byUrl.get(key)?.bytes ?? -1) < request.bytes) byUrl.set(key, request);
     }
     return [...byUrl.values()].sort((a, b) => b.bytes - a.bytes);
+}
+
+/**
+ * What the page's scripts sent, one row per request with the scripts that sent it: one request
+ * counts for every script on its stack (see storeHttpEvent), so several can have the same. The most
+ * data first.
+ */
+function pageSent(scripts: ScriptDetail[]): SentRequest[] {
+    const byRequest = new Map<string, SentRequest & { by: NonNullable<SentRequest['by']> }>();
+    for (const script of scripts) {
+        for (const request of script.sent) {
+            const key = `${request.method} ${request.url}`;
+            const writer = { name: script.name, path: script.path, origin: script.origin, url: script.url };
+            const known = byRequest.get(key);
+            if (known) known.by.push(writer);
+            else byRequest.set(key, { ...request, by: [writer] });
+        }
+    }
+    return [...byRequest.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
 /** The metrics of the spike with the highest score. */
@@ -776,7 +815,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         ),
         signals,
         apis,
-        sent: scripts.flatMap((script) => script.sent).sort((a, b) => b.bytes - a.bytes),
+        sent: pageSent(scripts),
         stored: pageStored(scripts),
         apiDetails: pageApiDetails(snapshot, scripts),
     };

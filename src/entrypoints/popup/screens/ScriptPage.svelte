@@ -5,6 +5,7 @@
     import { onMount, tick } from 'svelte';
     import ApiTable from '../components/ApiTable.svelte';
     import FingerprintCard from '../components/FingerprintCard.svelte';
+    import SentList from '../components/SentList.svelte';
     import SignalLine from '../components/SignalLine.svelte';
     import StoredList from '../components/StoredList.svelte';
     import type { ScriptDetail } from '../model';
@@ -36,6 +37,8 @@
             <ApiTable apis={script.apiDetails} />
         {:else if key === 'stored'}
             <StoredList items={script.stored} />
+        {:else if key === 'sent'}
+            <SentList requests={script.sent} />
         {/if}
     </section>
 {/each}

@@ -117,15 +117,22 @@ function storagePlaces(items: { kind: StorageKind }[]): string {
 }
 
 /**
- * Statements shown in another's section of the script's page, under its line, as they are about the
- * same: how identifying what it read is, is part of what it read. On the card, lines of one section
- * share one way to it (see FingerprintCard).
+ * Statements shown in one section of the script's page together, each under its own line, as they
+ * are about the same: how identifying what it read is, is part of what it read; the signs in how the
+ * code reads (generated code, one place) go together, whichever of them shows; and where data went
+ * through an alias is part of what was sent. On the card, lines of one section share one way to it
+ * (see FingerprintCard). Others have a section of their own, by their key.
  */
-const SHOWN_WITH: Record<string, string> = { identifying: 'read' };
+const SECTIONS: Record<string, string> = {
+    identifying: 'read',
+    'generated-code': 'code',
+    'one-place': 'code',
+    'sent-alias': 'sent',
+};
 
 /** The section of the script's page a statement is shown in, by its key. */
 export function sectionOf(key: string): string {
-    return SHOWN_WITH[key] ?? key;
+    return SECTIONS[key] ?? key;
 }
 
 /** The statements by the section they are shown in, each section where its first statement is. */
