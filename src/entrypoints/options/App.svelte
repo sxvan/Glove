@@ -20,6 +20,11 @@
     import type { IdentifierRules } from '@/lib/identifiers';
     import { percent, percentFromInput, positiveFromInput, unitFromInput } from './inputs';
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
+    import SectionHead from './SectionHead.svelte';
+    import { DEFAULT_BLOCKING_OPTIONS, saveBlockingOptions } from '@/lib/blocking';
+    import { DEFAULT_LIMITS, saveLimits } from '@/lib/limits';
+    import { DEFAULT_PRIVACY, savePrivacy } from '@/lib/privacy';
+    import { setTheme, storedTheme, type Theme } from '@/lib/theme';
     import BlockingSettings from './BlockingSettings.svelte';
     import PerformanceSettings from './PerformanceSettings.svelte';
     import PrivacySettings from './PrivacySettings.svelte';
@@ -110,12 +115,50 @@
         }, SAVE_DELAY_MS);
     }
 
-    async function reset() {
-        clearTimeout(saveTimer);
-        await resetScoringSettings();
-        settings = await loadScoringSettings();
-        status = 'Reset to the defaults.';
+    // The theme, kept by the page so a reset sets it back too.
+    let theme = $state<Theme>(storedTheme());
+    function resetTheme() {
+        theme = 'system';
+        setTheme('system');
     }
+
+    /**
+     * Sets every setting back to its default: scoring, privacy, blocking, performance and the theme.
+     * Not the lists of blocked scripts, of scripts never blocked automatically, and of sites the
+     * extension is off for: those are the user's choices, with buttons of their own.
+     */
+    async function reset() {
+        if (!confirm('Set all settings back to their defaults? Blocked scripts and the sites the extension is off for stay as they are.')) return;
+        clearTimeout(saveTimer);
+        await Promise.all([resetScoringSettings(), savePrivacy({ ...DEFAULT_PRIVACY }), saveBlockingOptions({ ...DEFAULT_BLOCKING_OPTIONS }), saveLimits({ ...DEFAULT_LIMITS })]);
+        resetTheme();
+        settings = await loadScoringSettings();
+        status = 'All settings reset to their defaults.';
+    }
+
+    /** Sets one part of the scoring settings back to its defaults, e.g. the cutoffs. */
+    function resetPart<K extends keyof ScoringSettings>(key: K) {
+        if (!settings) return;
+        settings[key] = structuredClone($state.snapshot(DEFAULT_SETTINGS[key])) as ScoringSettings[K];
+        scheduleSave();
+    }
+
+    function resetLevel(level: ScoreLevel) {
+        if (!settings) return;
+        (settings.strengths as Record<ScoreLevel, unknown>)[level] = structuredClone(DEFAULT_SETTINGS.strengths[level]);
+        scheduleSave();
+    }
+
+    function resetApis() {
+        if (!settings) return;
+        settings.apis = structuredClone(DEFAULT_SETTINGS.apis);
+        settings.rarityPower = DEFAULT_SETTINGS.rarityPower;
+        settings.fullAt = structuredClone(DEFAULT_SETTINGS.fullAt);
+        scheduleSave();
+    }
+
+    /** Whether a part of the settings differs from its defaults. */
+    const differs = (value: unknown, defaults: unknown) => JSON.stringify(value) !== JSON.stringify(defaults);
 
     /** True when the cutoffs don't make sense: "likely" has to be above "possible". */
     const invalidCutoffs = $derived(
@@ -125,8 +168,8 @@
 
 <main>
     <header>
-        <h1>Scoring settings</h1>
-        <button type="button" onclick={reset}>Reset to defaults</button>
+        <h1>Settings</h1>
+        <button type="button" onclick={reset}>Reset all to defaults</button>
     </header>
 
     <p class="intro">
@@ -138,42 +181,37 @@
     </p>
     <p class="status" role="status">{status}</p>
 
-    <!-- Not a scoring setting: kept apart from them, and not reset with them. -->
     <section class="squircle">
-        <h2>Appearance</h2>
+        <SectionHead title="Appearance" changed={theme !== 'system'} onreset={resetTheme} />
         <div class="row">
             <div>
                 <div class="name">Theme</div>
                 <div class="description">The extension's pages in light or dark, or as the system is set.</div>
             </div>
-            <ThemeSwitch />
+            <ThemeSwitch bind:theme />
         </div>
     </section>
 
-    <!-- Not scoring settings either. -->
+    <!-- Not scoring settings: each section titles itself, and resets its own settings. -->
     <section class="squircle">
-        <h2>Sites</h2>
         <SitesSettings />
     </section>
 
     <section class="squircle">
-        <h2>Privacy</h2>
         <PrivacySettings />
     </section>
 
     <section class="squircle">
-        <h2>Blocking</h2>
         <BlockingSettings />
     </section>
 
     <section class="squircle">
-        <h2>Performance</h2>
         <PerformanceSettings />
     </section>
 
     {#if settings}
         <section class="squircle">
-            <h2>Likelihood</h2>
+            <SectionHead title="Likelihood" changed={differs(settings.cutoffs, DEFAULT_SETTINGS.cutoffs)} onreset={() => resetPart('cutoffs')} />
             <p class="section-note">Where a score counts as possible or likely tracking.</p>
             {#each [['fingerprinting', 'Fingerprinting (pages and scripts)'], ['hostname', 'ID-like hostnames']] as const as [kind, label] (kind)}
                 <div class="row cutoffs">
@@ -196,7 +234,7 @@
         </section>
 
         <section class="squircle" id="bursts">
-            <h2>Bursts of calls</h2>
+            <SectionHead title="Bursts of calls" changed={differs(settings.bursts, DEFAULT_SETTINGS.bursts)} onreset={() => resetPart('bursts')} />
             <p class="section-note">
                 What counts as a burst: fingerprinting APIs read in quick succession, one collection of details. Bursts are found in
                 each script and across the page, all scripts together.
@@ -218,7 +256,7 @@
         </section>
 
         <section class="squircle" id="identifiers">
-            <h2>Stored identifiers</h2>
+            <SectionHead title="Stored identifiers" changed={differs(settings.identifiers, DEFAULT_SETTINGS.identifiers)} onreset={() => resetPart('identifiers')} />
             <p class="section-note">
                 What a script stores in cookies and storage is a <strong>possible identifier</strong> when it is kept long enough and holds a part
                 that looks like one: of a length below, with a digit, as words have none. Measurement studies tell identifier cookies apart
@@ -247,14 +285,18 @@
 
         {#each LEVELS as { level, note } (level)}
             <section class="squircle" id={sectionId(level)}>
-                <h2>{LEVEL_LABELS[level]}</h2>
+                <SectionHead title={LEVEL_LABELS[level]} changed={differs(settings.strengths[level], DEFAULT_SETTINGS.strengths[level])} onreset={() => resetLevel(level)} />
                 <p class="section-note">{note}</p>
                 <LevelSettings {level} {settings} onStrength={setStrength} />
             </section>
         {/each}
 
         <section class="squircle" id="apis">
-            <h2>Fingerprinting APIs</h2>
+            <SectionHead
+                title="Fingerprinting APIs"
+                changed={differs(settings.apis, DEFAULT_SETTINGS.apis) || settings.rarityPower !== DEFAULT_SETTINGS.rarityPower || differs(settings.fullAt, DEFAULT_SETTINGS.fullAt)}
+                onreset={resetApis}
+            />
             <p class="section-note">
                 Each fingerprinting API has its <strong>bits</strong>: how much identifying information it reveals on its own, its entropy,
                 so 6 bits tell one browser in 64 apart. They come from a study of 4 million fingerprints
@@ -354,11 +396,6 @@
         font-size: 20px;
     }
 
-    h2 {
-        margin: 0 0 4px;
-        font-size: 15px;
-    }
-
     header button {
         padding: 6px 12px;
         border: 1px solid var(--border);
@@ -443,9 +480,15 @@
 
     /* APIs are listed compactly: one line each, with bits, what they add, the rare bits they count
        and rarity. */
+    /* Each row is a grid of its own, so its columns have fixed widths: bits, adds, rare bits and
+       rarity line up from row to row, also where an API has no "adds" (an empty column). */
     .row.api {
-        grid-template-columns: 1fr auto auto auto auto;
+        grid-template-columns: minmax(0, 1fr) 104px 108px 96px 116px;
         padding: 6px 0;
+    }
+
+    .row.api > .field {
+        justify-self: end;
     }
 
     /* Computed from the settings around it, not one of them: quieter, the numbers lined up. */

@@ -12,6 +12,7 @@
         saveBlockingOptions,
         setBlocked,
         watchBlocked,
+        watchBlockingOptions,
         watchExempt,
         type BlockedScript,
         type BlockingOptions,
@@ -19,6 +20,7 @@
     import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
     import { percent, percentFromInput } from './inputs';
     import Switch from '../popup/components/Switch.svelte';
+    import SectionHead from './SectionHead.svelte';
 
     type SwitchKey = 'reload' | 'clearData' | 'autoBlock';
 
@@ -94,11 +96,18 @@
         loadExempt().then((keys) => (exempt = keys));
         const stopBlocked = watchBlocked((list) => (blocked = list));
         const stopExempt = watchExempt((keys) => (exempt = keys));
+        // Also follows a reset of all settings (see App).
+        const stopOptions = watchBlockingOptions((changed) => (options = changed));
         return () => {
             stopBlocked();
             stopExempt();
+            stopOptions();
         };
     });
+
+    // A reset sets the options back, not the lists: those are the user's choices, with their own buttons.
+    const optionsChanged = $derived((Object.keys(DEFAULT_BLOCKING_OPTIONS) as (keyof BlockingOptions)[]).some((key) => options[key] !== DEFAULT_BLOCKING_OPTIONS[key]));
+    const reset = () => saveBlockingOptions({ ...DEFAULT_BLOCKING_OPTIONS });
 
     function actOnAll(group: Group) {
         const count = `${group.scripts.length} ${group.scripts.length === 1 ? 'script' : 'scripts'} ${group.title.toLowerCase()}`;
@@ -128,6 +137,8 @@
     const onOff = (on: boolean) => (on ? 'on' : 'off');
     const fromChanged = $derived(options.autoBlockFrom !== DEFAULT_BLOCKING_OPTIONS.autoBlockFrom);
 </script>
+
+<SectionHead title="Blocking" changed={optionsChanged} onreset={reset} />
 
 {#each SWITCHES as { key, label, description } (key)}
     {@const changed = options[key] !== DEFAULT_BLOCKING_OPTIONS[key]}

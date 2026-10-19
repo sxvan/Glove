@@ -1,5 +1,6 @@
 <script lang="ts">
-    // The extension's appearance as a segmented control: the system's, light or dark.
+    // The extension's appearance as a segmented control: the system's, light or dark. `theme` can be
+    // bound, e.g. to reset it.
     import { setTheme, storedTheme, type Theme } from '@/lib/theme';
 
     const THEMES: { theme: Theme; label: string }[] = [
@@ -7,7 +8,7 @@
         { theme: 'light', label: 'Light' },
         { theme: 'dark', label: 'Dark' },
     ];
-    let theme = $state<Theme>(storedTheme());
+    let { theme = $bindable(storedTheme()) }: { theme?: Theme } = $props();
 
     function choose(next: Theme) {
         theme = next;

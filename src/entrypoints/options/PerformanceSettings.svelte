@@ -2,14 +2,20 @@
     // How many calls are kept (see lib/limits), laid out like the other settings, each with its
     // default; saved once a field is left, not as typed.
     import { onMount } from 'svelte';
-    import { DEFAULT_LIMITS, LIMIT_FIELDS, loadLimits, saveLimits, type PerformanceLimits } from '@/lib/limits';
+    import { DEFAULT_LIMITS, LIMIT_FIELDS, loadLimits, saveLimits, watchLimits, type PerformanceLimits } from '@/lib/limits';
     import { positiveFromInput } from './inputs';
+    import SectionHead from './SectionHead.svelte';
 
     let limits = $state<PerformanceLimits>({ ...DEFAULT_LIMITS });
 
-    onMount(async () => {
-        limits = await loadLimits();
+    // Also follows a reset of all settings (see App).
+    onMount(() => {
+        loadLimits().then((loaded) => (limits = loaded));
+        return watchLimits((changed) => (limits = changed));
     });
+
+    const sectionChanged = $derived(LIMIT_FIELDS.some(({ key }) => limits[key] !== DEFAULT_LIMITS[key]));
+    const reset = () => saveLimits({ ...DEFAULT_LIMITS });
 
     function set(key: keyof PerformanceLimits, event: Event) {
         const value = positiveFromInput(event);
@@ -20,6 +26,8 @@
 
     const number = (value: number) => value.toLocaleString('en-US');
 </script>
+
+<SectionHead title="Performance" changed={sectionChanged} onreset={reset} />
 
 {#each LIMIT_FIELDS as field (field.key)}
     {@const changed = limits[field.key] !== DEFAULT_LIMITS[field.key]}

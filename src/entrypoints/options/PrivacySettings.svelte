@@ -1,14 +1,19 @@
 <script lang="ts">
     // What the extension may send off the browser (see lib/privacy), saved as soon as switched.
     import { onMount } from 'svelte';
-    import { DEFAULT_PRIVACY, loadPrivacy, savePrivacy, type PrivacyOptions } from '@/lib/privacy';
+    import { DEFAULT_PRIVACY, loadPrivacy, savePrivacy, watchPrivacy, type PrivacyOptions } from '@/lib/privacy';
     import Switch from '../popup/components/Switch.svelte';
+    import SectionHead from './SectionHead.svelte';
 
     let options = $state<PrivacyOptions>({ ...DEFAULT_PRIVACY });
 
-    onMount(async () => {
-        options = await loadPrivacy();
+    // Also follows a reset of all settings (see App).
+    onMount(() => {
+        loadPrivacy().then((loaded) => (options = loaded));
+        return watchPrivacy((changed) => (options = changed));
     });
+
+    const reset = () => savePrivacy({ ...DEFAULT_PRIVACY });
 
     function setDnsLookups(on: boolean) {
         options.dnsLookups = on;
@@ -17,6 +22,8 @@
 
     const changed = $derived(options.dnsLookups !== DEFAULT_PRIVACY.dnsLookups);
 </script>
+
+<SectionHead title="Privacy" {changed} onreset={reset} />
 
 <label class="row">
     <div>
