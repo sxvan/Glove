@@ -56,10 +56,10 @@ clicked, also show only part of their collection until the user acts.
 ## Privacy note
 
 Everything the extension records stays in the browser. The one exception is CNAME cloaking: to find
-another company's tracker behind an address of the visited site, the extension looks up the site's
-own subdomains (not every host a page loads) at Google's public DNS-over-HTTPS resolver
-(`dns.google`), which learns those names and your IP address. The lookups can be turned off in the
-settings (Privacy → DNS lookups); then cloaking isn't detected.
+another company's tracker behind an address of the visited site, the extension can look up the
+site's own subdomains (not every host a page loads) at Quad9 (`dns.quad9.net`), a non-profit
+DNS-over-HTTPS resolver that doesn't store IP addresses. These lookups are off by default; turned on
+in the settings (Privacy → DNS lookups), cloaking is detected and scored.
 
 ## License
 

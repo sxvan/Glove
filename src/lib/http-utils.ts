@@ -177,7 +177,7 @@ export function scoreSubdomainEntropy(subdomain: string | null, settings: Scorin
             length: clamp((longedLabelLength - 25) / 25, 0, 1),
             hyphens: clamp((hyphenRatio - 0.05) / 0.15, 0, 1),
         },
-        settings
+        settings,
     );
 }
 

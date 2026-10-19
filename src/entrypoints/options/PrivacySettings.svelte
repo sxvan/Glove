@@ -22,8 +22,9 @@
     <div>
         <div class="name">DNS lookups</div>
         <div class="description">
-            To find CNAME cloaking, another company's tracker behind an address of the site, the page's own subdomains are looked up at a DNS resolver
-            (dns.google), which learns them and your IP address. Off, nothing is looked up, and cloaking isn't detected or scored.
+            To find CNAME cloaking, another company's tracker behind an address of the site, the page's own subdomains are looked up at Quad9
+            (dns.quad9.net), a non-profit DNS resolver that doesn't store IP addresses, but learns the names asked. Off, nothing is looked up, and
+            cloaking isn't detected or scored.
         </div>
     </div>
     <Switch checked={options.dnsLookups} onchange={setDnsLookups} />

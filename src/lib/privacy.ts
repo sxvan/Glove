@@ -1,14 +1,15 @@
 // What the extension may send off the browser. Today only DNS lookups (see dns-lookup): the page's
-// own subdomains, asked at a resolver to find CNAME cloaking. Off, nothing is looked up, and cloaking
-// isn't detected.
+// own subdomains, asked at a resolver (Quad9) to find CNAME cloaking. Off, nothing is looked up, and
+// cloaking isn't detected.
 import { browser } from 'wxt/browser';
 
 export interface PrivacyOptions {
     dnsLookups: boolean;
 }
 
-// On: cloaking is part of the scores (see the cnameCloaked and sentThroughAlias signals).
-export const DEFAULT_PRIVACY: PrivacyOptions = { dnsLookups: true };
+// Off: nothing leaves the browser unless the user chooses so. Cloaking then isn't detected, and its
+// signals in the scores stay at nothing (see cnameCloaked and sentThroughAlias).
+export const DEFAULT_PRIVACY: PrivacyOptions = { dnsLookups: false };
 
 const STORAGE_KEY = 'privacyOptions';
 
