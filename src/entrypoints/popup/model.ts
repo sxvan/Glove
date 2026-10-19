@@ -772,8 +772,6 @@ export function fingerprintingPage(snapshot: TabSnapshot): PageScore {
 export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptDetail[]): ScriptDetail {
     const page = fingerprintingPage(snapshot);
     const url = pageUrl(snapshot) ?? '';
-    // Named by its full host, like the popup's header: "accounts.google.com" is not all of google.com.
-    const host = pageHost(snapshot) || 'Whole page';
 
     const calls = new Map<string, number | null>();
     for (const script of scripts) {
@@ -796,7 +794,8 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
 
     return {
         key: 'page',
-        name: host,
+        // Named by what it is about: the header names the page, over everything said about it.
+        name: 'Fingerprinting',
         path: false,
         origin: 'Page activity',
         originTitle: url,
