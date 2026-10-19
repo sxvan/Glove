@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { Category } from '../model';
+    import InfoTip from './InfoTip.svelte';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
 
     // As `backOnly`, only the way back, without title, likelihood and explanation: for a screen
@@ -13,10 +14,9 @@
     </button>
     {#if !backOnly}
         <div class="title-row">
-            <h2>{category.title}</h2>
+            <h2>{category.title} <InfoTip label="What is {category.title}?" text={category.explanation} /></h2>
             <LikelihoodLabel likelihood={category.likelihood} />
         </div>
-        <p class="explanation">{category.explanation}</p>
     {/if}
 </div>
 
@@ -56,11 +56,5 @@
     h2 {
         margin: 0;
         font-size: 16px;
-    }
-
-    .explanation {
-        margin: 6px 0 0;
-        color: var(--muted);
-        font-size: 12px;
     }
 </style>

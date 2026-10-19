@@ -582,7 +582,8 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
             rest: 'read from generated code',
             apis: generated,
             kinds: kindsOf(generated),
-            explanation: 'Code created while the page runs (eval, new Function) is hidden from the script file, which hides what it does.',
+            explanation:
+                'Code the script creates while the page runs (with eval or new Function) is not in its file, so reading the file doesn\u2019t show what it does: a way to hide fingerprinting. Shown when what it reads that way adds at least 1 rare bit.',
         });
     }
 
@@ -600,7 +601,8 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
             rest: 'read from one place in the code',
             apis: fromOnePlace,
             kinds: kindsOf(fromOnePlace),
-            explanation: 'Ordinary code reads each detail where it needs it; collecting them through one loop is typical of fingerprinting.',
+            explanation:
+                'Ordinary code reads each detail where it needs it, at most 2 in one place (e.g. the window\u2019s width and height). Collecting many through one loop is typical of fingerprinting. Shown from 5 different APIs read at one place, when they add at least 1 rare bit.',
         });
     }
 

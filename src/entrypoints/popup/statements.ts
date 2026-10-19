@@ -13,6 +13,8 @@ export interface Statement {
     text: TextPart[];
     /** Below the text without an icon, e.g. the kinds of detail under "Read 40 fingerprinting APIs". */
     detail?: string;
+    /** How it is measured, shown in a tip (see InfoTip). */
+    explanation?: string;
 }
 
 /**
@@ -35,6 +37,8 @@ export function statements(script: ScriptDetail): Statement[] {
             key: 'read',
             text: ['Read ', { value: plural(script.apis.length, 'fingerprinting API') }, ' in ', { value: plural(script.calls, 'call') }],
             detail: kinds ? `About ${kinds}` : '',
+            explanation:
+                'Fingerprinting APIs are the browser\u2019s features that reveal details of the device, such as the graphics card, the screen or the fonts. Every call to them is noted with the script that made it. Ordinary scripts read some too: what counts toward the score is how rare and identifying they are. The kinds of detail are named the most identifying first.',
         },
     ];
     const identifying = identifyingStatement(script);
@@ -45,7 +49,7 @@ export function statements(script: ScriptDetail): Statement[] {
             signal.kinds.map((kind) => kind.toLowerCase()),
             SHOWN_KINDS
         );
-        list.push({ key: signal.id, text: [{ value: plural(signal.count, 'API') }, ` ${signal.rest}`], detail: about ? `About ${about}` : '' });
+        list.push({ key: signal.id, text: [{ value: plural(signal.count, 'API') }, ` ${signal.rest}`], detail: about ? `About ${about}` : '', explanation: signal.explanation });
     }
     // A CNAME-cloaked script: served from an address of the site that is an alias for another company.
     if (script.via) {
@@ -53,6 +57,8 @@ export function statements(script: ScriptDetail): Statement[] {
             key: 'cloaked',
             text: ['Served by ', { value: script.origin }, ' through ', { value: script.via }],
             detail: script.via ? `${script.via} is an address of the site that is an alias (CNAME) for it` : '',
+            explanation:
+                'The script comes from an address of the site itself, but that address is an alias (a CNAME record) for another company\u2019s server. The browser then treats the tracker as part of the site: its cookies count as the site\u2019s own, and blockers that go by the address miss it.',
         });
     }
     const sent = sentStatement(script);
@@ -78,13 +84,17 @@ export const STORAGE_WORDS: Record<StorageKind, string> = {
  * browser" over "1 cookie and 1 in local storage, besides 1 possible identifier and 2 other
  * values"; without, all: "Stored 3 values in the browser" over "2 cookies and 1 in local storage".
  */
+/** How "Stored …" is judged, for its tip. */
+const STORED_EXPLANATION =
+    'Values the script wrote to cookies and the page\u2019s storage, as recorded when written. An identifier stored there lets a script recognize the browser on later visits without fingerprinting again, and a cookie keeps being sent after the script is blocked. A possible identifier is kept long enough (a cookie for 3 months by default; local storage until cleared) and holds a part of 8 to 200 characters with a digit; a likely one is also stored in another place, to restore it from there, or stored right after a fingerprinting burst.';
+
 function storedStatement(script: ScriptDetail): Statement | null {
     if (script.stored.length === 0) return null;
     const likely = script.stored.filter((item) => item.identifier === 'likely');
     const possible = script.stored.filter((item) => item.identifier === 'possible');
     const shown = likely.length > 0 ? likely : possible;
     if (shown.length === 0) {
-        return { key: 'stored', text: ['Stored ', { value: plural(script.stored.length, 'value') }, ' in the browser'], detail: storagePlaces(script.stored) };
+        return { key: 'stored', text: ['Stored ', { value: plural(script.stored.length, 'value') }, ' in the browser'], detail: storagePlaces(script.stored), explanation: STORED_EXPLANATION };
     }
     const others = script.stored.length - likely.length - possible.length;
     const besides = [
@@ -95,6 +105,7 @@ function storedStatement(script: ScriptDetail): Statement | null {
         key: 'stored',
         text: ['Stored ', { value: plural(shown.length, `${likely.length > 0 ? 'likely' : 'possible'} identifier`) }, ' in the browser'],
         detail: `${storagePlaces(shown)}${besides.length > 0 ? `, besides ${listWords(besides)}` : ''}`,
+        explanation: STORED_EXPLANATION,
     };
 }
 
@@ -103,6 +114,28 @@ function storagePlaces(items: { kind: StorageKind }[]): string {
     const counts = new Map<StorageKind, number>();
     for (const item of items) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
     return listWords([...counts.entries()].map(([kind, count]) => (kind === 'cookie' ? plural(count, 'cookie') : `${count} in ${STORAGE_WORDS[kind]}`)));
+}
+
+/**
+ * Statements shown in another's section of the script's page, under its line, as they are about the
+ * same: how identifying what it read is, is part of what it read. On the card, lines of one section
+ * share one way to it (see FingerprintCard).
+ */
+const SHOWN_WITH: Record<string, string> = { identifying: 'read' };
+
+/** The section of the script's page a statement is shown in, by its key. */
+export function sectionOf(key: string): string {
+    return SHOWN_WITH[key] ?? key;
+}
+
+/** The statements by the section they are shown in, each section where its first statement is. */
+export function bySection(list: Statement[]): Statement[][] {
+    const sections = new Map<string, Statement[]>();
+    for (const statement of list) {
+        const section = sectionOf(statement.key);
+        sections.set(section, [...(sections.get(section) ?? []), statement]);
+    }
+    return [...sections.values()];
 }
 
 // Items named in a list under a statement, the rest as "and N more": kinds of detail are short
@@ -126,6 +159,7 @@ function identifyingStatement(script: ScriptDetail): Statement | null {
         key: 'identifying',
         text: ['Up to ', { value: plural(bits, 'bit') }, ' of identifying information'],
         detail: bits >= EVERYONE_BITS ? 'Enough to single out one browser among everyone online' : `One browser in about ${roughCount(2 ** bits)}`,
+        explanation: `The bits of each API read, added up, those revealing the same value once. Of details that overlap, such as the screen's and the window's sizes, or the user agent and the platform, the strongest counts fully and the others only what they add beyond it, as measured on 4 million fingerprints. Overlaps between other details remain, so the real figure is lower. ${EVERYONE_BITS} bits tell apart everyone online, about 5 billion people.`,
     };
 }
 
@@ -138,6 +172,10 @@ function identifyingStatement(script: ScriptDetail): Statement | null {
  * are possible fingerprinting on their own (see fingerprintingDetails); the requests themselves
  * are for a screen of their own.
  */
+/** How "Sent …" is measured, for its tip. */
+const SENT_EXPLANATION =
+    'Requests with data the script made during a burst of fingerprinting API calls, or right after it (\u201cRight after\u201d in the settings, 1 second by default), counted after bursts that are possible fingerprinting on their own. Collected details are usually sent right after collecting them. The size is what the request carries: its URL\u2019s parameters and its body.';
+
 function sentStatement(script: ScriptDetail): Statement | null {
     const bySite = new Map<string, number>();
     for (const { site, bytes } of script.sent) bySite.set(site, (bySite.get(site) ?? 0) + bytes);
@@ -146,7 +184,7 @@ function sentStatement(script: ScriptDetail): Statement | null {
 
     const total = bytes(sites.reduce((sum, site) => sum + site.total, 0));
     if (sites.length === 1) {
-        return { key: 'sent', text: ['Sent ', { value: total }, ' to ', { value: sites[0]!.site }, ' right after reading'] };
+        return { key: 'sent', text: ['Sent ', { value: total }, ' to ', { value: sites[0]!.site }, ' right after reading'], explanation: SENT_EXPLANATION };
     }
     return {
         key: 'sent',
@@ -155,6 +193,7 @@ function sentStatement(script: ScriptDetail): Statement | null {
             sites.map(({ site }) => site),
             SHOWN_SITES
         )}`,
+        explanation: SENT_EXPLANATION,
     };
 }
 
@@ -185,5 +224,11 @@ function sentThroughAliasStatement(script: ScriptDetail): Statement | null {
         aliases.length === 1
             ? ['Sent data through ', { value: aliases[0]! }, ' alias']
             : ['Sent data through ', { value: plural(aliases.length, 'alias', 'aliases') }];
-    return { key: 'sent-alias', text, detail };
+    return {
+        key: 'sent-alias',
+        text,
+        detail,
+        explanation:
+            'Data sent right after reading went to an address of the site that is an alias (a CNAME record) for another company\u2019s server. The browser sends the site\u2019s cookies there as its own, often including the login, so the other company gets them too.',
+    };
 }

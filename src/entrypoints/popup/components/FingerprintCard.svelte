@@ -1,9 +1,13 @@
 <script lang="ts">
     // A card for a script, or for the page as a whole (all its scripts together): its name and who
-    // serves it beside the score, then what it read, signs of fingerprinting, and where it sent data.
+    // serves it beside the score, then what it read, signs of fingerprinting, and where it sent data;
+    // last, for a script, the switch that blocks it.
+    import { blockKey } from '@/lib/blocking';
     import { viewerUrl } from '@/lib/script-viewer';
     import type { ScriptDetail } from '../model';
-    import { statements } from '../statements';
+    import { bySection, statements } from '../statements';
+    import DetailsButton from './DetailsButton.svelte';
+    import BlockToggle from './BlockToggle.svelte';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
     import MiddleTruncate from './MiddleTruncate.svelte';
     import ScoreRing from './ScoreRing.svelte';
@@ -23,6 +27,10 @@
 
     // Whether the signals the score was combined from show.
     let breakdown = $state(false);
+
+    // Only a script loaded from an address can be blocked; not the page as a whole, nor inline or
+    // generated code. Not on a card that opens a screen as a whole, where nothing is clickable on its own.
+    const blockable = $derived(!onOpen && script.path && blockKey(script.url) !== null);
 
 </script>
 
@@ -88,18 +96,30 @@
     {/if}
 
     {#if !headOnly}
+    <!-- Lines leading to the same section of the script's page share one chevron, in their middle. -->
     <ul class="statements">
-        {#each statements(script) as statement (statement.key)}
-            <SignalLine
-                text={statement.text}
-                tone="info"
-                detail={statement.detail}
-                lead
-                details={!onOpen && !!onDetails}
-                onDetails={onDetails ? () => onDetails(statement.key) : undefined}
-            />
+        {#each bySection(statements(script)) as lines (lines[0]!.key)}
+            {@const details = !onOpen && !!onDetails}
+            {@const open = onDetails ? () => onDetails(lines[0]!.key) : undefined}
+            {#if lines.length === 1}
+                {@const statement = lines[0]!}
+                <SignalLine text={statement.text} tone="info" detail={statement.detail} explanation={statement.explanation} lead {details} onDetails={open} />
+            {:else}
+                <li class="joined" class:details>
+                    <ul class="lines">
+                        {#each lines as statement (statement.key)}
+                            <SignalLine text={statement.text} tone="info" detail={statement.detail} explanation={statement.explanation} lead />
+                        {/each}
+                    </ul>
+                    {#if details}<DetailsButton onclick={open} />{/if}
+                </li>
+            {/if}
         {/each}
     </ul>
+    {/if}
+
+    {#if blockable}
+        <BlockToggle url={script.url} label="Block this script" />
     {/if}
 </svelte:element>
 
@@ -221,6 +241,21 @@
         font-size: 14px;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    /* Lines that lead to the same section: one beside the other, with their chevron as an info line's. */
+    .joined.details {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+    }
+
+    .lines {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
     }
 
     /* What the card says about the script: facts and signs of fingerprinting, one per line. */

@@ -4,14 +4,18 @@
     // detail (text, or content such as a list of requests) below it. As `lead`, it is one of a card's
     // main statements: it stands out a little, also without a detail. With `onDetails`, a column on
     // the right holds a chevron, leading to a screen about the statement; `details` reserves that
-    // column, so lines with and without it keep the same width.
+    // column, so lines with and without it keep the same width. With an `explanation`, its icon shows
+    // it as a tip (see InfoTip).
     import type { Snippet } from 'svelte';
     import type { TextPart } from '../text-parts';
+    import DetailsButton from './DetailsButton.svelte';
+    import InfoTip from './InfoTip.svelte';
 
     let {
         text,
         tone = 'warning',
         detail = '',
+        explanation = '',
         lead = false,
         details = false,
         onDetails,
@@ -20,6 +24,7 @@
         text: string | TextPart[];
         tone?: 'info' | 'warning';
         detail?: string;
+        explanation?: string;
         lead?: boolean;
         details?: boolean;
         onDetails?: () => void;
@@ -30,12 +35,10 @@
 </script>
 
 <li class="signal tone-{tone}" class:lead class:details>
-    {#if tone === 'info'}
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-label="Info">
-            <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" />
-            <path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            <circle cx="8" cy="4.9" r="0.9" fill="currentColor" />
-        </svg>
+    {#if tone === 'info' && explanation}
+        <InfoTip label="How is this measured?" text={explanation}>{@render infoIcon()}</InfoTip>
+    {:else if tone === 'info'}
+        {@render infoIcon()}
     {:else}
         <svg viewBox="0 0 16 16" width="14" height="14" aria-label="Warning">
             <path d="M8 1.8 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
@@ -49,9 +52,17 @@
         {#if children}<span class="detail">{@render children()}</span>{/if}
     </span>
     {#if details}
-        <button type="button" class="open" aria-label="Details" title="Details" onclick={onDetails}></button>
+        <DetailsButton onclick={onDetails} />
     {/if}
 </li>
+
+{#snippet infoIcon()}
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-label="Info">
+        <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+        <path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <circle cx="8" cy="4.9" r="0.9" fill="currentColor" />
+    </svg>
+{/snippet}
 
 <style>
     .signal {
@@ -103,35 +114,5 @@
     /* Icon | text | chevron. */
     .details {
         grid-template-columns: auto minmax(0, 1fr) auto;
-    }
-
-    /* Leads to another screen: a grey chevron pointing on, like a list row's, in the text color on
-       hover. In the middle of the whole line, detail included; the button around it is larger than
-       the chevron, so it is easy to hit. */
-    .open {
-        align-self: center;
-        display: grid;
-        place-items: center;
-        width: 20px;
-        height: 20px;
-        padding: 0;
-        border: 0;
-        background: none;
-        color: var(--muted);
-        cursor: pointer;
-    }
-
-    .open::after {
-        content: '';
-        width: 6px;
-        height: 6px;
-        margin-left: -2px;
-        border-right: 1.5px solid currentColor;
-        border-bottom: 1.5px solid currentColor;
-        transform: rotate(-45deg);
-    }
-
-    .open:hover {
-        color: var(--text);
     }
 </style>
