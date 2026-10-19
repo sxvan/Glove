@@ -14,6 +14,7 @@ import {
     type BlockedScript,
 } from '@/lib/blocking';
 import { DEFAULT_LIMITS, loadLimits, watchLimits } from '@/lib/limits';
+import { DEFAULT_PRIVACY, loadPrivacy, watchPrivacy } from '@/lib/privacy';
 import { registerRecorders } from '@/lib/recorders';
 import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
@@ -35,6 +36,8 @@ const MAX_INTERVAL_MS = 5000;
 let settings: ScoringSettings = DEFAULT_SETTINGS;
 // How many calls are kept (see lib/limits); the defaults until they are loaded.
 let limits = DEFAULT_LIMITS;
+// What may be sent off the browser (see lib/privacy); the defaults until they are loaded.
+let privacy = DEFAULT_PRIVACY;
 
 export default defineBackground(() => {
     watchPopups();
@@ -73,6 +76,14 @@ export default defineBackground(() => {
     watchScoringSettings((changed) => {
         settings = changed;
         reanalyzeAll();
+    });
+    let privacyChanged = false;
+    loadPrivacy().then((loaded) => {
+        if (!privacyChanged) privacy = loaded;
+    });
+    watchPrivacy((changed) => {
+        privacyChanged = true;
+        privacy = changed;
     });
     let limitsChanged = false;
     loadLimits().then((loaded) => {
@@ -312,7 +323,7 @@ export default defineBackground(() => {
         // the site visited, not every tracker it loads.
         const pageHost = getHostname(pageUrl);
         const cloakable = hostname !== null && hostname !== pageHost && getEtld1(hostname) === getEtld1(pageHost);
-        if (hostname && cloakable && details.type !== 'main_frame' && !session.dnsResults.has(hostname)) {
+        if (privacy.dnsLookups && hostname && cloakable && details.type !== 'main_frame' && !session.dnsResults.has(hostname)) {
             lookUpHost(hostname).then(
                 () => scheduleAnalysis(document, tabId),
                 (error) => console.warn('DNS lookup failed', hostname, error)

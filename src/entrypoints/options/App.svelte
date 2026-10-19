@@ -22,6 +22,7 @@
     import LevelSettings, { sectionId } from './LevelSettings.svelte';
     import BlockingSettings from './BlockingSettings.svelte';
     import PerformanceSettings from './PerformanceSettings.svelte';
+    import PrivacySettings from './PrivacySettings.svelte';
     import SitesSettings from './SitesSettings.svelte';
     import ThemeSwitch from './ThemeSwitch.svelte';
 
@@ -154,6 +155,11 @@
     <section class="squircle">
         <h2>Sites</h2>
         <SitesSettings />
+    </section>
+
+    <section class="squircle">
+        <h2>Privacy</h2>
+        <PrivacySettings />
     </section>
 
     <section class="squircle">
