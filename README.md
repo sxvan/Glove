@@ -55,4 +55,14 @@ clicked, also show only part of their collection until the user acts.
 
 ## Privacy note
 
-To detect CNAME cloaking, the extension resolves the hostname of every request through Google's public DNS-over-HTTPS resolver (`dns.google`).
+Everything the extension records stays in the browser. The one exception is CNAME cloaking: to find
+another company's tracker behind an address of the visited site, the extension looks up the site's
+own subdomains (not every host a page loads) at Google's public DNS-over-HTTPS resolver
+(`dns.google`), which learns those names and your IP address. The lookups can be turned off in the
+settings (Privacy → DNS lookups); then cloaking isn't detected.
+
+## License
+
+The Web Tracking Detector is free software under the [GNU General Public License v3.0](LICENSE).
+The third-party components it bundles keep their own licenses, listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

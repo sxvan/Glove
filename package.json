@@ -3,6 +3,7 @@
   "description": "Detects browser fingerprinting, CNAME cloaking and DNS-based tracking on visited websites.",
   "private": true,
   "version": "1.0.0",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "wxt",
