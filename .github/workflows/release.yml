@@ -1,0 +1,38 @@
+# Builds the extension and prepares a GitHub release of it: a draft with the zip to install it
+# from, to look over and publish by hand on the Releases page. Runs only when started by hand
+# (Actions → Release → Run workflow), never on a push. The release is of the version in
+# package.json, tagged v<version> once published; a version that was published already can't be
+# released again, so raise it first.
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tools pinned in mise.toml, run through mise as everywhere else (see AGENTS.md).
+      - uses: jdx/mise-action@v2
+
+      - run: mise exec -- pnpm install --frozen-lockfile
+      - run: mise exec -- pnpm compile
+      - run: mise exec -- pnpm zip
+
+      # A draft: visible only to the repository's maintainers until published by hand.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(mise exec -- node -p "require('./package.json').version")
+          gh release create "v$version" .output/*-chrome.zip \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "v$version" \
+            --notes "To install: download the zip below and unzip it, open chrome://extensions, turn on Developer mode, click \"Load unpacked\" and choose the unzipped folder." \
+            --generate-notes

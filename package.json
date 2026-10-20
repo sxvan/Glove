@@ -2,7 +2,7 @@
   "name": "web-tracking-extension",
   "description": "Detects browser fingerprinting on visited websites, per script.",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
