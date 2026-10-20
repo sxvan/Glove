@@ -15,10 +15,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The tools pinned in mise.toml, run through mise as everywhere else (see AGENTS.md).
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
 
       - run: mise exec -- pnpm install --frozen-lockfile
       - run: mise exec -- pnpm compile
