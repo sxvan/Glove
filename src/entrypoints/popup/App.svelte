@@ -106,7 +106,7 @@
 </script>
 
 <header>
-    <h1 title={url ?? ''}><MiddleTruncate text={host || 'Web Tracking Detector'} /></h1>
+    <h1 title={url ?? ''}><MiddleTruncate text={host || 'Glove'} /></h1>
     <div class="actions">
         <!-- The extension on or off for the site, like an ad blocker's power switch. -->
         {#if tabHost}

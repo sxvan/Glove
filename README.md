@@ -1,6 +1,8 @@
-# web-tracking-extension
+# Glove
 
-A Chrome extension that detects browser fingerprinting on the pages you visit: it records calls to
+See which scripts on a page fingerprint your browser and how, so you can avoid them or block them.
+
+Glove is a Chrome extension that detects browser fingerprinting on the pages you visit: it records calls to
 fingerprinting-related browser APIs (canvas, WebGL, audio, navigator, screen, …), attributes them to
 the calling script, and scores each script by how rare and identifying what it reads is. A script
 also scores more when it is served or sends its data through a CNAME alias of the site (CNAME
@@ -63,6 +65,6 @@ in the settings (Privacy → DNS lookups), cloaking is detected and scored.
 
 ## License
 
-The Web Tracking Detector is free software under the [GNU General Public License v3.0](LICENSE).
+Glove is free software under the [GNU General Public License v3.0](LICENSE).
 The third-party components it bundles keep their own licenses, listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

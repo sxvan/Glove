@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Web Tracking Detector is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
+Glove is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)).
 The built extension includes the following third-party components, under their own licenses, whose
 notices are reproduced below.
 

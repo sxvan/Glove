@@ -1,6 +1,6 @@
 {
-  "name": "web-tracking-extension",
-  "description": "Detects browser fingerprinting on visited websites, per script.",
+  "name": "glove",
+  "description": "See which scripts on a page fingerprint your browser and how, so you can avoid them or block them.",
   "private": true,
   "version": "0.1.0",
   "license": "GPL-3.0-only",

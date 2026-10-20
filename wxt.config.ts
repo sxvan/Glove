@@ -22,8 +22,8 @@ export default defineConfig({
   },
   ...(profiling ? { outDir: '.output/profile', vite: () => ({ build: { minify: false } }) } : {}),
   manifest: {
-    name: 'Web Tracking Detector',
-    description: 'An extension to detect web tracking scripts on visited websites.',
+    name: 'Glove',
+    description: 'See which scripts on a page fingerprint your browser and how, so you can avoid them or block them.',
     permissions: ['webRequest', 'webNavigation', 'storage', 'declarativeNetRequest', 'browsingData', 'scripting'],
     host_permissions: ['<all_urls>'],
   },
