@@ -1,0 +1,18 @@
+<!-- The extension's icon: a glove, as investigators wear to leave no fingerprints, in nitrile blue,
+     held up with the fingers spread. The source of public/icon/*.png, drawn from it at Chrome's sizes. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Moved to the middle: the thumb reaches further out than the little finger. -->
+  <g transform="translate(10 1)">
+    <g stroke="#3a7bd5" stroke-linecap="round" fill="none">
+      <!-- Fingers, fanned out from the palm, then the thumb. -->
+      <line x1="42" y1="64" x2="31" y2="26" stroke-width="15" />
+      <line x1="57" y1="62" x2="53" y2="17" stroke-width="15" />
+      <line x1="72" y1="62" x2="76.5" y2="20" stroke-width="15" />
+      <line x1="87" y1="66" x2="97" y2="34" stroke-width="14" />
+      <line x1="40" y1="90" x2="13" y2="66" stroke-width="15" />
+    </g>
+    <!-- The palm, and the cuff a shade darker. -->
+    <rect x="34" y="52" width="63" height="54" rx="18" fill="#3a7bd5" />
+    <rect x="38" y="98" width="55" height="22" rx="5" fill="#2c62ae" />
+  </g>
+</svg>
