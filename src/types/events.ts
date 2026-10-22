@@ -1,5 +1,12 @@
 import type { StorageKind } from './snapshot';
 
+/** The events the main-world recorders hand to the bridge, by name, with what each carries. */
+export interface RecorderEvents {
+    'fp-monkey': FpMonkeyEvent[];
+    'storage-monkey': StorageMonkeyEvent[];
+    'http-monkey': HttpMonkeyEvent;
+}
+
 /** A call to a fingerprinting API, recorded in the page by the fp-recorder content script. */
 export interface FpMonkeyEvent {
     id: string;

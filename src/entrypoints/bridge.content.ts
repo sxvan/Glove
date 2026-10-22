@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import type { FpMonkeyEvent, HttpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
+import type { RecorderEvents } from '@/types/events';
 import type { RecorderMessage } from '@/types/messages';
 
 // Runs in the isolated world and forwards events dispatched by the main-world recorders
@@ -44,31 +44,18 @@ export default defineContentScript({
             }
         }
 
-        document.documentElement.addEventListener(
-            'fp-monkey',
-            (event) => {
-                const { detail } = event as CustomEvent<FpMonkeyEvent[]>;
-                if (!callsStopped && Array.isArray(detail) && detail.length > 0) send({ type: 'fp-batch', payload: detail });
-            },
-            { signal: listening.signal }
-        );
+        function listen<K extends keyof RecorderEvents>(name: K, onEvent: (detail: RecorderEvents[K]) => void) {
+            document.documentElement.addEventListener(name, (event) => onEvent((event as CustomEvent<RecorderEvents[K]>).detail), { signal: listening.signal });
+        }
 
-        document.documentElement.addEventListener(
-            'storage-monkey',
-            (event) => {
-                const { detail } = event as CustomEvent<StorageMonkeyEvent[]>;
-                if (Array.isArray(detail) && detail.length > 0) send({ type: 'storage-batch', payload: detail });
-            },
-            { signal: listening.signal }
-        );
-
-        document.documentElement.addEventListener(
-            'http-monkey',
-            (event) => {
-                const { detail } = event as CustomEvent<HttpMonkeyEvent>;
-                if (detail) send({ type: 'http', payload: detail });
-            },
-            { signal: listening.signal }
-        );
+        listen('fp-monkey', (detail) => {
+            if (!callsStopped && Array.isArray(detail) && detail.length > 0) send({ type: 'fp-batch', payload: detail });
+        });
+        listen('storage-monkey', (detail) => {
+            if (Array.isArray(detail) && detail.length > 0) send({ type: 'storage-batch', payload: detail });
+        });
+        listen('http-monkey', (detail) => {
+            if (detail) send({ type: 'http', payload: detail });
+        });
     },
 });

@@ -1,11 +1,9 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { createStackReader } from '@/lib/call-stack';
 import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
+import { handOver, nativeGetter, reflectApply } from '@/lib/page-natives';
 import { recordingDocument } from '@/lib/recording-document';
 import type { HttpMonkeyEvent } from '@/types/events';
-
-// Captured before page scripts run, so a page replacing it can't see the hooks' calls or break them.
-const reflectApply = Reflect.apply;
 
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
 // XMLHttpRequest, beacons and image pixels.
@@ -68,7 +66,7 @@ function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: 
         credentials: credentials,
     };
 
-    recordTo.documentElement.dispatchEvent(new CustomEvent('http-monkey', { detail: httpMonkeyEvent }));
+    handOver(recordTo, 'http-monkey', httpMonkeyEvent);
 }
 
 /**
@@ -158,25 +156,6 @@ function resolveUrl(url: string): string | null {
     }
 }
 
-/**
- * Returns a reader for a native getter. Reading through the original getter doubles as a brand
- * check: it throws (and the reader returns undefined) unless `target` is a genuine instance.
- */
-function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | undefined {
-    const get = Object.getOwnPropertyDescriptor(proto, prop)?.get;
-
-    return (target) => {
-        if (!get || target === null || typeof target !== 'object') {
-            return undefined;
-        }
-
-        try {
-            return reflectApply(get, target, []) as T;
-        } catch {
-            return undefined;
-        }
-    };
-}
 
 // Wraps open/send on the prototype rather than replacing the XMLHttpRequest constructor,
 // so static constants (XMLHttpRequest.DONE), subclassing and constructor identity keep working.

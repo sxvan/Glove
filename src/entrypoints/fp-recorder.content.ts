@@ -5,10 +5,8 @@ import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import type { FpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
 import type { StorageKind } from '@/types/snapshot';
 import { STORED_VALUE_MAX } from '@/lib/identifiers';
+import { handOver, nativeGetter, nativeSetters, reflectApply } from '@/lib/page-natives';
 import { recordingDocument } from '@/lib/recording-document';
-
-// Captured before page scripts run, so a page replacing it can't see the hooks' calls.
-const reflectApply = Reflect.apply;
 
 // Runs in the page's main world so it can wrap the page's own fingerprinting APIs.
 // Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
@@ -62,59 +60,18 @@ function installFpHooks() {
     window.addEventListener('pagehide', flushFpEvents);
 }
 
-function getProtoForOwner(owner: FpApiOwner): any {
+function getProtoForOwner(owner: FpApiOwner): object | null {
     switch (owner) {
-        case 'Navigator':
-            return Navigator.prototype;
-        case 'Screen':
-            return Screen.prototype;
         case 'Window':
             return window;
-        case 'Document':
-            return Document.prototype;
-        case 'HTMLCanvasElement':
-            return HTMLCanvasElement.prototype;
-        case 'CanvasRenderingContext2D':
-            return CanvasRenderingContext2D.prototype;
-        case 'WebGLRenderingContext':
-            return window.WebGLRenderingContext && WebGLRenderingContext.prototype;
-        case 'WebGL2RenderingContext':
-            return window.WebGL2RenderingContext && WebGL2RenderingContext.prototype;
-        case 'AudioContext':
-            return window.AudioContext && AudioContext.prototype;
-        case 'OfflineAudioContext':
-            return window.OfflineAudioContext && OfflineAudioContext.prototype;
-        case 'AudioBuffer':
-            return AudioBuffer.prototype;
-        case 'MediaDevices':
-            return window.MediaDevices?.prototype ?? null;
-        case 'RTCPeerConnection':
-            return window.RTCPeerConnection && RTCPeerConnection.prototype;
         case 'IntlDateTimeFormat':
             return Intl.DateTimeFormat.prototype;
-        case 'NavigatorUAData':
-            return (window as { NavigatorUAData?: { prototype: unknown } }).NavigatorUAData?.prototype ?? null;
-        case 'OffscreenCanvas':
-        case 'OffscreenCanvasRenderingContext2D':
-        case 'GPU':
-        case 'GPUAdapter':
-        case 'SpeechSynthesis':
-        case 'Keyboard':
-        case 'StorageManager':
-        case 'NetworkInformation':
-            // Not in every browser or context (WebGPU and the keyboard need a secure context).
-            return (window as unknown as Record<string, { prototype: unknown } | undefined>)[owner]?.prototype ?? null;
-        case 'Date':
-            return Date.prototype;
-        case 'Performance':
-            return window.Performance?.prototype ?? null;
-        case 'HTMLMediaElement':
-            return window.HTMLMediaElement?.prototype ?? null;
         case 'MediaSource':
             // isTypeSupported is static: on the constructor, not its prototype.
-            return (window as { MediaSource?: unknown }).MediaSource ?? null;
+            return (window as { MediaSource?: object }).MediaSource ?? null;
         default:
-            return null;
+            // Not every owner is in every browser or context (WebGPU and the keyboard need a secure context).
+            return (window as unknown as Record<string, { prototype?: object } | undefined>)[owner]?.prototype ?? null;
     }
 }
 
@@ -144,10 +101,10 @@ function recordFpEvent(id: string, hook: Function) {
 function flushFpEvents() {
     flushScheduled = false;
     if (pendingEvents.length > 0) {
-        recordTo.documentElement.dispatchEvent(new CustomEvent('fp-monkey', { detail: pendingEvents.splice(0) }));
+        handOver(recordTo, 'fp-monkey', pendingEvents.splice(0));
     }
     if (pendingStored.length > 0) {
-        recordTo.documentElement.dispatchEvent(new CustomEvent('storage-monkey', { detail: pendingStored.splice(0) }));
+        handOver(recordTo, 'storage-monkey', pendingStored.splice(0));
     }
 }
 
@@ -291,24 +248,6 @@ function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boole
     }
 }
 
-/** Sets properties through their native setters, in order (e.g. width and height); throws if that fails. */
-function nativeSetters(proto: object, props: string[]): (target: unknown, values: unknown[]) => void {
-    const setters = props.map((prop) => Object.getOwnPropertyDescriptor(proto, prop)?.set);
-    return (target, values) => setters.forEach((set, i) => reflectApply(set!, target, [values[i]]));
-}
-
-/** Reads a property through its native getter, so a page can't fake it; undefined if that fails. */
-function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | undefined {
-    const get = Object.getOwnPropertyDescriptor(proto, prop)?.get;
-    return (target) => {
-        if (!get || target === null || typeof target !== 'object') return undefined;
-        try {
-            return reflectApply(get, target, []) as T;
-        } catch {
-            return undefined;
-        }
-    };
-}
 
 function hookGetter(proto: any, prop: string, id: string) {
     const descriptor = Object.getOwnPropertyDescriptor(proto, prop);
