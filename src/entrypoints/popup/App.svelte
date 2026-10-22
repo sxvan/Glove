@@ -6,7 +6,7 @@
     import Switch from './components/Switch.svelte';
     import { loadOffSites, offEntryFor, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
     import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from './model';
-    import { sectionOf } from './statements';
+    import { tableOf } from './statements';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
     import { onMount } from 'svelte';
 
@@ -22,17 +22,14 @@
     // Which lists of scripts are unfolded (see FingerprintingDetail).
     let open = $state({ scripts: true, unlikely: false });
 
-    // The table of the details page an info line leads to, by the section of its statement.
-    const DETAILS_TABLES: Record<string, string> = { read: 'apis', code: 'apis', cloaked: 'apis', sent: 'requests', 'sent-alias': 'requests', stored: 'stored' };
-
     /**
      * Opens the details page (entrypoints/dashboard) in a tab: the tab's recording in full, at the
-     * table of the line's section, narrowed to the script; from the page's card, to all scripts.
+     * table the line leads to (see tableOf), narrowed to the script; from the page's card, to all scripts.
      */
     function openDetails(key: string, statement: string) {
         if (tabId === undefined) return;
         const script = key === page?.key ? '' : `&script=${encodeURIComponent(key)}`;
-        browser.tabs.create({ url: `${browser.runtime.getURL('/dashboard.html')}?tab=${tabId}${script}#${DETAILS_TABLES[sectionOf(statement)] ?? 'apis'}` });
+        browser.tabs.create({ url: `${browser.runtime.getURL('/dashboard.html')}?tab=${tabId}${script}#${tableOf(statement)}` });
     }
 
     // The tab, and whether the extension is off for its site (see lib/sites): then nothing was
@@ -103,7 +100,11 @@
 </script>
 
 <header>
-    <h1 title={url ?? ''}><MiddleTruncate text={host || 'Glove'} /></h1>
+    <!-- The extension's name, small, over the site the popup is about. -->
+    <div class="title">
+        <span class="brand">Glove</span>
+        <h1 title={url ?? ''}><MiddleTruncate text={host || 'This tab'} /></h1>
+    </div>
     <div class="actions">
         <!-- The extension on or off for the site, like an ad blocker's power switch. -->
         {#if tabHost}
@@ -144,10 +145,15 @@
         padding: 16px 16px 8px;
     }
 
-    /* One line, taking the room the actions leave, shortened in the middle when too long (see
-       MiddleTruncate). */
-    h1 {
+    /* The name over the site: taking the room the actions leave. */
+    .title {
+        display: grid;
         flex: 1;
+        min-width: 0;
+    }
+
+    /* One line, shortened in the middle when too long (see MiddleTruncate). */
+    h1 {
         min-width: 0;
         margin: 0;
         font-size: 16px;

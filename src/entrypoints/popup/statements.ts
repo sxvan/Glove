@@ -1,5 +1,5 @@
-// What the popup says about a script, as statements: the info lines of its card, which are also
-// the sections of its page.
+// What the popup says about a script, as statements: the info lines of its card, each leading to
+// a table of the details page (see tableOf).
 import { EVERYONE_BITS } from '@/lib/scoring';
 import { bytes, listWords, plural, roughCount } from './format';
 import { identifyingBits, type ScriptDetail } from './model';
@@ -90,7 +90,7 @@ const STORED_EXPLANATION =
  * what it computed: the most likely ones, "Stored 2 likely identifiers in the browser" over "1
  * cookie and 1 in local storage, besides 1 possible identifier and 2 other values". Values that
  * don't look like an identifier aren't a sign of tracking on their own, so without one there is no
- * line (and no section listing the values).
+ * line; the details page still lists them.
  */
 function storedStatement(script: ScriptDetail): Statement | null {
     const likely = script.stored.filter((item) => item.identifier === 'likely');
@@ -118,31 +118,35 @@ function storagePlaces(items: { kind: StorageKind }[]): string {
 }
 
 /**
- * Statements shown in one section of the script's page together, each under its own line, as they
- * are about the same: how identifying what it read is, is part of what it read; and the signs in
- * how the code reads (generated code, one place) go together, whichever of them shows. On the card,
- * lines of one section share one way to it (see FingerprintCard). Others have a section of their
- * own, by their key.
+ * The table of the details page (entrypoints/dashboard) that shows what a statement is about, by
+ * the statement's key: what was read, how identifying it is, how the code read it and where the
+ * script came from, in the APIs read; what was sent, also through an alias, in the requests; and
+ * the stored values. On the card, lines of one table share one way to it (see FingerprintCard).
  */
-const SECTIONS: Record<string, string> = {
-    identifying: 'read',
-    'generated-code': 'code',
-    'one-place': 'code',
+const TABLES: Record<string, string> = {
+    read: 'apis',
+    identifying: 'apis',
+    'generated-code': 'apis',
+    'one-place': 'apis',
+    cloaked: 'apis',
+    sent: 'requests',
+    'sent-alias': 'requests',
+    stored: 'stored',
 };
 
-/** The section of the script's page a statement is shown in, by its key. */
-export function sectionOf(key: string): string {
-    return SECTIONS[key] ?? key;
+/** The details page's table for a statement, by its key (see TABLES). */
+export function tableOf(key: string): string {
+    return TABLES[key] ?? 'apis';
 }
 
-/** The statements by the section they are shown in, each section where its first statement is. */
-export function bySection(list: Statement[]): Statement[][] {
-    const sections = new Map<string, Statement[]>();
+/** The statements by the table they lead to, each group where its first statement is. */
+export function byTable(list: Statement[]): Statement[][] {
+    const tables = new Map<string, Statement[]>();
     for (const statement of list) {
-        const section = sectionOf(statement.key);
-        sections.set(section, [...(sections.get(section) ?? []), statement]);
+        const table = tableOf(statement.key);
+        tables.set(table, [...(tables.get(table) ?? []), statement]);
     }
-    return [...sections.values()];
+    return [...tables.values()];
 }
 
 // Items named in a list under a statement, the rest as "and N more": kinds of detail are short

@@ -5,7 +5,7 @@
     import { blockKey } from '@/lib/blocking';
     import { viewerUrl } from '@/lib/script-viewer';
     import type { ScriptDetail } from '../model';
-    import { bySection, statements } from '../statements';
+    import { byTable, statements } from '../statements';
     import DetailsButton from './DetailsButton.svelte';
     import BlockToggle from './BlockToggle.svelte';
     import LikelihoodLabel from './LikelihoodLabel.svelte';
@@ -16,8 +16,8 @@
 
     // With `onOpen`, the whole card opens a screen about it and nothing in it is clickable on its
     // own: on the overview, the page's card leads to the fingerprinting screen. `onDetails` opens
-    // the details page at the section of a statement (by its key).
-    let { script, onOpen, onDetails }: { script: ScriptDetail; onOpen?: () => void; onDetails?: (section: string) => void } = $props();
+    // the details page at the table of a statement (by its key).
+    let { script, onOpen, onDetails }: { script: ScriptDetail; onOpen?: () => void; onDetails?: (statement: string) => void } = $props();
 
     // Whether the signals the score was combined from show.
     let breakdown = $state(false);
@@ -95,7 +95,7 @@
 
     <!-- Lines leading to the same table of the details page share one chevron, in their middle. -->
     <ul class="statements">
-        {#each bySection(statements(script)) as lines (lines[0]!.key)}
+        {#each byTable(statements(script)) as lines (lines[0]!.key)}
             {@const details = !onOpen && !!onDetails}
             {@const open = onDetails ? () => onDetails(lines[0]!.key) : undefined}
             {#if lines.length === 1}
@@ -263,7 +263,7 @@
         white-space: nowrap;
     }
 
-    /* Lines that lead to the same section: one beside the other, with their chevron as an info line's. */
+    /* Lines that lead to the same table: one beside the other, with their chevron as an info line's. */
     .joined.details {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;

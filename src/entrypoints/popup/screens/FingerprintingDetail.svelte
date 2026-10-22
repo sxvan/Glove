@@ -22,7 +22,7 @@
         page: ScriptDetail;
         scripts: ScriptDetail[];
         blocked: BlockedDetail[];
-        onDetails: (key: string, section: string) => void;
+        onDetails: (key: string, statement: string) => void;
         open?: { scripts: boolean; unlikely: boolean };
     } = $props();
 
@@ -37,7 +37,7 @@
 {#if scripts.length === 0 && page.aliased.length === 0}
     <p class="empty">No script on this page has read identifying device details so far.</p>
 {:else}
-    <FingerprintCard script={page} onDetails={(section) => onDetails(page.key, section)} />
+    <FingerprintCard script={page} onDetails={(statement) => onDetails(page.key, statement)} />
 {/if}
 {#if listed > 0}
     <FoldHeading title="Scripts" count={listed} bind:open={open.scripts} />
@@ -55,7 +55,7 @@
     {/each}
 
     {#each suspicious as script (script.key)}
-        <FingerprintCard {script} onDetails={(section) => onDetails(script.key, section)} />
+        <FingerprintCard {script} onDetails={(statement) => onDetails(script.key, statement)} />
     {/each}
 {/if}
 
@@ -63,7 +63,7 @@
     <FoldHeading title="Unlikely scripts" count={unlikely.length} bind:open={open.unlikely} />
     {#if open.unlikely}
         {#each unlikely as script (script.key)}
-            <FingerprintCard {script} onDetails={(section) => onDetails(script.key, section)} />
+            <FingerprintCard {script} onDetails={(statement) => onDetails(script.key, statement)} />
         {/each}
     {/if}
 {/if}
