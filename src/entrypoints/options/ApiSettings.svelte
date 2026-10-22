@@ -102,7 +102,6 @@
                         bits
                         <input type="number" min="0" step="0.1" value={traits.bits} oninput={(e) => setApiTrait(api.id, 'bits', e)} />
                     </label>
-                    <!-- Only APIs overlapping with others have what they add beside them. -->
                     {#if api.overlap}
                         <label class="field" class:changed={traits.adds !== defaults.adds} title="Default {defaults.adds}: what it adds beside the other {api.overlap.group} APIs">
                             adds
@@ -138,8 +137,7 @@
         font-weight: 400;
     }
 
-    /* The rows share the list's columns (see settings.css), so the numbers line up from row to row,
-       also where an API has no "adds" (an empty cell). */
+    /* Shared columns, so the numbers line up also where an API has no "adds" (an empty cell). */
     .apis {
         display: grid;
         grid-template-columns: minmax(0, 1fr) repeat(4, auto);
@@ -154,7 +152,6 @@
         padding: 6px 0;
     }
 
-    /* Computed from the settings around it, not one of them: quieter. */
     .counts {
         color: var(--muted);
         font-size: 12px;

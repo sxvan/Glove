@@ -1,12 +1,11 @@
 <script lang="ts">
-    // Opens the details page at a statement's table. Larger than its chevron, so it is easy to hit.
+    // Larger than its chevron, so it is easy to hit.
     let { onclick }: { onclick?: () => void } = $props();
 </script>
 
 <button type="button" class="open" aria-label="Details" title="Details" {onclick}></button>
 
 <style>
-    /* In the middle of what it stands beside, detail lines included. */
     .open {
         align-self: center;
         display: grid;

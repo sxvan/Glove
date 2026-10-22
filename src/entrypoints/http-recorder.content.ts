@@ -5,9 +5,7 @@ import { handOver, nativeGetter, reflectApply } from '@/lib/page-natives';
 import { recordingDocument } from '@/lib/recording-document';
 import type { RequestEvent } from '@/types/events';
 
-// Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
-// XMLHttpRequest, beacons and image pixels.
-// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
+// Runs in the page's main world so it can wrap the page's own ways of sending data.
 export default defineContentScript({
     registration: 'runtime',
     matches: ['<all_urls>'],
@@ -28,9 +26,8 @@ export default defineContentScript({
     },
 });
 
-// Frames read per request. Monitoring, bot-protection and consent scripts often wrap fetch and
-// XMLHttpRequest, so the script that made a request can sit several frames below their wrappers;
-// requests are rare enough that reading deeper costs little.
+// Monitoring, bot-protection and consent scripts often wrap fetch and XHR, so the script making a
+// request can sit several frames below; requests are rare enough that reading deeper costs little.
 const STACK_FRAMES = 30;
 
 let readStack: ReturnType<typeof createStackReader>;
@@ -40,19 +37,13 @@ let recordTo: Document;
 // Captured before page scripts run, so a page replacing it can't see or break the check.
 const startsWith = String.prototype.startsWith;
 
-/**
- * Whether a request goes over the network: only those can be matched to what the browser saw
- * (see consolidateHttpEvents). data: and blob: addresses never reach it, and a data: address can
- * hold a whole embedded response (YouTube's: 350 KB), which would only be copied around.
- */
+// Only network requests can be matched to what the browser saw (see consolidateHttpEvents), and a
+// data: address can hold a whole embedded response (YouTube's: 350 KB).
 function isNetworkUrl(url: string | null): url is string {
     return url !== null && (reflectApply(startsWith, url, ['https:']) || reflectApply(startsWith, url, ['http:']));
 }
 
-/**
- * @param hook our wrapper that was called; stack frames from it inward are skipped
- * @param wrapped whether a page script has replaced our wrapper with its own (see scriptsOnStack)
- */
+/** @param wrapped whether a page script has replaced our wrapper with its own (see scriptsOnStack) */
 function recordHttpEvent(id: RequestEvent['id'], url: string | null, method: string | null, credentials: string, hook: Function, wrapped: boolean) {
     if (!isNetworkUrl(url)) return;
     const scriptUrls = scriptsOnStack(hook, wrapped);
@@ -69,19 +60,13 @@ function recordHttpEvent(id: RequestEvent['id'], url: string | null, method: str
     handOver(recordTo, 'glove-request', requestEvent);
 }
 
-/**
- * The page scripts a request counts for: every script on the stack, as the one that made it may sit
- * further out than helpers. Monitoring, bot-protection and consent scripts often replace fetch, XHR
- * or sendBeacon with their own wrapper around ours; then every request passes through them, and the
- * innermost script is that wrapper rather than the one making the request. It's left out then, unless
- * it's the only script, i.e. its own request.
- */
+// Every script on the stack, as the one making the request may sit further out than helpers. A page
+// script that replaced our wrapper with its own sees every request; it's left out unless it's alone.
 function scriptsOnStack(hook: Function, wrapped: boolean): string[] {
     const scriptUrls = [...new Set(readStack(hook).map((location) => location.url))];
     return wrapped && scriptUrls.length > 1 ? scriptUrls.slice(1) : scriptUrls;
 }
 
-/** Whether the function `current` reads is no longer our hook, i.e. a page script replaced it. */
 function isReplaced(current: () => unknown, hook: Function): boolean {
     try {
         return current() !== hook;
@@ -117,12 +102,8 @@ function hookFetch() {
 // Methods the Fetch standard normalizes to uppercase; others (e.g. "patch") are sent as written.
 const NORMALIZED_METHODS = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 'PUT']);
 
-/**
- * Derives what fetch() will request without constructing a Request, which would consume the
- * body of a Request input and throw synchronously on invalid input.
- */
+// Without constructing a Request, which would consume a Request input's body and throw on invalid input.
 function createFetchDescriber() {
-    // Captured before page scripts run.
     const requestUrl = nativeGetter<string>(Request.prototype, 'url');
     const requestMethod = nativeGetter<string>(Request.prototype, 'method');
     const requestCredentials = nativeGetter<string>(Request.prototype, 'credentials');
@@ -171,9 +152,8 @@ function hookXHR() {
 
     const openedRequests = new WeakMap<XMLHttpRequest, { url: string | null; method: string | null }>();
 
-    // A request is only tracked once the native open() has succeeded, which also proves `this`
-    // is a real XHR. send() records only tracked requests, so invalid calls (non-XHR `this`,
-    // send without open, repeated send) reach the native method untouched and emit no event.
+    // Tracked only once the native open() succeeded, which proves `this` is a real XHR: invalid calls
+    // reach the native methods untouched and emit no event.
     const hookedOpen = {
         open(this: XMLHttpRequest, method: string, url: string | URL) {
             const result = reflectApply(originalOpen, this, arguments);
@@ -208,7 +188,6 @@ function hookXHR() {
     proto.send = disguise(hookedSend, originalSend);
 }
 
-/** navigator.sendBeacon: made for sending data, e.g. as the page is left. */
 function hookBeacon() {
     const proto = window.Navigator?.prototype;
     const originalBeacon = proto?.sendBeacon;
@@ -229,11 +208,8 @@ function hookBeacon() {
     proto.sendBeacon = disguise(hookedBeacon, originalBeacon);
 }
 
-/**
- * Image pixels: a script setting an image's address to send what it collected in the query, e.g.
- * new Image().src = ".../pixel.gif?id=…". Only addresses with a query are recorded; images from the
- * page's HTML don't go through this setter at all.
- */
+// new Image().src = ".../pixel.gif?id=…": only addresses with a query; the page's HTML images never
+// go through this setter.
 function hookImagePixels() {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
     const originalSet = descriptor?.set;

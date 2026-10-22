@@ -10,26 +10,22 @@ function combine<L extends ScoreLevel>(level: L, values: SignalValues<L>, settin
     return 1 - remaining;
 }
 
-/** One signal's part in a score: what it contributes alone is strength × value. */
+/** What a signal contributes alone is strength × value. */
 export interface SignalPart {
     value: number;
     strength: number;
     /** For a signal made from the APIs read: what each of them added (see apisSums). */
     apis?: ApisSum;
-    /** For a signal that is the score of a part made from its own signals (the rest of a page): those. */
+    /** For a signal that is itself a score of signals (the rest of a page). */
     parts?: Record<string, SignalPart>;
 }
 
-/** A score and the parts it was combined from, by signal key (see combine). */
 export interface ScoredParts {
     score: number;
     parts: Record<string, SignalPart>;
 }
 
-/**
- * Like combine, but also keeps each signal's value and strength, to show how a score came about;
- * `apis` adds what each API added to the signals made from the APIs read.
- */
+/** Like combine, but keeps each signal's part, to show how a score came about. */
 export function combineParts<L extends ScoreLevel>(
     level: L,
     values: SignalValues<L>,
@@ -48,54 +44,40 @@ function saturate(value: number, fullAt: number): number {
     return fullAt > 0 ? clamp01(value / fullAt) : 0;
 }
 
-/** What one API added to an API signal. */
 export interface ApiAmount {
     id: string;
     /** Its bits, as set; for rare bits, the bits it counted (see amount for bits). */
     basis: number;
-    /**
-     * What it added: its bits (what it adds beyond an overlapping API, see overlapsWith), or those
-     * bits times its rarity to rarityPower; 0 if an API with the same information counted instead.
-     */
+    /** 0 if an API with the same information counted instead (countedWith). */
     amount: number;
-    /** The API with the same information that counted instead of this one. */
     countedWith?: string;
     /** For bits: the API of its overlap group that counted all its bits, so this one only what it adds. */
     overlapsWith?: string;
     /** For a sum beyond known APIs (see apisSumsBeyond): whether countedWith or overlapsWith is one of those. */
     withKnown?: boolean;
-    /** For rare bits: its bits on their own, its rarity, and that to rarityPower, which its counted bits are multiplied by. */
+    /** For rare bits: weight is rarity to rarityPower, which the counted bits are multiplied by. */
     bits?: number;
     rarity?: number;
     weight?: number;
 }
 
-/** An API signal's sum: its value from 0 to 1, the total it was made from and what each API added. */
 export interface ApisSum {
     measure: 'bits' | 'rareBits';
     value: number;
     total: number;
     fullAt: number;
-    /**
-     * For a sum beyond known APIs (see apisSumsBeyond): the bits those already counted; the value is
-     * then how much of what was still missing to fullAt the APIs here add.
-     */
+    /** Beyond known APIs (see apisSumsBeyond): their bits; the value is then the share of what was missing to fullAt. */
     known?: number;
     /** Most added first. */
     apis: ApiAmount[];
-    /** For rare bits: the exponent each API's rarity counted with (see ScoringSettings.rarityPower). */
     rarityPower?: number;
 }
 
 /**
- * The bits the different APIs read reveal and the rare identifying APIs made from them, with what
- * each API added (see ApisSum). The bits: APIs that reveal the same value (see FpApi.same, e.g. the
- * WebGL and WebGL2 versions of a call, or the pixels of a canvas exported in two formats) count once
- * together, as the highest of them; of APIs whose values only overlap (see FpApi.overlap, e.g. the
- * screen's and the window's sizes), the one with the most bits counts all of them, the others only
- * what they add beyond it. The rare bits: each API's counted bits times its rarity to rarityPower,
- * as reading what ordinary code rarely needs shows intent: the user agent reveals a lot but everyone
- * reads it, navigator.webdriver is rarely read but reveals nothing, a hidden canvas is both.
+ * APIs revealing the same value (FpApi.same) count once; of overlapping ones (FpApi.overlap) the one
+ * with the most bits counts all, the others what they add. Rare bits weigh each by rarity, as reading
+ * what ordinary code rarely needs shows intent: the user agent reveals a lot but everyone reads it,
+ * navigator.webdriver is rarely read but reveals nothing, a hidden canvas is both.
  */
 export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings): ApisSums {
     const identifying = new SameSum('bits');
@@ -111,23 +93,16 @@ export function apisSums(distinctApis: Iterable<string>, level: ApisLevel, setti
     return { identifying: bits, rareIdentifying: rareBits(bits, settings, fullAt.rareIdentifying) };
 }
 
-/**
- * Bits that tell everyone apart: about 5 billion people are online, and 2^33 is 8.6 billion. The
- * bits read count up to there (see ApisSums.identifying), which the popup shows.
- */
+// Bits that tell everyone apart: about 5 billion people are online, and 2^33 is 8.6 billion.
 export const EVERYONE_BITS = 33;
 
-/** The API sums (see apisSums): the bits read, which the popup shows, and the rare bits, which score. */
+/** The bits read are only shown; the rare bits score. */
 export interface ApisSums {
     identifying: ApisSum;
     rareIdentifying: ApisSum;
 }
 
-/**
- * Rare identifying APIs from what the APIs added to identifying APIs (`bits`): each API's counted
- * bits times its rarity to rarityPower. Beyond `known` rare bits already counted (see
- * apisSumsBeyond), the value is how much of the way from them to fullAt these add.
- */
+/** Beyond `known` rare bits (see apisSumsBeyond), the value is how much of the way from them to fullAt these add. */
 function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, known?: number): ApisSum {
     const power = Math.max(0, settings.rarityPower);
     const apis = bits.apis
@@ -143,10 +118,9 @@ function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, know
 }
 
 /**
- * The API signals for what `distinctApis` add on top of `knownApis`, already counted elsewhere: a
- * script's beyond its strongest burst, a page's beyond its strongest script. The others add, the most
- * bits first, only what isn't counted yet; their rare bits go toward fullAt from the known APIs' rare
- * bits, as known APIs reaching full already show what a fingerprinter collects.
+ * What `distinctApis` add on top of `knownApis`, counted elsewhere (a script's strongest burst, a
+ * page's strongest script): toward fullAt from the known APIs' rare bits, as known APIs reaching full
+ * already show what a fingerprinter collects.
  */
 export function apisSumsBeyond(
     knownApis: Iterable<string>,
@@ -212,26 +186,20 @@ export function apisSumsBeyond(
     };
 }
 
-/** Each API's part in the rare bits of `distinctApis` read together (see apisSums), by API id. */
 export function rareAmounts(distinctApis: Iterable<string>, apis: ScoringSettings['apis'], rarityPower: number): Map<string, ApiAmount> {
     const sums = apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis, rarityPower });
     return new Map(sums.rareIdentifying.apis.map((api) => [api.id, api]));
 }
 
-/** Rare bits added up as the rare identifying APIs signal does (see apisSums), without its full-at. */
 export function rareIdentifyingBits(distinctApis: Iterable<string>, apis: ScoringSettings['apis'], rarityPower: number): number {
     return apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis, rarityPower }).rareIdentifying.total;
 }
 
-/** Bits added up as the identifying information signal does (see apisSums), without its full-at: for showing the total. */
 export function identifyingBits(distinctApis: Iterable<string>, apis: ScoringSettings['apis']): number {
     return apisSums(distinctApis, 'page', { ...DEFAULT_SETTINGS, apis }).identifying.total;
 }
 
-/**
- * Amounts added up, each piece of information once: as the API adding the most for it. Of an
- * overlap group, the API adding the most counts its whole amount, the others what they add.
- */
+/** Each piece of information counts once, as the API adding the most for it. */
 class SameSum {
     private readonly items: { id: string; information: string; basis: number; amount: number; overlap?: { group: string; adds: number } }[] = [];
 

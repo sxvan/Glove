@@ -1,6 +1,5 @@
-// Inline scripts have no file of their own: their code is part of the page's HTML, and the call
-// positions recorded for them are positions in that HTML. This finds the page's inline scripts and
-// turns the positions into positions in each script, so they can be shown like any other script.
+// Calls recorded in inline scripts have positions in the page's HTML; here they become positions in
+// each script.
 import type { SourcePosition, ViewerApi } from '@/lib/script-viewer';
 import { lineStarts } from './locations';
 
@@ -8,21 +7,16 @@ interface InlineScript {
     source: string;
     /** Line of the page the script starts on, 1-based. */
     line: number;
-    /** The APIs called from this script, with positions relative to it. */
     apis: ViewerApi[];
 }
 
-// Script elements and their code; the code ends at the first "</script", as in HTML.
+// The code ends at the first "</script", as in HTML.
 const SCRIPT_ELEMENT = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 // Types that run as JavaScript; other script elements hold data such as JSON or templates.
 const JAVASCRIPT_TYPE = /^(?:|module|(?:text|application)\/(?:x-)?(?:java|ecma)script)$/i;
 
-/**
- * The page's inline scripts that recorded calls fall into, with each call's position moved into
- * its script. `matched` is false when no recorded position falls into any inline script, e.g. for a
- * page that differs per visit; all inline scripts are returned then, without positions, for the
- * names to be searched in.
- */
+// `matched` is false when no recorded position falls into an inline script, e.g. a page that differs
+// per visit: all inline scripts come back then, without positions, to search for the names.
 export function inlineScripts(html: string, apis: ViewerApi[]): { scripts: InlineScript[]; matched: boolean } {
     const pageLines = lineStarts(html);
     const elements = scriptElements(html, pageLines);
@@ -81,14 +75,12 @@ function scriptElements(html: string, pageLines: number[]): ScriptElement[] {
     return elements;
 }
 
-/** The position of a page offset within the script element containing it. */
 function relativePosition(element: ScriptElement, offset: number): SourcePosition {
     const relative = offset - element.start;
     const line = lineOf(element.lineStarts, relative);
     return { line, column: relative - element.lineStarts[line - 1]! + 1 };
 }
 
-/** The 1-based line an offset is on, given the lines' start offsets. */
 function lineOf(starts: number[], offset: number): number {
     let low = 0;
     let high = starts.length - 1;

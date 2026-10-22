@@ -11,20 +11,17 @@
     import { inlineScripts } from './inline-scripts';
     import { locateApis, type CodeLocation } from './locations';
 
-    // Larger sources are shown formatted but without highlighting, which would take too long.
+    // Larger sources are formatted but not highlighted, which would take too long.
     const MAX_HIGHLIGHT_CHARS = 3_000_000;
 
-    // 'asking' before downloading the code again (see download), unless the settings say not to
-    // (Privacy, askBeforeDownload).
     type Status = 'starting' | 'asking' | 'loading' | 'formatting' | 'ready' | 'error';
 
-    /** Code shown with its marks: the script, or each of a page's inline scripts. */
     interface CodeBlock {
         /** Empty for a script file. */
         title: string;
         detail: string;
         code: string;
-        /** Empty when the code is too large to highlight. */
+        /** Empty when too large to highlight. */
         html: string;
         locations: CodeLocation[];
     }
@@ -54,7 +51,7 @@
     const generated = $derived(locations.some((l) => l.generated));
     const unconfirmed = $derived(locations.filter((l) => l.exact && !l.confirmed).length);
     const hadPositions = $derived((params?.apis ?? []).some((api) => api.positions.length > 0));
-    // How tall the header is, which stays on top: the APIs' list stays in view below it.
+    // The APIs' list stays in view below the sticky header.
     let headerHeight = $state(0);
     const currentApis = $derived(locations[current]?.apis ?? []);
 
@@ -70,7 +67,6 @@
         else status = 'asking';
     });
 
-    /** Downloads the code after asking; "Don't ask again" turns the asking off in the settings, where it can be turned on again. */
     async function download() {
         if (dontAskAgain) {
             const privacy = await loadPrivacy().catch(() => null);
@@ -79,10 +75,7 @@
         load();
     }
 
-    /**
-     * Downloads the script (or the page, for an inline script) again and marks the APIs' places in it:
-     * Chrome gives extensions no copy of the code a page ran, only debuggers.
-     */
+    // Downloaded again: Chrome gives extensions no copy of the code a page ran, only debuggers.
     async function load() {
         if (!params) return;
         status = 'loading';
@@ -119,7 +112,6 @@
         status = 'ready';
     }
 
-    /** Formats `source` and marks the APIs' calls in it, numbering the marks from `firstId` on. */
     function markCode(source: string, apis: ViewerApi[], title: string, detail: string, firstId: number): CodeBlock {
         const code = js_beautify(source, { indent_size: 2, max_preserve_newlines: 2 });
         if (code.length > MAX_HIGHLIGHT_CHARS) return { title, detail, code, html: '', locations: [] };
@@ -148,7 +140,6 @@
         mark?.scrollIntoView({ block: 'center' });
     }
 
-    /** Jumps to the next location of `api` after the current one, wrapping around. */
     function goToApi(api: string) {
         const after = locations.findIndex((l, i) => i > current && l.apis.includes(api));
         const index = after !== -1 ? after : locations.findIndex((l) => l.apis.includes(api));
@@ -177,7 +168,6 @@
 </header>
 
 {#if status === 'asking' && params}
-    <!-- Opening the viewer contacts the script's server: said before, and only done when asked to. -->
     <section class="ask squircle">
         <h2>Download the {params.inline ? 'page' : 'script'} again?</h2>
         <p>
@@ -227,7 +217,6 @@
                     {/each}
                 </ul>
 
-                <!-- How the marks are made; how accurate the copy is says the note above the code. -->
                 {#if hasExact || hasSearch}
                     <div class="notes">
                         {#if hasExact}
@@ -242,7 +231,6 @@
         {/if}
 
         <div class="blocks">
-            <!-- What is shown: a copy downloaded again, which can differ from what ran. -->
             <ul class="copy squircle">
                 <SignalLine
                     tone="info"
@@ -284,7 +272,6 @@
 {/if}
 
 <style>
-    /* In view while the code scrolls, on the page's background. */
     header {
         position: sticky;
         top: 0;
@@ -327,7 +314,6 @@
         text-decoration: underline;
     }
 
-    /* One track with the buttons on it, like the details page's tables. */
     .steps {
         display: flex;
         flex-shrink: 0;
@@ -367,7 +353,7 @@
         color: var(--muted);
     }
 
-    /* The question before downloading: a card, as wide as a paragraph reads well. */
+    /* As wide as a paragraph reads well. */
     .ask {
         display: grid;
         gap: 12px;
@@ -400,7 +386,6 @@
         gap: 16px;
     }
 
-    /* The one thing to do here: in the accent. */
     .primary {
         padding: 7px 14px;
         border: 0;
@@ -424,7 +409,6 @@
         font-size: 13px;
     }
 
-    /* The note on the copy, above the code: its lines as a card's info lines. */
     .copy {
         display: grid;
         gap: 6px;
@@ -439,7 +423,7 @@
         color: var(--likely);
     }
 
-    /* The APIs beside the code, as narrow as a list of them reads well; the code takes the rest. */
+    /* The APIs as narrow as a list of them reads well; the code takes the rest. */
     main {
         display: grid;
         gap: 20px;
@@ -452,8 +436,7 @@
         grid-template-columns: minmax(16em, 22em) minmax(0, 1fr);
     }
 
-    /* In view below the header while the code scrolls, scrolling on its own when longer than the
-       room left, with the page's side padding below it. */
+    /* Scrolls on its own when longer than the room below the header; the side padding below it. */
     .apis {
         position: sticky;
         top: var(--header-height);
@@ -485,7 +468,6 @@
         list-style: none;
     }
 
-    /* Lit up on hover, and while one of its places is shown. */
     .api {
         display: grid;
         gap: 2px;
@@ -533,7 +515,7 @@
         font-variant-numeric: tabular-nums;
     }
 
-    /* Found by name rather than recorded, as their dashed marks in the code. */
+    /* As their dashed marks in the code. */
     .api.search .places {
         text-decoration: underline dashed;
         text-underline-offset: 3px;
@@ -615,8 +597,6 @@
         color: var(--text);
     }
 
-    /* The places of fingerprinting APIs, in the color of "possible": recorded ones outlined,
-       ones found by their name dashed, as less certain, and the one gone to stronger. */
     .source :global(mark.hit) {
         border-radius: 3px;
         background: color-mix(in srgb, var(--possible) 22%, transparent);
@@ -624,6 +604,7 @@
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--possible) 60%, transparent);
     }
 
+    /* Found by name: dashed, as less certain. */
     .source :global(mark.hit.search) {
         background: color-mix(in srgb, var(--possible) 10%, transparent);
         box-shadow: none;

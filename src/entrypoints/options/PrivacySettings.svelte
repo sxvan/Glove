@@ -1,5 +1,4 @@
 <script lang="ts">
-    // What the extension may contact on the user's behalf (see lib/privacy), saved as soon as switched.
     import { onMount } from 'svelte';
     import { DEFAULT_PRIVACY, loadPrivacy, savePrivacy, watchPrivacy, type PrivacyOptions } from '@/lib/privacy';
     import Switch from '@/ui/components/Switch.svelte';
@@ -37,7 +36,6 @@
 
     const sectionChanged = $derived(SWITCHES.some(({ key }) => options[key] !== DEFAULT_PRIVACY[key]));
 
-    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
     let { changed = $bindable(false) }: { changed?: boolean } = $props();
     $effect(() => {
         changed = sectionChanged;

@@ -26,10 +26,7 @@ export interface AnalysisUpdatedMessage {
     data: TabSnapshot;
 }
 
-/**
- * Popup -> background: blocks the script at `url`, or lets it run again, then does what the user
- * chose for after it (see BlockingOptions) in the tab; answered with a SetBlockedResult.
- */
+/** Popup -> background; answered with a SetBlockedResult. */
 export interface SetBlockedMessage {
     type: 'SET_BLOCKED';
     url: string;
@@ -42,7 +39,7 @@ export interface SetBlockedResult {
     cleared: boolean;
 }
 
-/** Popup -> background: turns the extension off on the tab's site, or on again (see lib/sites), and loads it again. */
+/** Popup -> background; the tab is loaded again. */
 export interface SetSiteOffMessage {
     type: 'SET_SITE_OFF';
     host: string;

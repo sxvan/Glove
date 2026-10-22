@@ -1,8 +1,5 @@
-// How many fingerprinting API calls are kept, so a long-running page doesn't take ever more memory and
-// time: per script, and per page (the tab's page with all its frames). Past a limit, further calls
-// aren't kept or scored, and the scores stay as they were; past the page's, its calls aren't even sent
-// to the background any more (see bridge). They apply outside the page, where its scripts can't
-// change them.
+// So a long-running page doesn't take ever more memory and time. Applied outside the page, where its
+// scripts can't change them.
 import { browser } from 'wxt/browser';
 import { loadStored, watchStored } from './storage';
 
@@ -11,14 +8,10 @@ export interface PerformanceLimits {
     callsPerPage: number;
 }
 
-/**
- * Far above what fingerprinting takes: the most any measured collector made is about 390 calls
- * (FingerprintJS's agent 337 to 388, TikTok's webmssdk about 350), and TikTok's whole page about
- * 2,500; so more than ten times either.
- */
+// More than ten times the most measured: about 390 calls by a collector (FingerprintJS's agent 337 to
+// 388, TikTok's webmssdk about 350), about 2,500 by TikTok's whole page.
 export const DEFAULT_LIMITS: PerformanceLimits = { callsPerScript: 5_000, callsPerPage: 25_000 };
 
-/** The limits with their labels and explanations, in the order the options page lists them. */
 export const LIMIT_FIELDS: { key: keyof PerformanceLimits; label: string; description: string }[] = [
     {
         key: 'callsPerScript',
@@ -43,7 +36,6 @@ export function saveLimits(limits: PerformanceLimits): Promise<void> {
     return browser.storage.local.set({ [STORAGE_KEY]: limits });
 }
 
-/** Calls `onChange` with the limits whenever the user changes them. */
 export function watchLimits(onChange: (limits: PerformanceLimits) => void): () => void {
     return watchStored<Partial<PerformanceLimits>>(STORAGE_KEY, (value) => onChange({ ...DEFAULT_LIMITS, ...value }));
 }

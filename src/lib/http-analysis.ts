@@ -3,19 +3,13 @@ import type { RequestEvent } from '@/types/events';
 import type { DocumentState } from '@/types/session';
 import { getEtld1, getHostname } from './http-utils';
 
-/**
- * Adds DNS-based fields to the document's requests whose lookup has finished; the others get them
- * in a later analysis. Those that have them already are skipped: their DNS result doesn't change.
- */
 export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>) {
     for (const request of document.httpRequests) {
         if (request.cNameDepth !== undefined) continue;
         const dnsEntry = request.hostname ? dnsResults.get(request.hostname) : undefined;
         if (!dnsEntry) continue;
 
-        // Cloaked: a host of the page's site, other than the page's, whose aliases end at another
-        // site. Judged against the tab's page: a host of an ad frame's own domain isn't hiding behind
-        // the site the user visits.
+        // Judged against the tab's page: a host of an ad frame's own domain isn't hiding behind the site visited.
         const pageHost = getHostname(request.pageUrl);
         const pageSite = getEtld1(pageHost);
         request.cNameDepth = dnsEntry.cNameDepth;
@@ -26,21 +20,15 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
 
 const withoutFragment = (url: string) => url.split('#')[0]!;
 
-/** The document's requests by URL without fragment, as indexes into httpRequests in time order. */
 interface RequestIndex {
     byUrl: Map<string, number[]>;
-    /** The array indexed: a new one is indexed anew. */
     requests: HttpRequest[];
-    /** How many of the document's requests it holds; newer ones are added on the next use. */
     count: number;
 }
 
 const requestIndexes = new WeakMap<DocumentState, RequestIndex>();
 
-/**
- * The index of the document's requests by URL, kept between analyses and extended with the
- * requests added since: requests are only ever appended.
- */
+// Kept between analyses and extended: requests are only ever appended.
 export function requestIndexOf(document: DocumentState): RequestIndex {
     let index = requestIndexes.get(document);
     if (!index || index.requests !== document.httpRequests) {
@@ -57,12 +45,7 @@ export function requestIndexOf(document: DocumentState): RequestIndex {
     return index;
 }
 
-/**
- * Matches the requests scripts made (as recorded in the page) to the requests the browser saw, by
- * exact URL (the recorder resolves them; fragments aren't sent) and method, the closest in time.
- * `index` looks the requests up by URL (see requestIndexOf), so a match costs only the requests
- * to the same URL rather than all of them.
- */
+// By exact URL (the recorder resolves them; fragments aren't sent) and method, the closest in time.
 export function consolidateHttpEvents(httpEvents: RequestEvent[], httpRequests: HttpRequest[], index: RequestIndex, maxDeltaMs = 1000): HttpConsolidatedEvent[] {
     const correlations: HttpConsolidatedEvent[] = [];
     const used = new Set<number>();
@@ -107,11 +90,8 @@ const STATIC_FILE = /\.(?:m?js|css|json|map|woff2?|ttf|otf|png|jpe?g|gif|webp|av
 // Image pixels with a file name still count with this many query parameters (e.g. "pixel.gif?a=…&b=…&c=…").
 const PIXEL_MIN_PARAMETERS = 3;
 
-/**
- * True for requests that send something: a body (POST and the like), or a query on anything but a
- * static file. Images loaded by scripts often carry a query too (lazy loading, image sizes), so a
- * file name like ".jpg" only counts as a pixel with several parameters.
- */
+// Images loaded by scripts often carry a query too (lazy loading, sizes), so a file name like ".jpg"
+// only counts as a pixel with several parameters.
 export function carriesData(consolidated: HttpConsolidatedEvent): boolean {
     const known = carriesDataOf.get(consolidated.httpEvent);
     if (known && known.request === consolidated.httpRequest) return known.value;

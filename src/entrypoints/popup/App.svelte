@@ -18,18 +18,13 @@
     const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
     const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 
-    /**
-     * Opens the details page (entrypoints/dashboard) in a tab: the tab's recording in full, at the
-     * table the line leads to (see tableOf), narrowed to the script; from the page's card, to all scripts.
-     */
+    // Narrowed to the script; from the page's card, all scripts.
     function openDetails(key: string, statement: string) {
         if (tabId === undefined) return;
         const script = key === page?.key ? '' : `&script=${encodeURIComponent(key)}`;
         browser.tabs.create({ url: `${browser.runtime.getURL('/dashboard.html')}?tab=${tabId}${script}#${tableOf(statement)}` });
     }
 
-    // Off for the tab's site (see lib/sites), nothing was recorded there: the popup says so instead
-    // of showing scores.
     let tabId = $state<number | undefined>();
     let tabUrl = $state<string | undefined>();
     let offSites = $state<OffSite[]>([]);
@@ -39,7 +34,6 @@
     const url = $derived(snapshot ? pageUrl(snapshot) : (tabUrl ?? null));
     const host = $derived((snapshot ? pageHost(snapshot) : '') || tabHost || '');
 
-    /** Turns the extension off on the tab's site or on again; the background loads the page again. */
     function setOn(on: boolean) {
         if (!tabHost || tabId === undefined) return;
         const message: SetSiteOffMessage = { type: 'SET_SITE_OFF', host: tabHost, off: !on, tabId };
@@ -59,8 +53,7 @@
     }
 
     onMount(() => {
-        // Tells the background a popup is open, so it sends updates (see publishAnalysis); the
-        // port closes with the popup.
+        // So the background sends updates while the popup is open (see publishAnalysis).
         const port = browser.runtime.connect({ name: 'view' });
         loadOffSites().then((sites) => (offSites = sites));
         const stopOffSites = watchOffSites((sites) => (offSites = sites));

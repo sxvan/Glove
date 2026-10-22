@@ -51,7 +51,7 @@ export const SIGNALS = {
             strength: 0.15,
         },
     },
-    // A script outside its strongest burst: only APIs the burst didn't read (see computeScriptFpScore).
+    // Only APIs the burst didn't read (see computeScriptFpScore).
     scriptBeyondBurst: {
         rareIdentifying: {
             label: 'Rare identifying fingerprinting APIs',
@@ -72,9 +72,7 @@ export const SIGNALS = {
             strength: 0.25,
         },
     },
-    // The page in two parts, each API counted in one only: its strongest script in full, and the
-    // other scripts on top of it, scored like a script: their strongest burst, and what they read
-    // beyond it (see computeDocumentFpScore).
+    // Each API counts in one part only (see computeDocumentFpScore).
     page: {
         strongestScript: { label: 'Strongest script', description: 'The score of the most suspicious script, counted in full.', strength: 1 },
         otherScripts: {
@@ -97,8 +95,7 @@ export const SIGNALS = {
             strength: 1,
         },
     },
-    // The other scripts outside their strongest burst: only APIs neither the strongest script nor the
-    // burst read (see computeDocumentFpScore).
+    // Only APIs neither the strongest script nor the burst read (see computeDocumentFpScore).
     otherScriptsBeyondBurst: {
         rareIdentifying: {
             label: 'Rare identifying fingerprinting APIs',
@@ -131,7 +128,6 @@ export type SignalValues<L extends ScoreLevel> = Record<SignalKey<L>, number>;
 /** What a signal is made from: another level's score, or the APIs read (see apisSums). */
 export type SignalSource = ScoreLevel | 'apis';
 
-/** The signals made from another score or from the APIs read; the options page nests them. */
 export const SIGNAL_SOURCES: { [L in ScoreLevel]?: Partial<Record<SignalKey<L>, SignalSource>> } = {
     page: { strongestScript: 'script', otherScripts: 'otherScripts' },
     otherScripts: { strongestBurst: 'burst', beyondBurst: 'otherScriptsBeyondBurst' },
@@ -155,11 +151,7 @@ export interface Cutoffs {
     likely: number;
 }
 
-/**
- * The levels that score which fingerprinting APIs were read. A page burst is a burst of calls
- * across all of a page's scripts: scored like a script's burst, but full at more, as many scripts
- * starting up together read more than one script does.
- */
+// A page burst is a burst of calls across all of a page's scripts.
 export type ApisLevel = 'burst' | 'pageBurst' | 'script' | 'page';
 
 export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
@@ -169,7 +161,7 @@ export const APIS_LEVEL_LABELS: Record<ApisLevel, string> = {
     burst: 'Burst of calls in a script',
 };
 
-/** Where the API signals count as full (value 1): the added-up rare bits. */
+/** In added-up rare bits. */
 export interface ApisFullAt {
     rareIdentifying: number;
 }
@@ -185,20 +177,12 @@ export interface ApiTraits {
 export interface ScoringSettings {
     strengths: { [L in ScoreLevel]: SignalValues<L> };
     cutoffs: { fingerprinting: Cutoffs };
-    /** Bits and rarity per fingerprinting API, by API id (see FpApi and apisSums). */
     apis: Record<string, ApiTraits>;
-    /**
-     * How much more rare APIs count than everyday ones in the unusual APIs signals: each API counts
-     * its rarity to this power. 1 counts rarity as it is; at 4, rarity 0.6 (read on 40% of page
-     * loads) counts 0.13 and 0.93 counts 0.75, so the many everyday reads of ordinary code add up to
-     * little. Calibrated with the rarities from Chrome's usage data (see FP_APIS).
-     */
+    // Each API counts its rarity to this power: at 4, rarity 0.6 (read on 40% of page loads) counts
+    // 0.13 and 0.93 counts 0.75, so ordinary code's everyday reads add up to little.
     rarityPower: number;
-    /** Per level, where the API signals count as full. */
     fullAt: Record<ApisLevel, ApisFullAt>;
-    /** What counts as a burst of calls, and which requests count as sent right after one. */
     bursts: BurstDetection;
-    /** What counts as a possible identifier among the values scripts store (see lib/identifiers). */
     identifiers: IdentifierRules;
 }
 
@@ -234,11 +218,9 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     // the rest still adds: once that reached full, nothing beyond adds to it.
     fullAt: {
         burst: { rareIdentifying: 13 },
-        // A burst of the other scripts: the same measure as a script's burst, so the same value.
+        // The same measure as a script's burst, so the same value.
         pageBurst: { rareIdentifying: 13 },
-        // A script outside its strongest burst.
         script: { rareIdentifying: 13 },
-        // The other scripts outside their strongest burst.
         page: { rareIdentifying: 13 },
     },
     // Fingerprinters collect early and at once, pausing only for asynchronous APIs or to keep the
@@ -247,17 +229,12 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     identifiers: DEFAULT_IDENTIFIER_RULES,
 };
 
-/** What counts as a burst of calls: one collection of details (see burst-detection). */
 export interface BurstDetection {
-    /** How long a burst is at most: the window that slides over the calls (see burst-detection). */
     windowMs: number;
-    /** Fewer different APIs are a couple of reads, not a collection. */
     minDistinctApis: number;
-    /** Requests the script makes up to this many milliseconds after a burst count as sent right after it. */
     requestWindowMs: number;
 }
 
-/** The burst detection settings with their labels and explanations, in the order the options page lists them. */
 export const BURST_DETECTION_FIELDS: { key: keyof BurstDetection; label: string; description: string; unit: string }[] = [
     {
         key: 'windowMs',
@@ -281,7 +258,6 @@ export const BURST_DETECTION_FIELDS: { key: keyof BurstDetection; label: string;
     },
 ];
 
-/** The identifier rules with their labels and explanations, in the order the options page lists them. */
 export const IDENTIFIER_RULE_FIELDS: { key: keyof IdentifierRules; label: string; description: string; unit: string }[] = [
     {
         key: 'lastingDays',

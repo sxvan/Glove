@@ -1,7 +1,5 @@
 <script lang="ts">
-    // A line in a card's list of statements, with an icon for its tone: info for a plain fact, a
-    // warning triangle for a sign of fingerprinting. `details` gives it a column for the chevron that
-    // opens the details page, so lines with and without one keep the same width.
+    // `details` gives it a column for the chevron, so lines with and without one keep the same width.
     import type { TextPart } from '../text-parts';
     import DetailsButton from './DetailsButton.svelte';
     import InfoTip from './InfoTip.svelte';
@@ -69,8 +67,7 @@
         margin-top: 1px;
     }
 
-    /* One of a card's main statements: in the body size, but toned down between the text and the
-       grey of a detail, so it doesn't compete with the card's title. */
+    /* Toned down, so it doesn't compete with the card's title. */
     .lead .text {
         color: color-mix(in srgb, var(--text) 70%, var(--muted));
         font-size: 14px;

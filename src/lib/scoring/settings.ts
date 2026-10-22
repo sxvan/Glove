@@ -4,27 +4,21 @@ import { DEFAULT_SETTINGS, type ScoreLevel, type ScoringSettings } from './defin
 
 const STORAGE_KEY = 'scoringSettings';
 
-// The version of the stored settings' units (2: an API's identifying information in bits), to tell
-// them apart should the units change again.
+// The stored units' version (2: API information in bits), should the units change again.
 const SETTINGS_VERSION = 2;
 
 type StoredSettings = Partial<ScoringSettings> & { version?: number };
 
-/** The user's settings, with defaults for anything not set (e.g. signals added since). */
 export async function loadScoringSettings(): Promise<ScoringSettings> {
     return withDefaults(await loadStored<StoredSettings>(STORAGE_KEY));
 }
 
-/**
- * Stores only what differs from the defaults, so a changed default (e.g. after recalibrating)
- * still reaches everyone who didn't set that value themselves.
- */
+// Only what differs from the defaults, so a recalibrated default reaches everyone who didn't set it.
 export function saveScoringSettings(settings: ScoringSettings): Promise<void> {
     const changed = (changedFrom(DEFAULT_SETTINGS, settings) ?? {}) as StoredSettings;
     return browser.storage.local.set({ [STORAGE_KEY]: { ...changed, version: SETTINGS_VERSION } });
 }
 
-/** The parts of `value` that differ from `base`, as a nested object; undefined if none do. */
 function changedFrom(base: unknown, value: unknown): unknown {
     if (typeof value === 'object' && value !== null && typeof base === 'object' && base !== null) {
         const changed: Record<string, unknown> = {};
@@ -41,7 +35,6 @@ export function resetScoringSettings(): Promise<void> {
     return browser.storage.local.remove(STORAGE_KEY);
 }
 
-/** Calls `onChange` with the new settings whenever the user changes them. */
 export function watchScoringSettings(onChange: (settings: ScoringSettings) => void): () => void {
     return watchStored<StoredSettings>(STORAGE_KEY, (value) => onChange(withDefaults(value)));
 }

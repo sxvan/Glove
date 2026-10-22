@@ -27,12 +27,10 @@ function ensureFrame(session: Session, tabId: number, frameId: number): { tab: T
     return { tab, frame: tab.frames[frameId] };
 }
 
-/** The document a frame shows now, if any. */
 export function currentDocument(frame: FrameState | undefined): DocumentState | undefined {
     return frame?.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
 }
 
-/** The documents a tab's frames show now: its page's. */
 export function currentDocuments(session: Session, tabId: number): DocumentState[] {
     return Object.values(session.tabs[tabId]?.frames ?? {})
         .map(currentDocument)
@@ -79,8 +77,7 @@ export function ensureDocument(
         document.currentUrl = url ?? null;
     }
 
-    // The first document seen in a frame is its current one; after that, only a page load changes it
-    // (see updateCurrentDocument), so a late event of the previous page doesn't bring it back.
+    // After the first, only a page load changes it, so a late event of the previous page doesn't bring it back.
     frame.currentDocumentId ??= documentId;
 
     return { tab, frame, document: frame.documents[documentId] };
@@ -127,12 +124,9 @@ export function updateCurrentDocument(session: Session, tabId: number, frameId: 
     dropEndedDocuments(frame, documentId);
 }
 
-// How long a frame's previous document is kept at least after another replaced it, as its last
-// events can still arrive; it goes as the frame loads a document after that. Kept longer it would
-// only add up, page after page.
+// A replaced document's last events can still arrive; kept longer, documents would add up page after page.
 const ENDED_DOCUMENT_MS = 30_000;
 
-/** Forgets the frame's documents that ended a while ago, other than `currentId`. */
 function dropEndedDocuments(frame: FrameState, currentId: string) {
     const now = Date.now();
     for (const [id, document] of Object.entries(frame.documents)) {
@@ -140,29 +134,18 @@ function dropEndedDocuments(frame: FrameState, currentId: string) {
     }
 }
 
-// Addresses of documents a page makes itself rather than loads: a blank frame, its srcdoc, and
-// data: and blob: URLs.
+// Documents a page makes itself rather than loads.
 const PAGE_MADE = /^(about|data|blob):/i;
 
-/**
- * Notes, as a frame commits a new document, which document made it if the page made it itself
- * (see PAGE_MADE): the one of the frame above it, `parent`. Its scripts made it, often only to read
- * from it, so what happens in it belongs to them. The recorders already hand over what happens in
- * frames the page can reach (see lib/recording-document); this joins those they can't, data: and
- * sandboxed frames, which always commit with their parent.
- */
+// Joins the page-made frames the recorders can't (see lib/recording-document): data: and sandboxed
+// ones, which always commit with their parent.
 export function notePageMade(session: Session, tabId: number, frameId: number, documentId: string, url: string, parent: DocumentRef | null) {
     if (!parent || !PAGE_MADE.test(url)) return;
     const document = session.tabs[tabId]?.frames[frameId]?.documents[documentId];
     if (document) document.madeBy = parent;
 }
 
-/**
- * Where what happens in a document is recorded: in the document itself, or for one the page made
- * (see notePageMade), in the nearest document above it with an address of its own, so a script
- * reading through frames it made is scored as a whole, not once per frame. Without a link, or with
- * one to a document no longer kept, a document is recorded as itself.
- */
+// So a script reading through frames it made is scored as a whole, not once per frame.
 export function recordingTarget(session: Session, tabId: number, frameId: number, documentId: string): DocumentRef {
     const frames = session.tabs[tabId]?.frames ?? {};
     let target: DocumentRef = { frameId, documentId };
@@ -179,11 +162,8 @@ export function dropTab(session: Session, tabId: number) {
     delete session.tabs[tabId];
 }
 
-/**
- * Forgets the subframes of the tab's previous page once the main frame has loaded a new one, so the
- * snapshot only shows frames of the current page. Frames whose newest document started at or after
- * `committedAt` belong to the new page already, as their events can arrive before the commit does.
- */
+// Frames whose newest document started at or after `committedAt` belong to the new page already, as
+// their events can arrive before the commit does.
 export function dropPreviousPageFrames(session: Session, tabId: number, committedAt: number) {
     const tab = session.tabs[tabId];
     if (!tab) return;
@@ -195,10 +175,6 @@ export function dropPreviousPageFrames(session: Session, tabId: number, committe
     }
 }
 
-/**
- * Keeps a call for its script, unless the script already has `maxCalls` (see lib/limits); then it
- * is marked as capped. Whether it was kept.
- */
 export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: ApiCallEvent, maxCalls = Infinity): boolean {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     if (script.callCount >= maxCalls) {
@@ -222,10 +198,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
     return true;
 }
 
-/**
- * Stores the request for every script on its stack: a script wrapping fetch or XHR (monitoring,
- * bot protection) sits above the one that made the request, and both should see it.
- */
+// For every script on its stack: a script wrapping fetch or XHR sits above the one making the request.
 export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: RequestEvent) {
     const scriptUrls = event.scriptUrls.length > 0 ? event.scriptUrls : [event.scriptUrl];
     for (const scriptUrl of scriptUrls) {
@@ -234,7 +207,6 @@ export function storeHttpEvent(session: Session, tabId: number, frameId: number,
     }
 }
 
-/** Notes a value the script stored, keeping the latest value of each cookie or item. */
 export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: StorageWriteEvent) {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     const item = (script.stored[`${event.kind}|${event.name}`] ??= { kind: event.kind, name: event.name, value: null, expires: null, writes: 0, first: event.timeStamp, last: event.timeStamp });

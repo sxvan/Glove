@@ -1,7 +1,5 @@
 <script lang="ts">
-    // A settings section's title, with a button that resets the section to its defaults: always
-    // there, so it is found where to look, and disabled while nothing differs from them (`changed`).
-    // A section without defaults to go back to, such as a list of the user's choices, has none.
+    // Reset is always there, so it is found where to look, and disabled while nothing differs.
     let { title, changed = false, onreset }: { title: string; changed?: boolean; onreset?: () => void } = $props();
 </script>
 

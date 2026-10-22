@@ -1,7 +1,6 @@
 <script module lang="ts">
     import type { SignalSource } from '@/lib/scoring';
 
-    /** The id of a level's section on the options page, which "made from" links point to. */
     export const sectionId = (source: SignalSource) => (source === 'apis' ? 'apis' : `level-${source}`);
 </script>
 
@@ -26,12 +25,11 @@
     let { level, settings, onStrength }: Props = $props();
 
     interface Group {
-        /** What the group's signals are made from; null for signals observed directly. */
+        /** Null for signals observed directly. */
         source: SignalSource | null;
         signals: [string, SignalDefinition][];
     }
 
-    // Signals made from the same thing are grouped, in the order the first of them is listed.
     const groups = $derived.by(() => {
         const sources = (SIGNAL_SOURCES[level] ?? {}) as Record<string, SignalSource>;
         const groups: Group[] = [];
@@ -77,7 +75,6 @@
         {#if !group.source}
             {@render signalRows(group.signals)}
         {:else}
-            <!-- The bar brackets the signals made from the same source and ends in a link to its section. -->
             <div class="bracketed">
                 <div class="bracket-rows">{@render signalRows(group.signals)}</div>
                 <a class="bracket-link" href="#{sectionId(group.source)}">made from <strong>{sourceLabel(group.source)}</strong></a>

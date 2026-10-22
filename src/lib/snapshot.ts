@@ -1,4 +1,4 @@
-// What the popup and the dashboard get of a tab's recording: copies, so they can't change it.
+// Copies of a tab's recording, so the views can't change it.
 import { currentDocument, currentDocuments } from './session-manager';
 import { carriesData } from './http-analysis';
 import type { PerformanceLimits } from './limits';

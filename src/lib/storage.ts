@@ -1,11 +1,9 @@
-// The settings and lists the extension keeps, each under its own key in the browser's local storage.
 import { browser } from 'wxt/browser';
 
 export async function loadStored<T>(key: string): Promise<T | undefined> {
     return (await browser.storage.local.get(key))[key] as T | undefined;
 }
 
-/** Calls `onChange` with the stored value of `key` whenever it changes. */
 export function watchStored<T>(key: string, onChange: (value: T | undefined) => void): () => void {
     const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
         if (area === 'local' && key in changes) onChange(changes[key]!.newValue as T | undefined);
@@ -14,7 +12,6 @@ export function watchStored<T>(key: string, onChange: (value: T | undefined) => 
     return () => browser.storage.onChanged.removeListener(listener);
 }
 
-/** A stored list; none if nothing, or something else, is stored. */
 export function listOf<T>(value: unknown): T[] {
     return Array.isArray(value) ? (value as T[]) : [];
 }

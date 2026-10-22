@@ -1,8 +1,5 @@
-// Looks up a host's DNS records, for the CNAME aliases it may hide behind (see http-analysis), over
-// DNS over HTTPS (RFC 8484) at Quad9: a non-profit resolver that doesn't store IP addresses. Chrome
-// gives extensions no access to the browser's own resolver, so this is a query of its own; only
-// made when the user turned DNS lookups on (see lib/privacy). The query and answer are DNS's own
-// binary messages (RFC 1035), built and read here.
+// DNS over HTTPS (RFC 8484) at Quad9, a non-profit resolver that doesn't store IP addresses: Chrome
+// gives extensions no access to the browser's own resolver. Messages are DNS's binary ones (RFC 1035).
 import type { DnsAnswer, DnsResult } from '@/types/analysis';
 import { getEtld1, getHostname } from './http-utils';
 
@@ -34,11 +31,11 @@ export async function dnsLookup(url: string | null): Promise<DnsResult> {
         throw new Error(`DNS lookup for ${hostname} failed (SERVFAIL)`);
     }
 
-    // No answers (e.g. NXDOMAIN, or no records of the requested type) is a valid result without CNAMEs.
+    // No answers (e.g. NXDOMAIN) is a valid result without CNAMEs.
     return enrichDnsAnswer(answers, hostname);
 }
 
-/** A query for `type` records of `name`: id 0, as RFC 8484 asks for caching; recursion desired. */
+// Id 0, as RFC 8484 asks for caching.
 function queryMessage(name: string, type: number): Uint8Array {
     const labels = name.replace(/\.$/, '').split('.').map((label) => new TextEncoder().encode(label));
     const message = new Uint8Array(12 + labels.reduce((sum, label) => sum + 1 + label.length, 0) + 1 + 4);
@@ -57,7 +54,6 @@ function queryMessage(name: string, type: number): Uint8Array {
     return message;
 }
 
-/** The response code and the answer records of a DNS message, CNAMEs and addresses as text. */
 function readMessage(message: Uint8Array): { rcode: number; answers: DnsAnswer[] } {
     const view = new DataView(message.buffer, message.byteOffset, message.byteLength);
     const rcode = view.getUint16(2) & 0x000f;
@@ -79,10 +75,7 @@ function readMessage(message: Uint8Array): { rcode: number; answers: DnsAnswer[]
     return { rcode, answers };
 }
 
-/**
- * A domain name at `offset`, as labels or a pointer to an earlier name (compression), with a dot at
- * the end like the JSON APIs give it; and where the message goes on after it.
- */
+// With a dot at the end, as the JSON APIs give it.
 function readName(message: Uint8Array, offset: number): { name: string; next: number } {
     const labels: string[] = [];
     let at = offset;
@@ -102,7 +95,7 @@ function readName(message: Uint8Array, offset: number): { name: string; next: nu
     throw new Error('Malformed DNS name');
 }
 
-/** Base64url without padding, as RFC 8484 sends a query in a URL. */
+// Without padding, as RFC 8484 sends a query in a URL.
 function base64Url(bytes: Uint8Array): string {
     return btoa(String.fromCharCode(...bytes))
         .replace(/\+/g, '-')

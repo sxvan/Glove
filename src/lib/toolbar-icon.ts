@@ -1,26 +1,19 @@
-// The toolbar icon of a tab as its page's fingerprinting score: a ring like the popup's, filled by
-// the score and in the likelihood's color, so it can be seen without opening the popup. Tabs without
-// a recording keep the extension's own icon. On it, a badge counts the page's blocked scripts that
-// tried to load, in the grey and white ad blockers use for their counts (AdGuard's #555555).
+// The badge counts blocked scripts in the grey ad blockers use for their counts (AdGuard's #555555).
 import { browser } from 'wxt/browser';
 import type { Cutoffs } from './scoring';
 
-// The likelihood colors of the popup, the same in both its palettes (see theme.css).
+// The same in both of the popup's palettes (see theme.css).
 const COLORS = { unlikely: '#1a8f4c', possible: '#c96512', likely: '#e0433c' };
 // The empty part of the ring: grey with some transparency, readable on light and dark toolbars.
 const TRACK: [number, number, number, number] = [128, 128, 128, 115];
 // Toolbar icons are 16 pixels, 32 on high-resolution screens.
 const SIZES = [16, 32];
 
-/** What each tab's icon shows, so an unchanged score isn't set again on every analysis. */
+// So an unchanged score isn't set again on every analysis.
 const shown = new Map<number, string>();
-// Each ring drawn once and kept, by size, color and score: only the few that occur get drawn.
 const drawn = new Map<string, ImageData>();
 
-/**
- * Shows `score` (0 to 1) for the page in tab `tabId`. `pageId` is its top document's id: a new page
- * draws its icon again, as Chrome may have reset it on navigating.
- */
+// A new page (`pageId`) draws its icon again, as Chrome may have reset it on navigating.
 export function showScoreIcon(tabId: number, pageId: string, score: number, cutoffs: Cutoffs) {
     const likelihood = score >= cutoffs.likely ? 'likely' : score >= cutoffs.possible ? 'possible' : 'unlikely';
     const percent = Math.round(score * 100);
@@ -33,10 +26,8 @@ export function showScoreIcon(tabId: number, pageId: string, score: number, cuto
     browser.action.setIcon({ tabId, imageData }).catch(() => shown.delete(tabId));
 }
 
-// The badge's colors, set once for all tabs.
 let badgeColored = false;
 
-/** Shows how many of the page's scripts were blocked as they tried to load; none shows no badge. */
 export function showBlockedCount(tabId: number, count: number) {
     if (!badgeColored) {
         badgeColored = true;
@@ -51,7 +42,6 @@ export function forgetTabIcon(tabId: number) {
     shown.delete(tabId);
 }
 
-/** The ring for `percent` at `size` pixels, drawn the first time it's needed. */
 function ring(size: number, percent: number, color: string): ImageData {
     const key = `${size}|${color}|${percent}`;
     let image = drawn.get(key);
@@ -62,11 +52,8 @@ function ring(size: number, percent: number, color: string): ImageData {
     return image;
 }
 
-/**
- * The ring at `size` pixels, filled clockwise from the top for `fraction` of it. Computed pixel by
- * pixel rather than on a canvas: the first canvas in the background sets up Chrome's drawing, which
- * took 30 to 270 ms per start, against well under a millisecond for these few pixels.
- */
+// Pixel by pixel rather than on a canvas: the first canvas in the background sets up Chrome's drawing,
+// which took 30 to 270 ms per start, against well under a millisecond for these few pixels.
 function drawRing(size: number, fraction: number, color: string): ImageData {
     const image = new ImageData(size, size);
     const width = size * 0.17;
@@ -95,7 +82,6 @@ function drawRing(size: number, fraction: number, color: string): ImageData {
     return image;
 }
 
-/** "#d12f2f" as red, green, blue and alpha (0 to 255). */
 function parseColor(hex: string): [number, number, number, number] {
     const value = parseInt(hex.slice(1), 16);
     return [(value >> 16) & 255, (value >> 8) & 255, value & 255, 255];

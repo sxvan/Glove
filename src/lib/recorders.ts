@@ -1,8 +1,5 @@
-// The content scripts that record pages (the recorders in the page's world, and the bridge that hands
-// their events to the background), registered by the background rather than the manifest, so they
-// leave out the sites the user turned the extension off for (see lib/sites): there, nothing of the
-// extension is in the page. Chrome keeps registered scripts across sessions; the background brings
-// them in step with the list when it starts and whenever the list changes.
+// Registered at runtime rather than in the manifest, so they leave out the sites the extension is off
+// for: there, nothing of it is in the page. Chrome keeps registered scripts across sessions.
 import { browser, type Browser } from 'wxt/browser';
 import { matchPatternsOf, type OffSite } from './sites';
 
@@ -12,7 +9,6 @@ const RECORDERS: { id: string; world: 'MAIN' | 'ISOLATED' }[] = [
     { id: 'bridge', world: 'ISOLATED' },
 ];
 
-/** Registers the recorders for every page but those of `offSites`, or updates them to that. */
 export async function registerRecorders(offSites: OffSite[]): Promise<void> {
     const excludeMatches = matchPatternsOf(offSites);
     const wanted: Browser.scripting.RegisteredContentScript[] = RECORDERS.map(({ id, world }) => ({

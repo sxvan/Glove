@@ -1,6 +1,4 @@
 <script lang="ts">
-    // The sites the extension is off for (see lib/sites), to turn it on again there; like the lists
-    // of the Blocking section.
     import { onMount } from 'svelte';
     import { loadOffSites, removeOffSites, watchOffSites, type OffSite } from '@/lib/sites';
     import { day } from '@/ui/format';

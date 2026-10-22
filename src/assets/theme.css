@@ -1,6 +1,4 @@
-/* Theme tokens and base styles shared by the extension's pages (popup, options, details page,
-   script viewer). The root's data-theme is "light" or "dark", or missing to follow the system
-   (see lib/theme). */
+/* The root's data-theme is "light" or "dark", or missing to follow the system (see lib/theme). */
 
 :root {
     color-scheme: light;
@@ -22,16 +20,14 @@
     --unlikely: #1a8f4c;
     --possible: #c96512;
     --likely: #e0433c;
-    /* Nothing recorded yet: no judgment, so no colour of its own. */
     --unknown: var(--muted);
 
     --info: #2f6fde;
 
-    /* Inter, bundled with the extension (each page's main.ts imports it); the system font until it loads. */
     --font: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-    /* The button around a small chevron, larger than it so it is easy to hit (see DetailsButton). */
+    /* Larger than a chevron, so it is easy to hit. */
     --chevron-button: 20px;
 }
 
@@ -67,8 +63,7 @@
     box-sizing: border-box;
 }
 
-/* Colors that change, as on hover, fade briefly instead of switching. Colors only: nothing moves
-   or changes size. Components with a transition of their own (a switch's knob) keep it. */
+/* Colors only: nothing moves or changes size. A transition of a component's own (a switch's knob) wins. */
 @media (prefers-reduced-motion: no-preference) {
     *,
     *::before,
@@ -137,7 +132,6 @@ button {
     cursor: default;
 }
 
-/* One rounded track with the chosen segment raised on it, as in Apple's segmented controls. */
 .segmented {
     display: flex;
     gap: 2px;

@@ -3,9 +3,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import type { RecorderEvents } from '@/types/events';
 import type { RecorderMessage } from '@/types/messages';
 
-// Runs in the isolated world and forwards events dispatched by the main-world recorders
-// (fp-recorder, http-recorder) to the background.
-// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
+// Forwards the main-world recorders' events to the background, which only the isolated world can reach.
 export default defineContentScript({
     registration: 'runtime',
     matches: ['<all_urls>'],
@@ -16,12 +14,10 @@ export default defineContentScript({
     noScriptStartedPostMessage: true,
 
     main() {
-        // Removes the listeners once the extension is gone (reloaded, updated or removed): this
-        // script can't reach it anymore, and the page is recorded again only after a reload.
+        // Once the extension is gone (reloaded, updated, removed), this script can't reach it any more.
         const listening = new AbortController();
 
-        // Set once the background says the page reached its limit of calls (see lib/limits): its
-        // calls aren't sent any more. Only the background can say so, not the page's scripts.
+        // Only the background can stop the calls (see lib/limits), not the page's scripts.
         let callsStopped = false;
 
         function send(message: RecorderMessage) {

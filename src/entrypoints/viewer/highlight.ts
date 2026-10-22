@@ -9,11 +9,7 @@ hljs.registerLanguage('javascript', javascript);
 const START = '';
 const END = '';
 
-/**
- * Syntax-highlighted HTML for `code` with each location wrapped in <mark id="hit-N">, numbered in
- * the order of `locations` from `firstId` on, with its APIs as tooltip. Locations cover a name or a short bracketed
- * expression; a mark crossing a highlight.js span is still shown, as the browser repairs the nesting.
- */
+// A mark crossing a highlight.js span is still shown: the browser repairs the nesting.
 export function highlightWithLocations(code: string, locations: CodeLocation[], firstId = 0): string {
     // Same-length replacement, so the locations' offsets stay valid.
     const clean = code.replace(/[]/g, '�');

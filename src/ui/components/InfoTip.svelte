@@ -1,15 +1,11 @@
 <script lang="ts">
-    // An icon that shows an explanation on hover or keyboard focus, so the cards show the findings,
-    // not how they came about. The tip places itself inside the popup: shifted sideways as needed,
-    // and above the icon when there is no room below it.
+    // So the cards show the findings, not how they came about.
     import type { Snippet } from 'svelte';
 
     let { label, text, children }: { label: string; text: string; children: Snippet } = $props();
 
     const id = $props.id();
 
-    // Where the tip starts, left of the icon, when there is room; and the room it keeps from the
-    // popup's edges.
     const START = -60;
     const MARGIN = 8;
 
@@ -37,7 +33,6 @@
 </span>
 
 <style>
-    /* The space between the icon and its tip. */
     .info {
         --gap: 6px;
         position: relative;

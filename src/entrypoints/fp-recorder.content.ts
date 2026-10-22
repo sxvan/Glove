@@ -9,7 +9,6 @@ import { handOver, nativeGetter, nativeSetters, reflectApply } from '@/lib/page-
 import { recordingDocument } from '@/lib/recording-document';
 
 // Runs in the page's main world so it can wrap the page's own fingerprinting APIs.
-// Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
 export default defineContentScript({
     registration: 'runtime',
     matches: ['<all_urls>'],
@@ -137,14 +136,12 @@ function hookMethod(proto: any, prop: string, id: string) {
         return;
     }
 
-    // Particular reads through this method, recorded under their own id (e.g. the GPU name).
     const reads = FP_APIS.filter((api) => api.readOf?.api === id);
 
     const revealsNothing = REVEALS_NOTHING[id];
 
     // Method syntax: like the browser's own methods, it has no prototype and can't be called with new.
-    // Recorded once the call returned, as whether it revealed anything can depend on the result; a
-    // call that threw is recorded as made.
+    // Recorded after the call, as whether it revealed anything can depend on the result.
     const wrapped = {
         [prop](this: unknown, ...args: unknown[]) {
             let result: unknown;
@@ -165,12 +162,9 @@ function hookMethod(proto: any, prop: string, id: string) {
 }
 
 // ---------- calls that reveal nothing ----------
-// Exporting a canvas nothing was drawn on reads nothing about the device, and isn't recorded:
-// players and image code do it to check which formats the browser can encode (toDataURL("image/webp")
-// on a new canvas, often after getContext("2d") to see that canvases work). Fingerprinting has to
-// draw first, as a blank canvas looks the same everywhere, so comparing the export with a blank
-// canvas's of the same size and format tells. Large canvases, beyond what fingerprinting or a format
-// check uses, aren't compared, so an image editor's exports cost no extra blank one.
+// Exporting a blank canvas reveals nothing and isn't recorded: players check which formats the
+// browser encodes that way, while fingerprinting must draw first. Large canvases aren't compared, so
+// an image editor's exports cost no extra blank one.
 
 const BLANK_COMPARE_MAX_PIXELS = 1_000_000;
 
@@ -179,15 +173,12 @@ let canvasWidth: (canvas: unknown) => number | undefined;
 let canvasHeight: (canvas: unknown) => number | undefined;
 let canvasSize: (canvas: unknown, values: number[]) => void;
 
-/** Whether a call (`self`, `args`) that returned `result` revealed nothing; `original` is the native method. */
 const REVEALS_NOTHING: Record<string, (self: unknown, args: unknown[], result: unknown, original: Function) => boolean> = {
     'canvas.toDataURL': (canvas, args, result, original) => isBlankExport(canvas, args, result, original),
 };
 
-// What a blank canvas exports, by size and format: computed once each.
 const blankExports = new Map<string, unknown>();
 
-/** Whether toDataURL returned what a blank canvas of the same size and format does. Never throws. */
 function isBlankExport(canvas: unknown, args: unknown[], result: unknown, toDataURL: Function): boolean {
     try {
         const [width, height] = [canvasWidth(canvas), canvasHeight(canvas)];
@@ -219,7 +210,6 @@ let contextCanvas: (context: unknown) => unknown;
 let contextFont: (context: unknown) => string | undefined;
 const fontsByContext = new WeakMap<object, Set<string>>();
 
-/** Whether a call (`self`, `args`) is the particular read. Never throws. */
 function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boolean {
     try {
         switch (read) {
@@ -228,7 +218,6 @@ function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boole
             case 'highEntropyValues':
                 return Array.isArray(args[0]) && args[0].some((hint) => DETAILED_HINTS.has(String(hint)));
             case 'hiddenCanvas': {
-                // A context's canvas, or the canvas itself.
                 const canvas = contextCanvas(self) ?? self;
                 return isConnected(canvas) === false;
             }
@@ -274,24 +263,16 @@ function hookGetter(proto: any, prop: string, id: string) {
 // walking the stack once it has that many, so a hook called thousands of times stays cheap.
 const STACK_FRAMES = 4;
 
-/** The script and position the hooked API was called from: the first page script on the stack. */
 function getCallerLocation(hook: Function): StackLocation | null {
     return readStack(hook)[0] ?? null;
 }
 
 // ---------- what scripts store ----------
-// Writes to cookies and the page's storage, by the script that made them, buffered and handed over
-// with the API calls: a script can keep the identifier it computed there, so it needn't fingerprint
-// again, and a cookie keeps being sent after the script is blocked. Only writes through the hooked
-// calls are seen: `localStorage.id = value` assigns without one. Shown as recorded, for the user to
-// see; what the browser holds can differ, e.g. after a cookie was rejected or deleted.
-// A write counts for the innermost page script on the stack, as an API call does; a framework that
-// wraps the storage calls for the whole page is then credited with the writes passing through it.
+// Only writes through the hooked calls are seen: `localStorage.id = value` assigns without one.
 
 const pendingStored: StorageWriteEvent[] = [];
 
-// The page's storages, to tell which one setItem was called on; null where they can't be used,
-// e.g. in a sandboxed frame.
+// null where they can't be used, e.g. in a sandboxed frame.
 let localStorageOf: Storage | null = null;
 let sessionStorageOf: Storage | null = null;
 let storeName: (store: unknown) => string | undefined;
@@ -360,12 +341,11 @@ function storageKind(storage: unknown): StorageKind | null {
     return storage === localStorageOf ? 'localStorage' : storage === sessionStorageOf ? 'sessionStorage' : null;
 }
 
-/** Wraps a method that stores something; `describe` tells what from its arguments, or null to skip it. */
 function hookStorageMethod(proto: any, prop: string, describe: (self: unknown, args: unknown[]) => StoredWrite | null) {
     const original: unknown = proto && proto[prop];
     if (typeof original !== 'function' || isDisguised(original)) return;
 
-    // Recorded once the call returned: one that threw stored nothing.
+    // After the call: one that threw stored nothing.
     const wrapped = {
         [prop](this: unknown, ...args: unknown[]) {
             const result = reflectApply(original, this, args);
@@ -380,7 +360,7 @@ function hookStorageMethod(proto: any, prop: string, describe: (self: unknown, a
     proto[prop] = disguise(wrapped, original);
 }
 
-/** A cookie written through document.cookie; one set to expire right away is a deletion and isn't recorded. */
+// A cookie set to expire right away is a deletion and isn't recorded.
 function recordCookie(text: string, hook: Function) {
     const [pair = '', ...attributes] = text.split(';');
     const at = pair.indexOf('=');

@@ -1,6 +1,4 @@
 <script lang="ts">
-    // The Blocking section's options (see BlockingOptions), saved as soon as changed; then the
-    // scripts blocked, to unblock them.
     import { onMount } from 'svelte';
     import {
         DEFAULT_BLOCKING_OPTIONS,
@@ -24,8 +22,6 @@
 
     type SwitchKey = 'reload' | 'clearData' | 'autoBlock';
 
-    // A switch still being tried out is marked so, with a warning under it and a question before it
-    // is turned on.
     interface Experimental {
         warning: string;
         confirm: string;
@@ -59,8 +55,6 @@
 
     let options = $state<BlockingOptions>({ ...DEFAULT_BLOCKING_OPTIONS });
 
-    // The blocked scripts, the latest first, those blocked automatically apart from those blocked by
-    // hand; and, with automatic blocking, the scripts the user let run again, which it leaves alone.
     let blocked = $state<BlockedScript[]>([]);
     let exempt = $state<string[]>([]);
     let blockedOpen = $state(false);
@@ -78,7 +72,7 @@
     const unblocking = {
         action: 'Unblock' as const,
         confirm: (count: string) => `Unblock the ${count}? They load again on every site, and none of them is blocked automatically after that.`,
-        // As their switch would: they aren't blocked automatically after that.
+        // They aren't blocked automatically after that.
         act: (keys: string[]) => setBlocked(keys, false),
     };
 
@@ -118,7 +112,6 @@
     // A reset sets the options back, not the lists: those are the user's choices, with their own buttons.
     const optionsChanged = $derived((Object.keys(DEFAULT_BLOCKING_OPTIONS) as (keyof BlockingOptions)[]).some((key) => options[key] !== DEFAULT_BLOCKING_OPTIONS[key]));
 
-    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
     let { changed = $bindable(false) }: { changed?: boolean } = $props();
     $effect(() => {
         changed = optionsChanged;
@@ -130,7 +123,6 @@
         if (confirm(group.confirm(count))) group.act(group.scripts.map((script) => script.key));
     }
 
-    /** When it was blocked, and if automatically at which score: "At score 91, 18 Oct 2026", "18 Oct 2026". */
     function how(script: BlockedScript): string {
         return script.auto ? `At score ${Math.round(script.auto.score * 100)}, ${day(script.since)}` : day(script.since);
     }
@@ -221,7 +213,6 @@
     <ul class="blocked">
         {#each group.scripts as script (script.key)}
             {@const { host, pathname } = new URL(script.key)}
-            <!-- Named like the popup's script cards: the path with its file name kept, then who serves it. -->
             <li>
                 <div class="script" title={script.key}>
                     <div class="address"><MiddleTruncate text={pathname} path /></div>
@@ -234,7 +225,6 @@
 {/snippet}
 
 <style>
-    /* Marks a setting still being tried out: a small tag after its name, in the color of a warning. */
     .experimental {
         margin-left: 8px;
         padding: 1px 7px;
@@ -246,7 +236,6 @@
         vertical-align: 1px;
     }
 
-    /* What it does wrong, under the description: as clear as its name, in the warning's color. */
     .warning {
         margin-top: 6px;
         color: var(--likely);

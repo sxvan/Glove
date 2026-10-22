@@ -50,7 +50,6 @@ export type FpCategory =
     | 'Connection'
     | 'Codecs';
 
-/** The kinds with the name the popup uses for what they reveal. */
 export const FP_CATEGORIES: Record<FpCategory, { name: string }> = {
     Browser: { name: 'browser details' },
     Languages: { name: 'languages' },
@@ -74,12 +73,10 @@ export const FP_CATEGORIES: Record<FpCategory, { name: string }> = {
     Codecs: { name: 'media codecs' },
 };
 
-/** The popup's name for a category, e.g. "audio" for AudioContext; unknown ones keep their key. */
 export function fpCategoryName(category: string): string {
     return FP_CATEGORIES[category as FpCategory]?.name ?? category;
 }
 
-/** Groups of APIs whose values overlap (see FpApi.overlap). */
 export type OverlapGroup = 'browser' | 'memory' | 'connection' | 'sizes' | 'fonts' | 'gpu' | 'timezone';
 
 export interface FpApi {
@@ -87,54 +84,24 @@ export interface FpApi {
     owner: FpApiOwner;
     prop: string;
     category: FpCategory;
-    /**
-     * What reading it tells a script about the device, in a few words, e.g. "graphics card name";
-     * shown grouped by category. APIs revealing the same value share the same words.
-     */
+    /** APIs revealing the same value share the same words. */
     reveals: string;
-    /**
-     * How much identifying information it reveals on its own: its entropy in bits, the average over
-     * browsers (6 bits tell one browser in 64 apart). Where it comes from, see bitsBasis.
-     */
+    /** Its entropy on its own, the average over browsers: 6 bits tell one browser in 64 apart. */
     bits: number;
-    /**
-     * Where its bits come from: measured on 4.1 million fingerprints unless said otherwise (see
-     * FP_APIS); lowered where Chrome has changed since ("adjusted"), measured worldwide where that
-     * study's French users differ most ("worldwide"), or an estimate without data ("estimate").
-     */
+    /** Measured on 4.1 million fingerprints unless said otherwise (see FP_APIS). */
     bitsBasis?: 'adjusted' | 'worldwide' | 'estimate';
     /**
-     * For an API whose value overlaps with related ones, like the screen's and the window's sizes:
-     * their group, and the bits it adds once another API of the group is known (from the same study,
-     * the conditional entropy given the attribute telling the most about it). Of a group read
-     * together, the API with the most bits counts all of them, the others what they add (see apisSums).
+     * For values overlapping with related ones, like the screen's and the window's sizes: the bits it
+     * adds once another of the group is known (the study's conditional entropy).
      */
     overlap?: { group: OverlapGroup; adds: number };
-    /**
-     * How rarely pages use it, from 0 (on almost every page load) toward 1 (on hardly any): 1 − the
-     * share of page loads using it. It says how rare a use is, not why: ordinary code uses even the
-     * rarest, so it stays below 1. Reading a rare API shows intent even if it reveals little.
-     */
+    /** 1 − the share of page loads using it; below 1 even for the rarest, as ordinary code uses those too. */
     rarity: number;
-    /**
-     * Where its rarity comes from: Chrome's use counter for it unless said otherwise; a counter of a
-     * related feature ("related"), how often DuckDuckGo's Tracker Radar saw third-party scripts read
-     * it compared with APIs that have a counter ("trackerRadar"), at least as rare as the API it is a
-     * particular read of, judged within that bound ("bound"), or an estimate without data
-     * ("estimate"). See FP_APIS.
-     */
+    /** Chrome's use counter for it unless said otherwise (see FP_APIS). */
     rarityBasis?: 'related' | 'trackerRadar' | 'bound' | 'estimate';
-    /**
-     * The id of an API that reveals the same value (e.g. webgl2.readPixels and webgl.readPixels, or
-     * screen.pixelDepth and screen.colorDepth): they count once together, as the highest of them.
-     * Values that only overlap, like a height and its width, are in an overlap group instead.
-     */
+    /** An API revealing the same value (e.g. webgl2.readPixels and webgl.readPixels): they count once. */
     same?: string;
-    /**
-     * For a particular read through another API, which reveals much more than its usual use: the id
-     * of that API and which read it is (the recorder recognizes the calls). Such calls are recorded
-     * under this id instead.
-     */
+    /** A particular read through another API, revealing much more than its usual use; recorded under this id. */
     readOf?: { api: string; read: SpecialRead };
 }
 
@@ -147,9 +114,7 @@ export interface FpApi {
  */
 export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hiddenCanvas';
 
-// Defaults for the bits and rarity (users can change them; scoring turns them into the rare
-// identifying APIs signals). The bits are Andriamilanto et al. 2021, 4.1 million
-// fingerprints (arxiv.org/abs/2006.09511, Table 16): the normalized entropy times 21.98 bits, what
+// The bits are Andriamilanto et al. 2021, 4.1 million fingerprints (arxiv.org/abs/2006.09511, Table 16): the normalized entropy times 21.98 bits, what
 // an overlapping API adds its minimum normalized conditional entropy (MinNCE) the same way. Their
 // users were French, and only a quarter of them used Chrome:
 // - adjusted: lowered where Chrome has changed since (the reduced user agent, the fixed plugin list,
@@ -195,7 +160,6 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 // - estimate: the detailed client hints (Google Analytics asks for them by default, so about half
 //   of the 64% asking for client hints at all) and document.referrer.
 export const FP_APIS: FpApi[] = [
-    // Navigator
     { id: 'navigator.userAgent', owner: 'Navigator', prop: 'userAgent', category: 'Browser', reveals: 'browser and version', bits: 4.8, rarity: 0.09, overlap: { group: 'browser', adds: 1 }, bitsBasis: 'adjusted' },
     // Client hints: brands are everyday. The exact OS version, device model, architecture and full
     // browser version identify more, but analytics asks for them routinely too (Google Analytics does
@@ -238,7 +202,6 @@ export const FP_APIS: FpApi[] = [
     // text-to-speech needs them.
     { id: 'speech.getVoices', owner: 'SpeechSynthesis', prop: 'getVoices', category: 'Voices', reveals: 'speech voices', bits: 4.5, rarity: 0.93, rarityBasis: 'trackerRadar' },
 
-    // Screen
     { id: 'screen.width', owner: 'Screen', prop: 'width', category: 'ScreenSetup', reveals: 'screen size', bits: 4.2, rarity: 0.31, overlap: { group: 'sizes', adds: 0.1 } },
     { id: 'screen.height', owner: 'Screen', prop: 'height', category: 'ScreenSetup', reveals: 'screen size', bits: 4.1, rarity: 0.31, overlap: { group: 'sizes', adds: 0.3 } },
     // The space left by the taskbar, which tells operating systems and setups apart.

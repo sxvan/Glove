@@ -1,8 +1,6 @@
 <script lang="ts">
-    // A page's fingerprinting in full, for the tab in the address (?tab=): what its scripts read, sent
-    // and stored, and every recorded event (the event log). Opened from an info line in the popup, at
-    // its table (#apis, #requests, #stored, #log) and script (&script=). Once the tab is closed, it
-    // keeps the last recording, as the extension keeps nothing of a closed tab.
+    // Opened at a tab (?tab=), a table (#apis, #requests, #stored, #log) and a script (&script=). Once
+    // the tab is closed it keeps the last recording, as the extension keeps nothing of a closed tab.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import { viewerUrl } from '@/lib/script-viewer';
@@ -47,10 +45,8 @@
         if (id === 'log' && !log) loadLog();
     }
 
-    // ---------- the event log ----------
-
-    // Asked for apart from the snapshot, once the log is looked at (see GetEventLogMessage), and again
-    // as the tab records while it shows, at most every few seconds: it can be tens of thousands of events.
+    // Apart from the snapshot, only while looked at and at most every few seconds: it can be tens of
+    // thousands of events.
     let log = $state<EventLog | undefined>();
     const LOG_REFRESH_MS = 3000;
     const LOG_PAGE = 500;
@@ -70,8 +66,6 @@
     function refreshLog() {
         if (table === 'log' && Date.now() - logAskedAt >= LOG_REFRESH_MS) loadLog();
     }
-
-    // ---------- the rows, each with the text the search looks in ----------
 
     type ApiRow = { script: ScriptDetail; api: ApiDetail; text: string };
     type RequestRow = { script: ScriptDetail; request: SentRequest; text: string };
@@ -111,13 +105,10 @@
             })
     );
 
-    /** Rows holding every word searched for, in any column. */
     function matching<Row extends { text: string }>(rows: Row[]): Row[] {
         const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
         return terms.length === 0 ? rows : rows.filter((row) => terms.every((term) => row.text.includes(term)));
     }
-
-    // ---------- the columns ----------
 
     const scriptColumn = <Row extends { script: ScriptDetail }>(): Column<Row> => ({ key: 'script', label: 'Script', sortBy: (row) => row.script.name });
 
@@ -164,7 +155,6 @@
         { key: 'burst', label: 'Burst', numeric: true, largestFirst: false, title: 'Which of the script’s bursts of calls it was in, counted in time order', sortBy: (row) => (row.entry.kind === 'api' ? row.entry.burst : null) },
     ];
 
-    // Each table's order, kept while switching between them.
     let sorting = $state<Record<TableId, Sorting>>({
         apis: { key: 'rareBits', descending: true },
         requests: { key: 'bytes', descending: true },
@@ -172,22 +162,17 @@
         log: { key: 'time', descending: false },
     });
 
-    /** A time after the page started, to the millisecond: "1.234 s". */
     const sincePageStart = (time: number) => `${((time - (log?.startTime ?? time)) / 1000).toFixed(3)} s`;
-    /** The clock time, to the millisecond: "14:03:21.456". */
     const clockTime = (time: number) => new Date(time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hour12: false });
-
-    // ---------- how values read ----------
 
     const HOW: Record<NonNullable<SentRequest['how']>, string> = { fetch: 'fetch', xhr: 'XMLHttpRequest', beacon: 'sendBeacon', image: 'Image (pixel)' };
 
     const DAY = 24 * 60 * 60 * 1000;
-    /** How long it stays after it was written; storage kept until cleared sorts as the longest. */
+    /** Storage kept until cleared sorts as the longest. */
     function keptMs(item: StoredItem): number {
         if (item.kind !== 'cookie') return item.kind === 'sessionStorage' ? 0 : Infinity;
         return item.expires === null ? 0 : item.expires - item.last;
     }
-    /** E.g. "1 year", "30 days", "until cleared", "until the browser closes". */
     function kept(item: StoredItem): string {
         if (item.kind !== 'cookie') return item.kind === 'sessionStorage' ? 'until the tab closes' : 'until cleared';
         if (item.expires === null) return 'until the browser closes';
@@ -198,14 +183,12 @@
         return plural(Math.max(1, Math.round(ms / 60000)), 'minute');
     }
 
-    // ---------- the tab's recording ----------
-
     onMount(() => {
         if (!Number.isInteger(tabId)) {
             status = 'unavailable';
             return;
         }
-        // As a popup does, so the background sends the tab's updates (see publishAnalysis).
+        // So the background sends the tab's updates (see publishAnalysis).
         const port = browser.runtime.connect({ name: 'view' });
         const message: GetTabSnapshotMessage = { type: 'GET_TAB_SNAPSHOT', tabId };
         browser.runtime.sendMessage(message).then(
@@ -244,7 +227,6 @@
 </script>
 
 {#snippet scriptCell(script: ScriptDetail)}
-    <!-- Named like its card: its path, the file name kept, over who serves it; linked to the viewer. -->
     <div class="script">
         {#if script.viewer}
             <a class="name" href={viewerUrl(script.viewer)} target="_blank" rel="noopener noreferrer" title="View {script.url} in the script viewer"><MiddleTruncate text={script.name} path={script.path} /></a>
@@ -426,7 +408,6 @@
         font-size: 13px;
     }
 
-    /* Room for a few words of search. */
     input {
         width: 24em;
         max-width: 100%;
@@ -443,15 +424,14 @@
         outline: none;
     }
 
-    /* The table on a card, inset a little, so its rows' backgrounds stay inside the rounded corners. */
+    /* Inset, so the rows' backgrounds stay inside the rounded corners. */
     section {
         padding: 6px;
         border-radius: 14px;
         background: var(--surface);
     }
 
-    /* A script's name over who serves it, the same width in every table: room for a path's last
-       parts and a host, both shortened in the middle beyond (see MiddleTruncate). */
+    /* The same in every table: room for a path's last parts and a host, shortened beyond. */
     .script {
         display: grid;
         width: 18em;
@@ -474,8 +454,7 @@
         font-size: 12px;
     }
 
-    /* Names and values of code: broken anywhere when too long for their column, as they are often
-       one long word (an API id, a cookie name). */
+    /* Often one long word (an API id, a cookie name), so broken anywhere. */
     .code {
         font-family: var(--mono);
         font-size: 12px;

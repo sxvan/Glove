@@ -7,11 +7,7 @@
     import ScoreRing from '@/ui/components/ScoreRing.svelte';
     import ScoreTree from './ScoreTree.svelte';
 
-    // The signals a score was combined from, each with how strongly it was observed (its ring) and its
-    // share of the score above it. A signal made from another score opens into that score's signals;
-    // an API opens into the factors its value is the product of, its bits and its rarity weight, which
-    // have no share of their own. With `openStrongest`, the row adding the most is open at first, so
-    // the tree shows that its rows open.
+    // With `openStrongest`, the row adding the most is open at first, so the tree shows that rows open.
     let { nodes, openStrongest = false }: { nodes: ScoreNode[]; openStrongest?: boolean } = $props();
 
     // Only at first: as the score updates, rows stay as the user left them.
@@ -31,7 +27,6 @@
     const hidden = $derived(isApiList && !showAll ? Math.max(0, nodes.length - SHOWN_APIS) : 0);
     const shownNodes = $derived(hidden > 0 ? nodes.slice(0, SHOWN_APIS) : nodes);
 
-    // A row made of signals shows their colors in its ring; one made of APIs or factors keeps its own color.
     const segmentsOf = (node: ScoreNode) => {
         const signals = node.children.filter((child) => !child.api && !child.factor);
         return signals.length > 0 ? shareSegments(signals) : [];
@@ -88,9 +83,7 @@
 </ul>
 
 <style>
-    /* The tree's measures, which its layout and its lines share: the space between rows, the room
-       inside a row (above and below it, and before its chevron), the chevron's size, the space
-       between a row's columns, and how far the rows are in from the guide. */
+    /* Shared by the layout and the tree lines. */
     .tree {
         --gap: 6px;
         --room-y: 4px;
@@ -102,8 +95,7 @@
         --tree-marker: var(--muted);
     }
 
-    /* Indented at every level, the guide under the parent row's chevron (its room, then the middle
-       of its chevron), or at the top under the score the tree is of. */
+    /* The guide sits under the middle of the parent row's chevron. */
     .tree {
         display: grid;
         gap: var(--gap);
@@ -192,7 +184,6 @@
         white-space: nowrap;
     }
 
-    /* Without a detail below it, a label may take two lines, shortened after the second. */
     .label.wrap {
         display: -webkit-box;
         -webkit-box-orient: vertical;
@@ -202,8 +193,7 @@
         white-space: normal;
     }
 
-    /* Like a card's statements: in the body size, toned down between the text and the grey of a
-       detail. */
+    /* Like a card's statements. */
     .label {
         color: color-mix(in srgb, var(--text) 70%, var(--muted));
         font-size: 14px;
@@ -235,8 +225,7 @@
         opacity: 0.6;
     }
 
-    /* Lined up with the APIs' names. An action, not data: grey with a tint of the accent, in full
-       on hover. */
+    /* Lined up with the APIs' names. */
     .more {
         position: relative;
         margin-left: calc(var(--room) + var(--chevron) + var(--columns-gap));
@@ -272,8 +261,7 @@
         text-underline-offset: 2px;
     }
 
-    /* Rows adding nothing to their parent, at the bottom: still there, but quieter; not the tree's
-       lines, which the row draws. */
+    /* Not the tree's lines, which the row draws. */
     .idle > .row > * {
         opacity: 0.55;
     }

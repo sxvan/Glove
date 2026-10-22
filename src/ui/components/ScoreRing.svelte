@@ -1,11 +1,8 @@
 <script lang="ts">
     import type { Segment } from '../signal-colors';
 
-    // How strongly something was observed, as a ring with its value in the middle: closed at full
-    // (value 1). With `points`, the inner ring fills up to where they count as full, and points beyond
-    // that run on as a second lap in an outer ring, closed at twice full; so full always looks the
-    // same. The filled part is in `color`, or split into `segments` (fractions of the filled part) to
-    // show what it is made of.
+    // With `points`, points beyond full run on as a second lap in an outer ring, closed at twice full,
+    // so full always looks the same.
     let {
         value,
         points,
@@ -16,7 +13,7 @@
         title,
     }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; empty?: boolean; text?: string; title: string } = $props();
 
-    // The number in the middle: a score on 0–100 (not a percentage), 95 for 0.95.
+    // A score on 0–100, not a percentage.
     const shownValue = (x: number) => String(Math.round(x * 100));
 
     const clamp = (x: number) => Math.min(1, Math.max(0, x));
@@ -50,7 +47,6 @@
 <span class="ring">
 <svg viewBox="0 0 {SIZE} {SIZE}" role="meter" aria-valuemin={0} aria-valuemax={1} aria-valuenow={clamp(value)} aria-label={title}>
     <title>{title}</title>
-    <!-- Rings start at the top and fill clockwise. -->
     <g transform="rotate(-90 {CENTER} {CENTER})">
         <circle class="track" cx={CENTER} cy={CENTER} r={INNER} />
         {#each arcs as arc, i (i)}
@@ -83,7 +79,6 @@
         height: 100%;
     }
 
-    /* At the lower right, over the end of the outer ring. */
     .times {
         position: absolute;
         right: -6px;

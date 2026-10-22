@@ -1,6 +1,5 @@
 <script lang="ts">
-    // A switch that blocks a script, or lets it run again (see lib/blocking). It follows the stored
-    // list, so other switches for the same script stay in step.
+    // Follows the stored list, so other switches for the same script stay in step.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import { blockKey, loadBlocked, watchBlocked, type BlockedScript } from '@/lib/blocking';
@@ -13,7 +12,6 @@
     const entry = $derived(list.find((script) => script.key === key));
     const blocked = $derived(entry !== undefined);
     const autoText = $derived(entry?.auto ? `Blocked automatically at score ${Math.round(entry.auto.score * 100)}` : '');
-    // What was done after it was switched (see changeBlocked in background).
     let done = $state<SetBlockedResult | null>(null);
 
     onMount(() => {

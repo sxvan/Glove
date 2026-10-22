@@ -1,5 +1,4 @@
-// The script viewer page (entrypoints/viewer) gets everything it shows through its query string,
-// built by the popup and the dashboard and parsed by the viewer with the functions below.
+// The viewer gets everything it shows through its query string.
 import { browser } from 'wxt/browser';
 
 /** Positions passed per API; the most-called ones come first, so the cap keeps the important ones. */
@@ -13,14 +12,12 @@ export interface SourcePosition {
 
 export interface ViewerApi {
     id: string;
-    /** Calls recorded in the page; null if unknown. */
     calls: number | null;
-    /** Positions in the script the API was called from, as recorded from the call stack. */
     positions: SourcePosition[];
 }
 
 export interface ViewerParams {
-    /** The script to show, or for inline scripts the page; only http and https URLs are accepted. */
+    /** For inline scripts the page; only http and https URLs are accepted. */
     url: string;
     name: string;
     apis: ViewerApi[];

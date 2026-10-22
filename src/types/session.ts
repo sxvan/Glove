@@ -2,7 +2,6 @@ import type { DnsResult, FpMetrics, FpBurst, HttpConsolidatedEvent, HttpRequest 
 import type { ApiCallEvent, RequestEvent } from './events';
 import type { CallLocation, StoredItem } from './snapshot';
 
-/** An API's calls by a script: how many, and from where in the code (by "line:column"). */
 export interface ApiCalls {
     count: number;
     /** When it was first and last called (ms since the epoch). */
@@ -13,17 +12,14 @@ export interface ApiCalls {
 
 export interface ScriptState {
     fpEvents: ApiCallEvent[];
-    /** Its calls per API, counted as they arrive. */
     calls: Record<string, ApiCalls>;
-    /** How many calls it made, counted as they arrive, up to the limit (see lib/limits). */
+    /** Up to the limit (see lib/limits). */
     callCount: number;
-    /** Set once it reached the limit of calls kept per script: further ones weren't kept. */
     capped?: boolean;
     httpEvents: RequestEvent[];
     httpConsolidatedEvents: HttpConsolidatedEvent[];
     bursts: FpBurst[];
     fpMetrics?: FpMetrics | null;
-    /** What it stored in the browser, by kind and name (see storeStorageEvent). */
     stored: Record<string, StoredItem>;
 }
 
@@ -37,16 +33,12 @@ export interface DocumentState {
     scripts: Record<string, ScriptState>;
     bursts: FpBurst[];
     fpMetrics?: FpMetrics | null;
-    /** Blocked scripts that tried to load (see lib/blocking), by what they are blocked by. */
+    /** By blockKey. */
     blockedScripts: Record<string, BlockedAttempt>;
-    /**
-     * For a document the page made itself rather than loaded (see notePageMade): the document of the
-     * frame above it, which made it. What happens in it is recorded there (see recordingTarget).
-     */
+    /** For a document the page made itself: the one that made it, where it is recorded (see recordingTarget). */
     madeBy?: DocumentRef;
 }
 
-/** A document of a tab, by its frame and its id. */
 export interface DocumentRef {
     frameId: number;
     documentId: string;

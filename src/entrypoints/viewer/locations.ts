@@ -1,37 +1,24 @@
-// Where in a script's source the fingerprinting APIs are used. Exact locations come from the call
-// positions the fp-recorder takes from stack traces; APIs without recorded positions are found by
-// searching the code for their names, which misses obfuscated access (e.g. obj["to"+"DataURL"]).
+// APIs without recorded positions are found by searching for their names, which misses obfuscated
+// access (e.g. obj["to"+"DataURL"]).
 import { FP_APIS_BY_ID } from '@/lib/fp-apis';
 import type { ViewerApi } from '@/lib/script-viewer';
 
 export interface CodeLocation {
     /** The APIs called here; several when one expression reads many, e.g. `{ width, height } = screen`. */
     apis: string[];
-    /** Character range in the formatted code. */
     start: number;
     end: number;
-    /** True for positions recorded from the call stack, false for search results. */
     exact: boolean;
-    /**
-     * For exact locations: whether the position lands on the API's name or a bracket expression, as
-     * expected. If many don't, the downloaded script differs from the version that ran.
-     */
+    /** If many exact locations aren't, the downloaded script differs from the version that ran. */
     confirmed: boolean;
-    /**
-     * For exact locations: the calls came from code this script generates at runtime (new Function,
-     * eval), which V8 reports at the place the code is generated.
-     */
+    /** Calls from code generated at runtime, which V8 reports where the code is generated. */
     generated: boolean;
 }
 
 /** Bracketed expressions longer than this are only marked at their opening bracket. */
 const MAX_BRACKET_LENGTH = 300;
 
-/**
- * Locations of the APIs in the formatted code: recorded positions where available, search results
- * for the rest. `exactAvailable` is false when the formatted code can't be matched to the original,
- * in which case every API is searched for.
- */
+/** `exactAvailable` is false when the formatted code can't be matched to the original: every API is searched for then. */
 export function locateApis(original: string, formatted: string, apis: ViewerApi[]): { locations: CodeLocation[]; exactAvailable: boolean } {
     const mapper = createPositionMapper(original, formatted);
     const exact: CodeLocation[] = [];
@@ -52,15 +39,11 @@ export function locateApis(original: string, formatted: string, apis: ViewerApi[
     return { locations: merge([...exact, ...searchApiNames(formatted, searchFor)]), exactAvailable: mapper !== null };
 }
 
-/**
- * Maps a 1-based line/column in the original to an offset in the formatted code. Formatting only
- * changes whitespace, so the n-th non-whitespace character is the same in both; returns null if
- * that doesn't hold (e.g. the formatter changed something else).
- */
+// Formatting only changes whitespace, so the n-th non-whitespace character is the same in both;
+// null if that doesn't hold.
 function createPositionMapper(original: string, formatted: string): ((line: number, column: number) => number | null) | null {
     const isSpace = (char: string) => /\s/.test(char);
 
-    // Offsets of the non-whitespace characters, and a check that both sequences are identical.
     const formattedChars: number[] = [];
     for (let i = 0; i < formatted.length; i++) if (!isSpace(formatted[i]!)) formattedChars.push(i);
 
@@ -89,7 +72,7 @@ function createPositionMapper(original: string, formatted: string): ((line: numb
     };
 }
 
-/** Start offset of each line, using the line terminators V8 counts in stack traces. */
+/** With the line terminators V8 counts in stack traces. */
 export function lineStarts(text: string): number[] {
     const starts = [0];
     for (let i = 0; i < text.length; i++) {
@@ -120,7 +103,6 @@ function markRange(code: string, offset: number, prop: string): { start: number;
     }
 
     if (char === '(') {
-        // Mark the callee's last part: `[…]` or a name right before the parenthesis.
         let before = offset - 1;
         while (before >= 0 && /\s/.test(code[before]!)) before--;
         if (code[before] === ']') {
@@ -137,12 +119,10 @@ function markRange(code: string, offset: number, prop: string): { start: number;
 
     const word = /^[\w$]+/.exec(code.slice(offset, offset + 100))?.[0];
     const indirect = word === 'call' || word === 'apply' || word === 'bind';
-    // A call through a variable holding the API's function: `fn(…)`.
     const called = word !== undefined && /^\s*\(/.test(code.slice(offset + word.length, offset + word.length + 20));
     return { start: offset, end: offset + (word?.length ?? 1), confirmed: indirect || called };
 }
 
-/** Offset after the bracket closing the one at `open`, or null if it's too far or missing. */
 function matchForward(code: string, open: number): number | null {
     const opening = code[open]!;
     const closing = opening === '[' ? ']' : opening === '{' ? '}' : ')';
@@ -154,7 +134,6 @@ function matchForward(code: string, open: number): number | null {
     return null;
 }
 
-/** Offset of the `[` matching the `]` at `close`, or null if it's too far or missing. */
 function matchBackward(code: string, close: number): number | null {
     let depth = 0;
     for (let i = close; i >= 0 && close - i < MAX_BRACKET_LENGTH; i--) {
@@ -164,7 +143,7 @@ function matchBackward(code: string, close: number): number | null {
     return null;
 }
 
-/** Owners whose property names are too generic to search for on their own, with their globals. */
+/** Owners whose property names are too generic to search for on their own. */
 const OWNER_GLOBALS: Record<string, string> = {
     Navigator: 'navigator',
     Screen: 'screen',
@@ -208,20 +187,14 @@ function searchPatterns(owner: string, prop: string): RegExp[] {
     ];
 }
 
-/**
- * True for a name used as an object literal key, as in `{ userAgent: … }`: it only names a property
- * and doesn't access the API. Recognized by `{` or `,` before it and `:` after it.
- */
+/** `{ userAgent: … }` only names a property; it doesn't access the API. */
 function isObjectKey(code: string, start: number, end: number): boolean {
     const before = code.slice(Math.max(0, start - 200), start).trimEnd();
     const after = code.slice(end, end + 50).trimStart();
     return /[{,]$/.test(before) && after.startsWith(':');
 }
 
-/**
- * Combines locations so each piece of code is marked once, sorted by position. Exact locations win
- * over search results; identical ranges merge their APIs; other overlaps keep the earlier location.
- */
+/** Each piece of code marked once: exact locations win over search results, other overlaps keep the earlier. */
 function merge(locations: CodeLocation[]): CodeLocation[] {
     const exact = dedupe(locations.filter((l) => l.exact));
     const search = locations.filter((l) => !l.exact && !exact.some((e) => l.start < e.end && e.start < l.end));

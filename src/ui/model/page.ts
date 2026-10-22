@@ -13,7 +13,6 @@ interface PageScore {
     tree: ScoreNode[];
 }
 
-/** The fingerprinting score of the page's most suspicious document (a frame), and its tree. */
 function fingerprintingPage(snapshot: TabSnapshot): PageScore {
     const documents = snapshot.frames.filter((f) => f !== null).map((f) => f.document);
     const document = strongest(documents, (document) => document.fpMetrics?.score ?? 0);
@@ -21,11 +20,8 @@ function fingerprintingPage(snapshot: TabSnapshot): PageScore {
     return { score, likelihood: fpLikelihood(score, snapshot.cutoffs), tree: document ? pageTree(document, score) : [] };
 }
 
-/**
- * The page as a whole, shown like a script: its score, and what all its scripts (see
- * fingerprintingDetails) read and sent together. Of the signs, each shows its strongest script's
- * count, as APIs from different scripts don't add up to one place or one piece of generated code.
- */
+// Each sign shows its strongest script's count: APIs from different scripts don't add up to one
+// place or one piece of generated code.
 export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptDetail[]): ScriptDetail {
     const page = fingerprintingPage(snapshot);
     const url = pageUrl(snapshot) ?? '';
@@ -51,7 +47,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
 
     return {
         key: 'page',
-        // Named by what it is about: the header names the page, over everything said about it.
+        // The header names the page.
         name: 'Fingerprinting',
         path: false,
         origin: 'Page activity',

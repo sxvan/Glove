@@ -31,7 +31,6 @@
             {:else}
                 <span class="name" title={script.url}><MiddleTruncate text={script.name} path={script.path} /></span>
             {/if}
-            <!-- Who really serves it; how a CNAME-cloaked script hides is an info line, and the tooltip. -->
             <span class="origin" title={script.originTitle}>{#if script.path}<MiddleTruncate text={script.origin} />{:else}{script.origin}{/if}</span>
         </div>
         <!-- Also opens what the score was combined from, as the row below says it does. -->
@@ -191,7 +190,6 @@
         text-decoration: underline;
     }
 
-    /* The script's identity: in the text color, not toned down. */
     .origin {
         min-width: 0;
         overflow: hidden;

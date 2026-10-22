@@ -6,7 +6,6 @@
 
     let { settings = $bindable(), onchange }: { settings: ScoringSettings; onchange: () => void } = $props();
 
-    // From the overall score down to its parts.
     const LEVELS: { level: ScoreLevel; note: string }[] = [
         { level: 'page', note: 'The fingerprinting score of a page: its strongest script in full, and the other scripts on top of it.' },
         { level: 'otherScripts', note: "The page's other scripts, on top of the strongest one: scored like a script, from their strongest burst and what they read beyond it." },

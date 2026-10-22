@@ -5,7 +5,6 @@ import { browser } from 'wxt/browser';
 import { listOf, loadStored, watchStored } from './storage';
 
 export interface BlockedScript {
-    /** What it is blocked by: its address without query or fragment (see blockKey). */
     key: string;
     /** When it was blocked (ms since the epoch). */
     since: number;
@@ -17,10 +16,7 @@ const STORAGE_KEY = 'blockedScripts';
 // Scripts the user let run again, by what they are blocked by: never blocked automatically after.
 const EXEMPT_KEY = 'autoBlockExempt';
 
-/**
- * What a script is blocked by: its http(s) address without query or fragment; null for one that can't
- * be blocked by address (inline, generated, other schemes) or that a rule can't express.
- */
+// Null for a script that can't be blocked by address (inline, generated, other schemes) or that a rule can't express.
 export function blockKey(url: string): string | null {
     try {
         const { protocol, origin, pathname } = new URL(url);
@@ -41,17 +37,12 @@ export async function loadExempt(): Promise<string[]> {
     return listOf(await loadStored(EXEMPT_KEY));
 }
 
-/** Lets scripts the user let run again be blocked automatically again, by what they are blocked by. */
 export async function removeExempt(keys: string[]): Promise<void> {
     const exempt = (await loadExempt()).filter((key) => !keys.includes(key));
     await browser.storage.local.set({ [EXEMPT_KEY]: exempt });
 }
 
-/**
- * Blocks the scripts at `urls`, or lets them run again; takes effect on their next load. `auto`
- * gives the score each was blocked automatically at, by URL. Letting a script run again exempts it
- * from being blocked automatically; blocking it by hand takes that back.
- */
+// Letting a script run again exempts it from being blocked automatically; blocking it by hand takes that back.
 export async function setBlocked(urls: string[], blocked: boolean, auto?: Map<string, number>): Promise<void> {
     const keys = new Map(urls.map((url) => [blockKey(url), url] as const).filter((entry): entry is [string, string] => entry[0] !== null));
     if (keys.size === 0) return;
@@ -75,12 +66,7 @@ export function watchExempt(onChange: (keys: string[]) => void): () => void {
     return watchStored(EXEMPT_KEY, (value) => onChange(listOf(value)));
 }
 
-/**
- * Replaces the browser's blocking rules with one per blocked script: its address, with any query
- * after it ("^": the end, or a separator such as "?"), loaded as a script. On the sites the user
- * turned the extension off for (`offSites`, see lib/sites), a rule of higher priority allows all of a
- * page's requests, its frames' included, so nothing is blocked there.
- */
+// On sites the extension is off for, a rule of higher priority allows all of a page's requests, its frames' too.
 export async function syncBlockingRules(list: BlockedScript[], offSites: string[]): Promise<void> {
     const existing = await browser.declarativeNetRequest.getDynamicRules();
     const blockRules = list.map((script, i) => ({
@@ -107,13 +93,10 @@ export async function syncBlockingRules(list: BlockedScript[], offSites: string[
     });
 }
 
-/** What happens right after the user blocks a script, or lets it run again (see the options page). */
 export interface BlockingOptions {
-    /** Load the page again, so the change takes effect at once. */
     reload: boolean;
-    /** After blocking, clear the site's cookies and storage before loading it again, so the script's stored identifiers are gone too. */
+    /** So the script's stored identifiers are gone too. */
     clearData: boolean;
-    /** Block every script that reaches `autoBlockFrom` (0 to 1), as the switch does, with reloading and clearing as set. */
     autoBlock: boolean;
     autoBlockFrom: number;
 }

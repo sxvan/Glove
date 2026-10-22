@@ -3,14 +3,12 @@ import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { ScoringSettings, SignalPart } from '@/lib/scoring';
 import type { ApiCallEvent, RequestEvent } from './events';
 
-// Snapshots are the serializable views of the session state sent to the popup and the dashboard.
 
 export interface MetricsSnapshot {
     distinctFpApis: string[];
     intensity: number;
     durationMs: number;
     score?: number;
-    /** The signals the score was combined from, by signal key (see scoring). */
     signals?: Record<string, SignalPart>;
 }
 
@@ -29,22 +27,18 @@ export interface ScriptSnapshot {
     apiLocations: Record<string, CallLocation[]>;
     /** When each API was first and last called (ms since the epoch). */
     apiTimes: Record<string, { first: number; last: number }>;
-    /** What it stored in the browser, in the order first stored. */
+    /** In the order first stored. */
     stored: StoredItem[];
     /** Its requests carrying data, at any time (see carriesData). */
     requests: HttpConsolidatedEvent[];
     /** The CNAME-cloaked hosts of the site it sent data to, at any time (see isCnameCloaked). */
     cloakedHosts: string[];
-    /** Whether it reached the limit of calls kept per script (see lib/limits). */
     capped?: boolean;
 }
 
 export type StorageKind = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB';
 
-/**
- * A tab's recorded events in the order they happened, for the dashboard's event log (see
- * GetEventLogMessage): asked for apart from the snapshot, as a page has up to tens of thousands.
- */
+/** Asked for apart from the snapshot, as a page has up to tens of thousands of events. */
 export interface EventLog {
     /** When the tab's page started (ms since the epoch); null without one. */
     startTime: number | null;
@@ -68,7 +62,6 @@ export type EventLogEntry = { frameId: string; script: string; time: number } & 
     | { kind: 'stored'; storage: StorageKind; name: string; writes: number }
 );
 
-/** A cookie or storage item a script wrote, with its latest value. */
 export interface StoredItem {
     kind: StorageKind;
     name: string;
@@ -102,7 +95,6 @@ export interface DocumentSnapshot {
     /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
     bursts: MetricsSnapshot[];
     scripts: ScriptSnapshot[];
-    /** Blocked scripts that tried to load (see lib/blocking). */
     blockedScripts: { url: string; attempts: number }[];
 }
 
@@ -114,15 +106,10 @@ export interface FrameSnapshot {
 export interface TabSnapshot {
     cNameRequests: HttpRequest[];
     frames: (FrameSnapshot | null)[];
-    /** Where scores count as possible or likely, from the user's scoring settings. */
     cutoffs: ScoringSettings['cutoffs'];
-    /** Each API's bits and rarity the scores were made with, from the user's scoring settings. */
     apis: ScoringSettings['apis'];
-    /** The exponent rarity counts with (see ScoringSettings.rarityPower). */
     rarityPower: number;
-    /** Whether the page reached the limit of calls kept per page (see lib/limits). */
     callsCapped: boolean;
-    /** What counts as a possible identifier among stored values, and how long after a burst counts as right after it. */
     identifiers: IdentifierRules;
     rightAfterMs: number;
 }

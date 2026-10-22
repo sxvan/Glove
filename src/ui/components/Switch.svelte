@@ -1,8 +1,6 @@
 <script lang="ts">
-    // An on/off setting as a switch, in the text color while on, as a setting is neither good nor
-    // bad; as `status`, green while on and red while off, for whether something works. A checkbox
-    // underneath, so it is labeled, focused and toggled like one. It shows the setting as it is after
-    // a change: `onchange` may decline one, e.g. when asked to confirm it.
+    // In the text color while on, as a setting is neither good nor bad; as `status`, green or red, for
+    // whether something works. `onchange` may decline a change, e.g. when asked to confirm it.
     let {
         checked,
         onchange,
@@ -54,7 +52,6 @@
         transform: translateX(14px);
     }
 
-    /* In the likelihood colors: green for working, red for not; the knob stays white on both. */
     .status {
         background: var(--likely);
     }

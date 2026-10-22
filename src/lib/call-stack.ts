@@ -19,7 +19,6 @@ export interface StackLocation {
     inner?: { line: number; column: number };
 }
 
-/** Where a call was made from, enough to tell places apart (see placeKey). */
 interface CallPlace {
     line: number | null;
     column: number | null;
@@ -28,11 +27,8 @@ interface CallPlace {
     innerColumn?: number | null;
 }
 
-/**
- * A place in the code, as a key: its position in the script, and for generated code also the
- * position inside it. All of a piece of generated code has the position it was generated at, so
- * without the inner position everything it calls would look like one place.
- */
+// All of a piece of generated code has the position it was generated at, so without the inner
+// position everything it calls would look like one place.
 export function placeKey(place: CallPlace): string {
     const inner = place.generated && place.innerLine != null && place.innerColumn != null ? `>${place.innerLine}:${place.innerColumn}` : '';
     return `${place.line}:${place.column}${inner}`;
@@ -41,15 +37,10 @@ export function placeKey(place: CallPlace): string {
 // V8's frames are only in Node's types, Node running on V8 too.
 type CallSite = NodeJS.CallSite;
 
-/**
- * Creates a reader for the page scripts on the stack, reading up to `maxFrames` frames. Call it
- * before page scripts run: it captures Error.captureStackTrace then, so a page that patches it
- * can't affect the reader.
- */
+// Create it before page scripts run, so a page patching Error.captureStackTrace can't affect it.
 export function createStackReader(maxFrames: number): (hook: Function) => StackLocation[] {
     const captureStackTrace = (Error as unknown as { captureStackTrace: (target: object, skipAbove: Function) => void }).captureStackTrace;
 
-    /** Captures the stack from the caller of `hook` on, leaving out the extension's own frames. */
     function captureSites(hook: Function): CallSite[] {
         const holder: { stack?: CallSite[] } = {};
         const savedLimit = Error.stackTraceLimit;
@@ -77,11 +68,7 @@ export function createStackReader(maxFrames: number): (hook: Function) => StackL
         return Array.isArray(sites) ? sites : [];
     }
 
-    /**
-     * The page script positions on the stack, from the caller of `hook` outwards. Code generated with
-     * new Function or eval has no URL of its own; it counts for the script that generated it, at the
-     * place it did, with the position inside the generated code as well.
-     */
+    // Generated code has no URL of its own: it counts for the script that generated it, where it did.
     return (hook) => {
         const locations: StackLocation[] = [];
         for (const site of captureSites(hook)) {

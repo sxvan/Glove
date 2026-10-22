@@ -1,8 +1,6 @@
 <script lang="ts" generics="Row">
-    // A table of rows, sorted by the column whose heading was clicked last; a second click on it
-    // turns the order around. The caller draws the cells (`cell`, by row and column key) and filters
-    // the rows; the table sorts them. With `pageSize`, it shows that many of the sorted rows, and more
-    // on request: a page's thousands of calls would take long to draw at once.
+    // With `pageSize`, it shows that many rows and more on request: a page's thousands of calls would
+    // take long to draw at once.
     import { untrack, type Snippet } from 'svelte';
     import type { Column, Sorting } from './columns';
 
@@ -20,11 +18,11 @@
     const sorted = $derived.by(() => {
         const column = columns.find((c) => c.key === sorting.key);
         if (!column) return rows;
-        // Array sorting keeps the order of equal rows, so ties stay as the caller listed them.
+        // Stable, so ties stay as the caller listed them.
         return [...rows].sort((a, b) => compare(column.sortBy(a), column.sortBy(b), sorting.descending));
     });
 
-    /** Text from A to Z, numbers by size, turned around when descending; null always last. */
+    /** Null always last. */
     function compare(a: string | number | null, b: string | number | null, descending: boolean): number {
         if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
         const order = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b));
@@ -76,7 +74,6 @@
         font-size: 13px;
     }
 
-    /* The headings stay in view while the page scrolls through the rows. */
     th {
         position: sticky;
         top: 0;
@@ -113,8 +110,7 @@
         color: var(--text);
     }
 
-    /* Which way it is sorted: a small chevron, down for largest or Z first, up for the other way;
-       hidden on the other columns until hovered. */
+    /* Down for largest or Z first; hidden on the other columns until hovered. */
     .arrow {
         width: 5px;
         height: 5px;
@@ -148,7 +144,7 @@
         white-space: nowrap;
     }
 
-    /* Every second row on the fill, as in the popup's lists: rows told apart without lines. */
+    /* Rows told apart without lines, as in the popup's lists. */
     tbody tr:nth-child(even) {
         background: var(--fill);
     }

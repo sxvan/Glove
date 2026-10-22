@@ -11,12 +11,8 @@ export function pageHost(snapshot: TabSnapshot): string {
     return hostOf(url) || url || '';
 }
 
-/**
- * How to present a script recorded under `url`: the fp-recorder stores the caller's URL from the
- * stack trace, which is "null" when unknown, the document URL for inline code, or a blob:/data: URL
- * for code generated at runtime. `host` is the host the script belongs to, if any; `linkable` is
- * true for script files, `inline` for code inline in the page.
- */
+// The recorder stores the caller's URL from the stack trace: "null" when unknown, the document URL
+// for inline code, a blob: or data: URL for code generated at runtime.
 export function describeScript(
     url: string,
     documentUrl: string | null
@@ -30,8 +26,7 @@ export function describeScript(
         return { name: 'Inline script', path: false, origin: `Embedded in ${host}`, host, linkable: false, inline: true };
     }
 
-    // Code of a blank frame the page made and filled itself, and is recorded with (see
-    // lib/recording-document): inline, but not in the page's source, so not shown there.
+    // A blank frame the page filled itself (see lib/recording-document): not in the page's source.
     if (/^about:/i.test(url)) {
         const host = documentUrl ? hostOf(documentUrl) : '';
         return { name: 'Inline script', path: false, origin: host ? `In a frame of ${host}` : 'In a frame', host: host || null, linkable: false, inline: false };
@@ -58,7 +53,7 @@ export function describeScript(
     };
 }
 
-/** The URL if it uses http or https. Script URLs come from page stack traces, so other schemes are not linked. */
+// Script URLs come from page stack traces, so other schemes are not linked.
 export function linkableUrl(url: string): string | null {
     try {
         const { protocol } = new URL(url);
@@ -68,7 +63,6 @@ export function linkableUrl(url: string): string | null {
     }
 }
 
-/** The URL's path, e.g. "/libs/launch-ENdd5c82….min.js"; its last segment is the file name. */
 export function urlPath(url: string): string {
     return `/${pathSegments(url).join('/')}`;
 }
@@ -81,7 +75,6 @@ function pathSegments(url: string): string[] {
     }
 }
 
-/** Hosts on the page that are CNAME-cloaked, each with the host it is really an alias for. */
 export function cloakedHosts(snapshot: TabSnapshot): Map<string, string> {
     const aliases = new Map<string, string>();
     for (const req of snapshot.cNameRequests) {
@@ -92,22 +85,17 @@ export function cloakedHosts(snapshot: TabSnapshot): Map<string, string> {
     return aliases;
 }
 
-/** The host a script came from, and the server it is an alias (CNAME) for if it is cloaked. */
 export function originTitle(host: string | null, aliases: Map<string, string>): string {
     if (!host) return '';
     const target = aliases.get(host);
     return target ? `${host}, an alias (CNAME) for ${target}` : host;
 }
 
-/** The host a script really comes from: for a CNAME-cloaked host the server it points to, otherwise itself. */
 export function realHost(host: string, aliases: Map<string, string>): string {
     return (aliases.get(host) ?? host).replace(/\.$/, '');
 }
 
-/**
- * The site a host really belongs to: for a CNAME-cloaked host the site of the server it points to,
- * since a first-party name doesn't tell who serves it; otherwise the host's own site.
- */
+// For a CNAME-cloaked host, the site it points to: a first-party name doesn't tell who serves it.
 export function realSite(host: string | null, aliases: Map<string, string>): string | null {
     if (!host) return null;
     return getEtld1(aliases.get(host) ?? host);

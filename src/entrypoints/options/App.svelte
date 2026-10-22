@@ -32,14 +32,9 @@
         { id: 'apis', title: 'Fingerprinting APIs' },
     ];
 
-    // Every page stays in the document, only the current one shown, so each section keeps following
-    // its settings (see anyChanged).
+    // Every page stays in the document, so each section keeps reporting `changed` (see anyChanged).
     let page = $state<PageId>('general');
 
-    /**
-     * Shows what the address's hash names: a page, or a section on one, such as a "made from" link's,
-     * scrolled to. A section's page is the one it is in.
-     */
     async function follow() {
         const id = decodeURIComponent(location.hash.slice(1));
         const named = PAGES.find((p) => p.id === id);
@@ -55,7 +50,7 @@
         return () => window.removeEventListener('hashchange', follow);
     });
 
-    // Once the scoring settings are there, their sections are too: a hash may name one of them.
+    // A hash may name a section of the scoring settings, which only exist once loaded.
     onMount(async () => {
         settings = await loadScoringSettings();
         await tick();
@@ -71,18 +66,13 @@
         }, SAVE_DELAY_MS);
     }
 
-    // The theme, kept by the page so a reset sets it back too.
     let theme = $state<Theme>(storedTheme());
     function resetTheme() {
         theme = 'system';
         setTheme('system');
     }
 
-    /**
-     * Sets every setting back to its default: scoring, privacy, blocking, performance and the theme.
-     * Not the lists of blocked scripts, of scripts never blocked automatically, and of sites the
-     * extension is off for: those are the user's choices, with buttons of their own.
-     */
+    // Not the lists (blocked scripts, exempt scripts, sites turned off): those are the user's choices.
     async function reset() {
         if (!confirm('Set all settings back to their defaults? Blocked scripts and the sites the extension is off for stay as they are.')) return;
         clearTimeout(saveTimer);
@@ -92,8 +82,6 @@
         status = 'All settings reset to their defaults.';
     }
 
-    // Whether the sections of their own differ from their defaults (each tells), and so whether
-    // "Reset all" has anything to do.
     let privacyChanged = $state(false);
     let blockingChanged = $state(false);
     let limitsChanged = $state(false);
@@ -121,7 +109,6 @@
     </nav>
 
     <main>
-        <!-- Each section that isn't a scoring setting titles itself and resets its own settings. -->
         <div class="page" data-page="general" hidden={page !== 'general'}>
             <section class="squircle">
                 <SectionHead title="Appearance" changed={theme !== 'system'} onreset={resetTheme} />
@@ -168,7 +155,6 @@
 </div>
 
 <style>
-    /* The navigation beside the pages, both centered; a page is as wide as reads well. */
     .layout {
         display: grid;
         grid-template-columns: auto minmax(0, 760px);
@@ -179,7 +165,6 @@
         padding: var(--page-top) 20px 48px;
     }
 
-    /* Stays in view while a long page scrolls, where it starts. */
     nav {
         position: sticky;
         top: var(--page-top);
@@ -219,7 +204,6 @@
         font-weight: 600;
     }
 
-    /* A narrow window: the pages as a row of tabs above them. */
     @media (max-width: 760px) {
         .layout {
             grid-template-columns: minmax(0, 1fr);
@@ -254,8 +238,7 @@
         font-size: inherit;
     }
 
-    /* As wide as the navigation's links and button make it, wrapping there: its length doesn't
-       change the navigation's width. */
+    /* Its length doesn't change the navigation's width. */
     .status {
         contain: inline-size;
         margin: 0 12px;

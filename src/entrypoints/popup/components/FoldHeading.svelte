@@ -1,6 +1,5 @@
 <script lang="ts">
-    // A heading over a list of cards that folds and unfolds them: the heading itself is the button,
-    // its chevron like the one of "How the score came about" (see FingerprintCard).
+    // Its chevron like the one of "How the score came about" (see FingerprintCard).
     let { title, count, open = $bindable(true) }: { title: string; count: number; open?: boolean } = $props();
 </script>
 

@@ -1,6 +1,5 @@
 <script lang="ts">
-    // How many calls are kept (see lib/limits), laid out like the other settings, each with its
-    // default; saved once a field is left, not as typed.
+    // Saved once a field is left, not as typed.
     import { onMount } from 'svelte';
     import { DEFAULT_LIMITS, LIMIT_FIELDS, loadLimits, saveLimits, watchLimits, type PerformanceLimits } from '@/lib/limits';
     import { positiveFromInput } from './inputs';
@@ -16,7 +15,6 @@
 
     const sectionChanged = $derived(LIMIT_FIELDS.some(({ key }) => limits[key] !== DEFAULT_LIMITS[key]));
 
-    // Whether the section differs from its defaults, for the page's "Reset all" (see App).
     let { changed = $bindable(false) }: { changed?: boolean } = $props();
     $effect(() => {
         changed = sectionChanged;

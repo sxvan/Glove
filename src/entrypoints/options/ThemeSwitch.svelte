@@ -1,6 +1,4 @@
 <script lang="ts">
-    // The extension's appearance as a segmented control: the system's, light or dark. `theme` can be
-    // bound, e.g. to reset it.
     import { setTheme, storedTheme, type Theme } from '@/lib/theme';
 
     const THEMES: { theme: Theme; label: string }[] = [
@@ -25,7 +23,7 @@
 </div>
 
 <style>
-    /* Segments as wide as the widest, on the page's background, as it sits on a section. */
+    /* On the page's background, as it sits on a section. */
     .segments {
         display: inline-grid;
         grid-auto-columns: 1fr;

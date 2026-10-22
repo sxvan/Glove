@@ -2,7 +2,6 @@ import type { Browser } from 'wxt/browser';
 import type { ApiCallEvent, RequestEvent } from './events';
 import type { SignalPart } from '@/lib/scoring';
 
-/** One answer record of a DNS response (see dns-lookup). */
 export interface DnsAnswer {
     name: string;
     type: number;
@@ -21,17 +20,11 @@ export interface DnsResult {
     finalEtld1: string | null;
 }
 
-/** A webRequest event, enriched with document and DNS information during analysis. */
 export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
     hostname: string | null;
     documentUrl: string | null;
-    /**
-     * The URL of the tab's page (its top frame) when the request was made; the same as documentUrl
-     * for the page's own requests. CNAME cloaking is judged against it: hiding behind the name of
-     * the site the user visits, not an ad frame's own domain.
-     */
+    /** The tab's page when the request was made: cloaking is judged against it, not an ad frame's own domain. */
     pageUrl: string | null;
-    /** The size of the request's body in bytes; 0 without one. */
     bodyBytes: number;
     isCnameCloaked?: boolean;
     cRecords?: CnameRecord[];
@@ -43,7 +36,6 @@ export interface FpMetrics {
     intensity: number;
     durationMs: number;
     score?: number;
-    /** The signals the score was combined from, by signal key (see scoring). */
     signals?: Record<string, SignalPart>;
 }
 

@@ -6,11 +6,7 @@ interface ScheduleState {
     timerId: ReturnType<typeof setTimeout> | null;
 }
 
-/**
- * Runs a key's task once the key has been quiet for `debounceMs`, and at least every
- * `maxIntervalMs` while it isn't, so a page calling APIs nonstop is still analyzed. Keyed by an
- * object, e.g. a document, so a key's state goes with it.
- */
+// At least every `maxIntervalMs`, so a page calling APIs nonstop is still analyzed.
 export function createScheduler({ debounceMs = 500, maxIntervalMs = 5000 } = {}) {
     const states = new WeakMap<object, ScheduleState>();
 
