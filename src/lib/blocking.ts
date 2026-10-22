@@ -1,9 +1,6 @@
 // Scripts the user chose to block, kept in storage and enforced by the browser through
 // declarativeNetRequest. A script is blocked by its address without query or fragment, so a new
 // version parameter doesn't let it through again, on every site, as the same tracker runs on many.
-// The background keeps the rules in step with the list (see syncBlockingRules), notes when a
-// blocked script tried to load, and, if the user chose so, blocks scripts that reach a score by
-// itself (see BlockingOptions.autoBlock and background).
 import { browser } from 'wxt/browser';
 import { listOf, loadStored, watchStored } from './storage';
 
@@ -40,7 +37,6 @@ export async function loadBlocked(): Promise<BlockedScript[]> {
     return listOf(await loadStored(STORAGE_KEY));
 }
 
-/** The scripts the user let run again (see EXEMPT_KEY). */
 export async function loadExempt(): Promise<string[]> {
     return listOf(await loadStored(EXEMPT_KEY));
 }
@@ -71,12 +67,10 @@ export async function setBlocked(urls: string[], blocked: boolean, auto?: Map<st
     await browser.storage.local.set({ [STORAGE_KEY]: list, ...(auto ? {} : { [EXEMPT_KEY]: exempt }) });
 }
 
-/** Calls `onChange` with the list whenever it changes. */
 export function watchBlocked(onChange: (list: BlockedScript[]) => void): () => void {
     return watchStored(STORAGE_KEY, (value) => onChange(listOf(value)));
 }
 
-/** Calls `onChange` with the exempt scripts whenever they change. */
 export function watchExempt(onChange: (keys: string[]) => void): () => void {
     return watchStored(EXEMPT_KEY, (value) => onChange(listOf(value)));
 }
@@ -141,7 +135,6 @@ export function saveBlockingOptions(options: BlockingOptions): Promise<void> {
     return browser.storage.local.set({ [OPTIONS_KEY]: options });
 }
 
-/** Calls `onChange` with the options whenever the user changes them. */
 export function watchBlockingOptions(onChange: (options: BlockingOptions) => void): () => void {
     return watchStored<Partial<BlockingOptions>>(OPTIONS_KEY, (value) => onChange({ ...DEFAULT_BLOCKING_OPTIONS, ...value }));
 }

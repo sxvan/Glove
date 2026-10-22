@@ -7,19 +7,19 @@ export type RecorderMessage =
     | { type: 'http'; payload: HttpMonkeyEvent }
     | { type: 'storage-batch'; payload: StorageMonkeyEvent[] };
 
-/** Popup -> background; answered with a TabSnapshot */
+/** Popup or dashboard -> background; answered with a TabSnapshot, or undefined without a recording. */
 export interface GetTabSnapshotMessage {
     type: 'GET_TAB_SNAPSHOT';
     tabId: number;
 }
 
-/** Details page -> background; answered with the tab's EventLog, or undefined without a recording. */
+/** Dashboard -> background; answered with the tab's EventLog, or undefined without a recording. */
 export interface GetEventLogMessage {
     type: 'GET_EVENT_LOG';
     tabId: number;
 }
 
-/** Background -> popup */
+/** Background -> open popups and dashboards, after an analysis. */
 export interface AnalysisUpdatedMessage {
     type: 'ANALYSIS_UPDATED';
     tabId: number;

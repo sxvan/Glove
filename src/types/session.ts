@@ -12,7 +12,6 @@ export interface ApiCalls {
 }
 
 export interface ScriptState {
-    /** Its raw calls. */
     fpEvents: FpMonkeyEvent[];
     /** Its calls per API, counted as they arrive. */
     calls: Record<string, ApiCalls>;

@@ -25,12 +25,10 @@ export function getHostname(urlOrHostname: string | null | undefined): string | 
         return null;
     }
 
-    // 1) If it already looks like a hostname, return it directly
     if (/^[a-z0-9.-]+$/i.test(urlOrHostname) && !urlOrHostname.includes('://')) {
         return urlOrHostname;
     }
 
-    // 2) Otherwise, try to parse as a URL
     try {
         return new URL(urlOrHostname).hostname;
     } catch {

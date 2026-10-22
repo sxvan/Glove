@@ -8,8 +8,9 @@ import { detectSpikes } from './spike-detection';
 
 /**
  * How much an API adds to a burst's API signals, to find the window reading the most (see
- * detectSpikes): its bits (not what it adds beyond overlapping ones) and its rarity to rarityPower, each relative to where its signal is
- * full and weighed by the signal's strength. Close to the burst's score, and cheap to add up.
+ * detectSpikes): its bits (not what it adds beyond overlapping ones) times its rarity to
+ * rarityPower, relative to where the signal is full and weighed by its strength. Close to the
+ * burst's score, and cheap to add up.
  */
 function burstWeight(level: 'burst' | 'pageBurst', settings: ScoringSettings): (apiId: string) => number {
     const { rareIdentifying } = settings.strengths.burst;
@@ -141,11 +142,9 @@ function computeScriptFpScore(script: ScriptState, url: string, document: Docume
     const metrics = script.fpMetrics!;
     const burstScores = script.fpSpikes.map((s) => s.fpMetrics?.score ?? 0);
 
-    // As a fallback for collecting spread out, the script's own API signals count only what it read
-    // beyond its strongest burst: that burst's APIs, their places and generated code are already
-    // counted through it. Reads spread out and those of its other bursts count, so splitting a
-    // collection into bursts doesn't hide it; what they reveal is measured on top of what the burst
-    // revealed (see apisSumsBeyond).
+    // A fallback for collecting spread out: the script's own API signals count only what it read
+    // beyond its strongest burst, which counted the rest, on top of what the burst revealed (see
+    // apisSumsBeyond). So splitting a collection into several bursts doesn't hide it.
     const strongest = script.fpSpikes.reduce<FpSpike | null>((best, spike) => ((spike.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? spike : best), null);
     const counted = new Set(strongest?.events.map((event) => event.id) ?? []);
     const beyond = script.fpEvents.filter((event) => !counted.has(event.id));
@@ -245,17 +244,14 @@ function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: Scor
         .reduce((most, sum) => (sum.value > most.value ? sum : most), apisSums([], level, settings).rareIdentifying);
 }
 
-/** The API signals for what the APIs read add beyond those already counted (see apisSumsBeyond). */
 function apiSignalsBeyond(known: Iterable<string>, distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings) {
     return apiSignalsOf(apisSumsBeyond(known, distinctApis, level, settings));
 }
 
-/** The rare identifying APIs signal for the different APIs read (see apisSums). */
 function apiSignals(distinctApis: Iterable<string>, level: ApisLevel, settings: ScoringSettings) {
     return apiSignalsOf(apisSums(distinctApis, level, settings));
 }
 
-/** The API signal's value and sum by signal key. */
 function apiSignalsOf({ rareIdentifying }: ApisSums) {
     return { values: { rareIdentifying: rareIdentifying.value }, sums: { rareIdentifying } };
 }

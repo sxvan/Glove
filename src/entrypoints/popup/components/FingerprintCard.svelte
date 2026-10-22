@@ -1,7 +1,5 @@
 <script lang="ts">
-    // A card for a script, or for the page as a whole (all its scripts together): its name and who
-    // serves it beside the score, then what it read, signs of fingerprinting, and where it sent data;
-    // last, for a script, the switch that blocks it.
+    // A card for a script, or for the page as a whole (all its scripts together).
     import { blockKey } from '@/lib/blocking';
     import { viewerUrl } from '@/lib/script-viewer';
     import type { ScriptDetail } from '../model';
@@ -14,10 +12,8 @@
     import ScoreTree from './ScoreTree.svelte';
     import SignalLine from './SignalLine.svelte';
 
-    // `onDetails` opens the details page at the table of a statement (by its key).
     let { script, onDetails }: { script: ScriptDetail; onDetails?: (statement: string) => void } = $props();
 
-    // Whether the signals the score was combined from show.
     let breakdown = $state(false);
 
     // Only a script loaded from an address can be blocked; not the page as a whole, nor inline or
@@ -26,7 +22,6 @@
 </script>
 
 <article class="card sleek">
-    <!-- The name over who serves it, beside the score ring over the likelihood. -->
     <div class="head">
         <div class="who">
             {#if script.viewer}
@@ -37,7 +32,6 @@
                 <span class="name" title={script.url}><MiddleTruncate text={script.name} path={script.path} /></span>
             {/if}
             <!-- Who really serves it; how a CNAME-cloaked script hides is an info line, and the tooltip. -->
-            <!-- A host, when too long, is shortened in the middle, keeping its site at the end. -->
             <span class="origin" title={script.originTitle}>{#if script.path}<MiddleTruncate text={script.origin} />{:else}{script.origin}{/if}</span>
         </div>
         <!-- Also opens what the score was combined from, as the row below says it does. -->
@@ -93,14 +87,11 @@
 </article>
 
 <style>
-    /* The parts of a card are separated by space only. */
     .sleek {
         display: grid;
         gap: 16px;
     }
 
-    /* The name over who serves it, as one tight block, centered beside the score ring with its
-       likelihood under it as a caption. The ring's column is narrow, so the name gets the width. */
     .head {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -130,8 +121,6 @@
         cursor: default;
     }
 
-    /* A row in the fill color, like the API table's "everyday reads": its text, then its chevron, with
-       room inside on both sides. */
     .breakdown {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -154,7 +143,6 @@
         color: var(--text);
     }
 
-    /* Open, a little more room before the tree, which starts under it. */
     .breakdown[aria-expanded='true'] {
         margin-bottom: 8px;
     }
@@ -167,8 +155,7 @@
         height: var(--chevron-button);
     }
 
-    /* Points down while the breakdown is closed, up while it is open; muted, as the row's text is.
-       The size of the card's other chevrons: they differ in direction. */
+    /* The size of the card's other chevrons, which differ only in direction. */
     .chevron {
         width: 6px;
         height: 6px;
@@ -187,8 +174,6 @@
         border-color: var(--text);
     }
 
-    /* One line, shortened in the middle when too long (see MiddleTruncate); the tooltip has the
-       full URL. */
     .name {
         display: block;
         min-width: 0;
@@ -196,7 +181,6 @@
         font-weight: 600;
     }
 
-    /* The title links to the script viewer; underlined on hover. */
     .link {
         color: inherit;
         text-decoration: none;
@@ -207,7 +191,7 @@
         text-decoration: underline;
     }
 
-    /* The script's identity, next to its file name: in the text color, not toned down. */
+    /* The script's identity: in the text color, not toned down. */
     .origin {
         min-width: 0;
         overflow: hidden;
@@ -216,7 +200,7 @@
         white-space: nowrap;
     }
 
-    /* Lines that lead to the same table: one beside the other, with their chevron as an info line's. */
+    /* Lines leading to the same table, beside their one chevron, placed as an info line's. */
     .joined.details {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -231,7 +215,6 @@
         list-style: none;
     }
 
-    /* What the card says about the script: facts and signs of fingerprinting, one per line. */
     .statements {
         display: grid;
         gap: 6px;

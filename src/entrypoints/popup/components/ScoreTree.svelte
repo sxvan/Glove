@@ -8,13 +8,10 @@
     import ScoreTree from './ScoreTree.svelte';
 
     // The signals a score was combined from, each with how strongly it was observed (its ring) and its
-    // share of the score above it (the shares of siblings add up to it). A signal made
-    // from another score opens into that score's signals, e.g. a script's strongest burst into the
-    // burst's, and a signal made from the APIs read into those APIs. An API opens into the factors
-    // its value is the product of, its bits and its rarity weight, which have no share of their own.
-    // Each row hangs off a guide on the left (see .tree), from the row it is under or, at the top,
-    // from the score the tree is of. With `openStrongest`, the row adding the most that opens is
-    // open at first, one level, so the tree shows that its rows open.
+    // share of the score above it. A signal made from another score opens into that score's signals;
+    // an API opens into the factors its value is the product of, its bits and its rarity weight, which
+    // have no share of their own. With `openStrongest`, the row adding the most is open at first, so
+    // the tree shows that its rows open.
     let { nodes, openStrongest = false }: { nodes: ScoreNode[]; openStrongest?: boolean } = $props();
 
     // Only at first: as the score updates, rows stay as the user left them.
@@ -115,8 +112,6 @@
         list-style: none;
     }
 
-    /* Chevron | label and detail | ring with how strongly it was observed | share of the score above:
-       each as wide as it is, the text taking the rest. */
     .row {
         position: relative;
         display: grid;
@@ -135,8 +130,7 @@
         text-align: left;
     }
 
-    /* A row that opens says so on hover: it lights up in the fill color, like the card's "How the
-       score came about" row. */
+    /* A row that opens lights up on hover, like the card's "How the score came about". */
     button.row {
         border-radius: 8px;
         cursor: pointer;
@@ -146,9 +140,8 @@
         background: var(--fill);
     }
 
-    /* A disclosure chevron, as in file trees: pointing right while closed, down while open; the
-       size of the card's other chevrons. Rows that don't open have none. Its column is the row's
-       full height, for the guide below it. */
+    /* The size of the card's other chevrons. Its column is the row's full height, for the guide
+       below it. */
     .toggle {
         position: relative;
         align-self: stretch;
@@ -222,13 +215,11 @@
         font-size: 12px;
     }
 
-    /* An API's name is code: in the detail size. */
     .label.api {
         font-family: var(--mono);
         font-size: 12px;
         font-weight: 400;
     }
-
 
     /* Its share of the score above: secondary to how strongly it was observed. Room for the widest,
        "+100", so the rings line up at every level of the tree. */
@@ -244,9 +235,8 @@
         opacity: 0.6;
     }
 
-    /* Show more / show less under a list of APIs, lined up with their names: an action, not data,
-       so grey with a tint of the accent and a chevron pointing where the list goes (down to
-       expand, up to collapse), but quiet; in full on hover. */
+    /* Lined up with the APIs' names. An action, not data: grey with a tint of the accent, in full
+       on hover. */
     .more {
         position: relative;
         margin-left: calc(var(--room) + var(--chevron) + var(--columns-gap));
@@ -288,7 +278,6 @@
         opacity: 0.55;
     }
 
-    /* Signals of the score a signal was made from, under the row: its tree indents them. */
     .children {
         margin: 6px 0 8px;
     }

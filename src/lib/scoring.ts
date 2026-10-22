@@ -8,8 +8,8 @@
 //     score = 1 - (1 - strength1 * value1) * (1 - strength2 * value2) * ...
 //
 // So a signal that isn't present changes nothing, adding a signal never needs the others adjusted,
-// and a score can never exceed 1. Strengths and the likelihood cutoffs can be changed by the user on
-// the options page; the defaults and the "full at" limits are defined here.
+// and a score can never exceed 1. Every setting here is a default the user can change on the options
+// page.
 import { DEFAULT_IDENTIFIER_RULES, type IdentifierRules } from './identifiers';
 import { browser } from 'wxt/browser';
 import { loadStored, watchStored } from './storage';
@@ -162,7 +162,6 @@ export const LEVEL_LABELS: Record<ScoreLevel, string> = {
     burst: 'Burst of calls',
 };
 
-/** Where a score counts as possible or likely. */
 export interface Cutoffs {
     possible: number;
     likely: number;
@@ -318,7 +317,6 @@ export const IDENTIFIER_RULE_FIELDS: { key: keyof IdentifierRules; label: string
 
 // ---------- combining ----------
 
-/** Combines a level's signal values into a score from 0 to 1, using the settings' strengths. */
 function combine<L extends ScoreLevel>(level: L, values: SignalValues<L>, settings: ScoringSettings): number {
     const strengths = settings.strengths[level];
     let remaining = 1;
@@ -362,7 +360,6 @@ export function combineParts<L extends ScoreLevel>(
     return { score: combine(level, values, settings), parts };
 }
 
-/** `value` relative to where it counts as full, from 0 to 1. */
 function saturate(value: number, fullAt: number): number {
     return fullAt > 0 ? clamp01(value / fullAt) : 0;
 }
@@ -462,16 +459,10 @@ function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, know
 }
 
 /**
- * The API signals for what `distinctApis` add on top of `knownApis`, which are already counted
- * elsewhere: a script's beyond its strongest burst, a page's beyond its strongest script.
- *
- * The bits start from those the known APIs reveal together, then add the others, the most bits
- * first: one revealing a value already counted adds nothing (or what it has more), one whose overlap
- * group already has a counted API (known or added before) adds what it adds beside it, any other its
- * bits.
- *
- * Rare identifying APIs are those amounts times rarity, likewise toward fullAt from the known
- * APIs' rare bits: known APIs reaching full already show what a fingerprinter collects.
+ * The API signals for what `distinctApis` add on top of `knownApis`, already counted elsewhere: a
+ * script's beyond its strongest burst, a page's beyond its strongest script. The others add, the most
+ * bits first, only what isn't counted yet; their rare bits go toward fullAt from the known APIs' rare
+ * bits, as known APIs reaching full already show what a fingerprinter collects.
  */
 export function apisSumsBeyond(
     knownApis: Iterable<string>,

@@ -98,8 +98,7 @@ function hookFetch() {
 
     const describe = createFetchDescriber();
 
-    // Method syntax, as for all hooks: no prototype and not callable with new, like the original
-    // (see disguise).
+    // Method syntax: no prototype and not callable with new, like the original.
     const hookedFetch = {
         fetch(this: unknown, input: RequestInfo | URL, init?: RequestInit) {
             // Recording must never change what the page observes, so its errors are ignored.
@@ -123,7 +122,7 @@ const NORMALIZED_METHODS = new Set(['DELETE', 'GET', 'HEAD', 'OPTIONS', 'POST', 
  * body of a Request input and throw synchronously on invalid input.
  */
 function createFetchDescriber() {
-    // Captured at install time, before page scripts run, so replaced globals can't affect them.
+    // Captured before page scripts run.
     const requestUrl = nativeGetter<string>(Request.prototype, 'url');
     const requestMethod = nativeGetter<string>(Request.prototype, 'method');
     const requestCredentials = nativeGetter<string>(Request.prototype, 'credentials');
@@ -155,7 +154,6 @@ function resolveUrl(url: string): string | null {
         return null;
     }
 }
-
 
 // Wraps open/send on the prototype rather than replacing the XMLHttpRequest constructor,
 // so static constants (XMLHttpRequest.DONE), subclassing and constructor identity keep working.

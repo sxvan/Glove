@@ -1,12 +1,7 @@
 <script lang="ts">
-    // A line in a card's list of statements, with an icon for its tone: an info icon for a plain
-    // fact ("Read 40 fingerprinting APIs"), a warning triangle for a sign of fingerprinting. With a
-    // detail (text, or content such as a list of requests) below it. As `lead`, it is one of a card's
-    // main statements: it stands out a little, also without a detail. With `onDetails`, a column on
-    // the right holds a chevron, leading to a screen about the statement; `details` reserves that
-    // column, so lines with and without it keep the same width. With an `explanation`, its icon shows
-    // it as a tip (see InfoTip).
-    import type { Snippet } from 'svelte';
+    // A line in a card's list of statements, with an icon for its tone: info for a plain fact, a
+    // warning triangle for a sign of fingerprinting. `details` gives it a column for the chevron that
+    // opens the details page, so lines with and without one keep the same width.
     import type { TextPart } from '../text-parts';
     import DetailsButton from './DetailsButton.svelte';
     import InfoTip from './InfoTip.svelte';
@@ -108,7 +103,6 @@
         color: var(--info);
     }
 
-    /* Icon | text | chevron. */
     .details {
         grid-template-columns: auto minmax(0, 1fr) auto;
     }

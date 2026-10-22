@@ -1,8 +1,7 @@
 <script lang="ts">
-    // An "i" icon that shows an explanation on hover or keyboard focus. Explanations live in these
-    // tips, so the screens show the findings, not how they came about. When shown, the tip places
-    // itself inside the popup: shifted sideways as needed, and above the icon when there is no room
-    // below it. `children` are the icon, e.g. an info line's own.
+    // An icon that shows an explanation on hover or keyboard focus, so the cards show the findings,
+    // not how they came about. The tip places itself inside the popup: shifted sideways as needed,
+    // and above the icon when there is no room below it.
     import type { Snippet } from 'svelte';
 
     let { label, text, children }: { label: string; text: string; children: Snippet } = $props();

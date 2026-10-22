@@ -159,7 +159,6 @@
         color: var(--muted);
     }
 
-    /* How many rows show, and a button for the next page, as the page's other buttons. */
     .more {
         display: flex;
         align-items: center;

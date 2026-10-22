@@ -27,7 +27,6 @@ export function inlineScripts(html: string, apis: ViewerApi[]): { scripts: Inlin
     const pageLines = lineStarts(html);
     const elements = scriptElements(html, pageLines);
 
-    // Per script element, per API: the positions falling into it.
     const found = new Map<number, Map<string, SourcePosition[]>>();
     for (const api of apis) {
         for (const position of api.positions) {
@@ -67,7 +66,6 @@ interface ScriptElement {
     lineStarts: number[];
 }
 
-/** The page's inline JavaScript elements: without a src attribute, and of a JavaScript type. */
 function scriptElements(html: string, pageLines: number[]): ScriptElement[] {
     const elements: ScriptElement[] = [];
     for (const match of html.matchAll(SCRIPT_ELEMENT)) {

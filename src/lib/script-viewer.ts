@@ -1,5 +1,5 @@
 // The script viewer page (entrypoints/viewer) gets everything it shows through its query string,
-// built by the popup and parsed by the viewer with the functions below.
+// built by the popup and the dashboard and parsed by the viewer with the functions below.
 import { browser } from 'wxt/browser';
 
 /** Positions passed per API; the most-called ones come first, so the cap keeps the important ones. */
@@ -28,7 +28,6 @@ export interface ViewerParams {
     inline: boolean;
 }
 
-/** The extension's script viewer showing `params`. */
 export function viewerUrl(params: ViewerParams): string {
     return browser.runtime.getURL('/viewer.html') + viewerQuery(params);
 }

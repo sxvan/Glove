@@ -4,8 +4,7 @@
 // Measurement and Analysis"): kept for at least 3 months, and holding a token of 8 or more
 // characters (up to 100 there, up to 200 here). Their third rule, that the value differs between
 // browsers, needs a second browser, so it is left out: some values the same for everyone, such as
-// timestamps, count too. Only for scripts the user chose to look at or block, where marking too
-// much does little harm.
+// timestamps, count too. It is only shown, never scored, so marking too much does little harm.
 //
 // Such a value is a possible identifier; a likely one when the script also shows it means to keep
 // it: it stored the value in a second place too, to restore it from there when one is cleared (as

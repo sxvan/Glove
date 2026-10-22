@@ -47,7 +47,6 @@ export function showBlockedCount(tabId: number, count: number) {
     browser.action.setBadgeText({ tabId, text: count > 0 ? String(count) : '' }).catch(() => {});
 }
 
-/** Forgets what a closed tab's icon showed. */
 export function forgetTabIcon(tabId: number) {
     shown.delete(tabId);
 }

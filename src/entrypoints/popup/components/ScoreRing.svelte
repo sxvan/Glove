@@ -34,7 +34,6 @@
     // thicker than the other.
     const GAP = 1.5;
 
-    // The arcs of the inner ring: one per segment, one after the other, together as long as its fill.
     const arcs = $derived.by(() => {
         const parts = segments.length > 0 ? segments : [{ fraction: 1, color }];
         const length = circumference(INNER) * laps.inner;
@@ -61,9 +60,7 @@
             <circle class="over" cx={CENTER} cy={CENTER} r={OUTER} stroke={color} stroke-dasharray="{circumference(OUTER) * laps.outer} {circumference(OUTER)}" />
         {/if}
     </g>
-    <!-- The value, capped at full; the outer ring shows how far beyond full it went. -->
-    <!-- As `empty`, no value yet: a dash. -->
-    <!-- With `text`, that instead: an amount of its own, such as an API's rare bits. -->
+    <!-- Capped at full: the outer ring shows how far beyond it went. -->
     <text class="value" x={CENTER} y={CENTER + 4}>{empty ? '–' : (text ?? shownValue(laps.inner))}</text>
 </svg>
 <!-- The outer ring closes at twice full; beyond that, how many times full it is. -->

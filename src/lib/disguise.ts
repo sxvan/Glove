@@ -17,7 +17,7 @@ const weakMapGet = WeakMap.prototype.get;
 const weakMapHas = WeakMap.prototype.has;
 const weakMapSet = WeakMap.prototype.set;
 
-/** Our wrappers, by the original each stands in for. */
+/** The original each of our wrappers stands in for. */
 const originals = new WeakMap<object, Function>();
 let installed = false;
 

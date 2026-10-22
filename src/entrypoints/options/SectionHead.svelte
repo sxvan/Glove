@@ -15,7 +15,6 @@
 </div>
 
 <style>
-    /* The title and the button on one line, centered on each other. */
     .head {
         display: flex;
         align-items: center;
@@ -29,9 +28,9 @@
         font-size: 15px;
     }
 
-    /* Like the page's other buttons, but small: it belongs to its section. Its height doesn't count
-       toward the line's (its margin takes back what it is taller than the title), so a section's
-       text sits the same with and without it. */
+    /* Small, as it belongs to its section. Its height doesn't count toward the line's (its margin
+       takes back what it is taller than the title), so a section's text sits the same with and
+       without it. */
     button {
         margin-block: -4px;
         padding: 3px 10px;

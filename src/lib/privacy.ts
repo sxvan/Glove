@@ -25,7 +25,6 @@ export function savePrivacy(options: PrivacyOptions): Promise<void> {
     return browser.storage.local.set({ [STORAGE_KEY]: options });
 }
 
-/** Calls `onChange` with the options whenever the user changes them. */
 export function watchPrivacy(onChange: (options: PrivacyOptions) => void): () => void {
     return watchStored<Partial<PrivacyOptions>>(STORAGE_KEY, (value) => onChange({ ...DEFAULT_PRIVACY, ...value }));
 }

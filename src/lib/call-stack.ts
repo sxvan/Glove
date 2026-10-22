@@ -2,8 +2,8 @@
 // structured stack frames (see https://v8.dev/docs/stack-trace-api) rather than parsing the stack
 // text, so generated code and URLs with ports are handled.
 
-// URLs of scripts, as opposed to e.g. "" for generated code; the scheme can't contain "-", so
-// extension URLs (chrome-extension://) don't match and the extension's own frames are skipped.
+// URLs of scripts, as opposed to e.g. "" for generated code. w doesn't match "-", so extension
+// URLs (chrome-extension://) don't match and the extension's own frames are skipped.
 const SCRIPT_URL = /^(?:\w+:\/\/|blob:|data:|about:|file:)/;
 // The script and position in an eval origin, e.g. "eval at f (https://example.com/a.js:1:200)".
 const EVAL_ORIGIN = /((?:\w+:\/\/|blob:|data:|about:|file:).*?):(\d+):(\d+)\)/;
@@ -38,10 +38,7 @@ export function placeKey(place: CallPlace): string {
     return `${place.line}:${place.column}${inner}`;
 }
 
-/**
- * The browser's types don't include V8's frames, as they're V8-specific; Node's types do, since
- * Node runs on V8 as well.
- */
+// V8's frames are only in Node's types, Node running on V8 too.
 type CallSite = NodeJS.CallSite;
 
 /**

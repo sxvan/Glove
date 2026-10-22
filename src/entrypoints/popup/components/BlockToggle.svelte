@@ -1,8 +1,6 @@
 <script lang="ts">
-    // A switch that blocks a script, or lets it run again (see lib/blocking), with what that does.
-    // It follows the stored list, so other switches for the same script stay in step. Blocking takes
-    // effect on the script's next load: the background reloads the page, with the site's data cleared
-    // first, as the user chose; once switched, it says what was done and what is left to do.
+    // A switch that blocks a script, or lets it run again (see lib/blocking). It follows the stored
+    // list, so other switches for the same script stay in step.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import { blockKey, loadBlocked, watchBlocked, type BlockedScript } from '@/lib/blocking';
@@ -14,10 +12,8 @@
     let list = $state<BlockedScript[]>([]);
     const entry = $derived(list.find((script) => script.key === key));
     const blocked = $derived(entry !== undefined);
-    // Blocked by the extension when it reached the score set (see BlockingOptions.autoBlock).
     const autoText = $derived(entry?.auto ? `Blocked automatically at score ${Math.round(entry.auto.score * 100)}` : '');
-    // What was done after it was switched while the popup is open (see changeBlocked in background);
-    // null until then.
+    // What was done after it was switched (see changeBlocked in background).
     let done = $state<SetBlockedResult | null>(null);
 
     onMount(() => {
@@ -31,7 +27,6 @@
         done = await browser.runtime.sendMessage(message);
     }
 
-    /** What happened, and what is left to do. */
     function doneText(result: SetBlockedResult): string {
         if (!blocked) return result.reloaded ? 'Reloaded the page: the script runs again' : 'Reload the page to let this script run again';
         if (result.cleared) return "Cleared the site's cookies and storage and reloaded the page: it loads without this script and what it stored";
@@ -75,7 +70,6 @@
         font-size: 12px;
     }
 
-    /* A track with a knob, in the likely color while blocking. */
     .switch {
         position: relative;
         width: 34px;

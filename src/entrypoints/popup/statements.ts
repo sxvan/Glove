@@ -18,9 +18,9 @@ interface Statement {
 }
 
 /**
- * What the card says about a script, as a list of statements: what it read (always there, and
- * always first) and how identifying that is together, how (signs of fingerprinting), who is behind it if that is hidden, and where
- * it sent data right after.
+ * What the card says about a script: what it read (always there, and first) and how identifying
+ * that is together, how (signs of fingerprinting), who is behind it if that is hidden, and where it
+ * sent and stored data.
  */
 export function statements(script: ScriptDetail): Statement[] {
     // Nothing read yet: not recorded, or recorded without any fingerprinting API read; requests
@@ -172,19 +172,17 @@ function identifyingStatement(script: ScriptDetail): Statement | null {
     };
 }
 
-/**
- * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to
- * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com", like "About …"
- * under what it read; past SHOWN_SITES, "and N more". A single site is named in the line itself.
- * Aliases the data went through have a line of their own (see sentThroughAliasStatement). Only
- * requests from a burst until shortly after it count (see fp-analysis), and only after bursts that
- * are possible fingerprinting on their own (see fingerprintingDetails); the requests themselves
- * are for a screen of their own.
- */
 /** How "Sent …" is measured, for its tip. */
 const SENT_EXPLANATION =
     'Requests with data the script made during a burst of fingerprinting API calls, or right after it (\u201cRight after\u201d in the settings, 1 second by default), counted after bursts that are possible fingerprinting on their own. Collected details are usually sent right after collecting them. The size is what the request carries: its URL\u2019s parameters and its body.';
 
+/**
+ * All the requests with data in one line, the sites below it, the most data first: "Sent 6 KB to
+ * 3 sites right after reading" over "To digitec.ch, doubleclick.net, google.com"; past SHOWN_SITES,
+ * "and N more". A single site is named in the line itself. Only requests from a burst until shortly
+ * after it count (see fp-analysis), and only after bursts that are possible fingerprinting on their
+ * own (see fingerprintingDetails).
+ */
 function sentStatement(script: ScriptDetail): Statement | null {
     const bySite = new Map<string, number>();
     for (const { site, bytes } of script.sent) bySite.set(site, (bySite.get(site) ?? 0) + bytes);
@@ -215,7 +213,6 @@ function sentStatement(script: ScriptDetail): Statement | null {
  * is sent to; the score counts only those right after reading (see the sentThroughAlias signal).
  */
 function sentThroughAliasStatement(script: ScriptDetail): Statement | null {
-    // The aliases by the site they lead to.
     const bySite = new Map<string, string[]>();
     for (const { site, host: via } of script.aliased) {
         const vias = bySite.get(site) ?? [];

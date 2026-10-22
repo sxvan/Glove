@@ -1,10 +1,8 @@
 <script lang="ts">
-    // An on/off setting as a switch, like the popup's "Block this script": a track with a knob, in the
-    // text color while on, as a setting is neither good nor bad. As `status`, it says whether
-    // something works instead: green while on, red while off, as the extension on or off for a site.
-    // A checkbox underneath, so it is labeled, focused and toggled like one; `label` names it where
-    // no text beside it does. It shows the setting as it is after a change: `onchange` may decline
-    // one, e.g. when asked to confirm it.
+    // An on/off setting as a switch, in the text color while on, as a setting is neither good nor
+    // bad; as `status`, green while on and red while off, for whether something works. A checkbox
+    // underneath, so it is labeled, focused and toggled like one. It shows the setting as it is after
+    // a change: `onchange` may decline one, e.g. when asked to confirm it.
     let {
         checked,
         onchange,

@@ -1,7 +1,5 @@
 <script lang="ts">
-    // Leads to another screen: a grey chevron pointing on, like a list row's, in the text color on
-    // hover. The button around it is larger than the chevron, so it is easy to hit. Used by an info
-    // line (see SignalLine), and by lines that lead to the same table together (see FingerprintCard).
+    // Opens the details page at a statement's table. Larger than its chevron, so it is easy to hit.
     let { onclick }: { onclick?: () => void } = $props();
 </script>
 

@@ -6,12 +6,8 @@
     import { plural } from '../format';
     import type { BlockedDetail, ScriptDetail } from '../model';
 
-    // The page as a whole, then under a heading each script that read fingerprinting APIs, in the
-    // same kind of card; first among them the blocked scripts that tried to load, to unblock them.
-    // Scripts unlikely to fingerprint come after them, under a heading of their own, so the suspicious
-    // ones are what shows. Each heading folds its cards (see FoldHeading): the scripts' open at first,
-    // the unlikely ones' folded.
-    // `onDetails` opens the details page for a script (by its key) at a statement's table.
+    // Blocked scripts that tried to load come first, to unblock them; scripts unlikely to fingerprint
+    // are folded under a heading of their own, so the suspicious ones are what shows.
     let {
         page,
         scripts,
@@ -26,10 +22,8 @@
 
     let open = $state({ scripts: true, unlikely: false });
 
-    // At or above the possible cutoff, as their likelihood says (see fpLikelihood).
     const suspicious = $derived(scripts.filter((script) => script.likelihood === 'possible' || script.likelihood === 'likely'));
     const unlikely = $derived(scripts.filter((script) => !suspicious.includes(script)));
-    // Under "Scripts": the blocked ones and the suspicious ones; the unlikely ones are counted under their own heading.
     const listed = $derived(blocked.length + suspicious.length);
 </script>
 

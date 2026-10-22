@@ -39,10 +39,8 @@
     let exactAvailable = $state(true);
     let current = $state(-1);
 
-    // All marks in the order they're numbered.
     const locations = $derived(blocks.flatMap((block) => block.locations));
 
-    /** Per API: how many places are marked and whether they are recorded positions or search results. */
     const found = $derived(
         new Map(
             (params?.apis ?? []).map((api) => {
@@ -58,10 +56,8 @@
     const hadPositions = $derived((params?.apis ?? []).some((api) => api.positions.length > 0));
     // How tall the header is, which stays on top: the APIs' list stays in view below it.
     let headerHeight = $state(0);
-    // The APIs of the place gone to, lit up in the list.
     const currentApis = $derived(locations[current]?.apis ?? []);
 
-    // The server the code is downloaded from again, named when asking.
     const server = params ? new URL(params.url).host : '';
 
     onMount(async () => {
@@ -171,7 +167,6 @@
         {/if}
     </div>
 
-    <!-- The places one after the other, in the segmented style of the details page's tables. -->
     {#if status === 'ready' && locations.length > 0}
         <nav class="steps" aria-label="Places of fingerprinting APIs">
             <button type="button" onclick={() => goTo(current - 1)}>Previous</button>
@@ -204,7 +199,6 @@
     <p class="state error">{error}</p>
 {:else}
     <main class:with-apis={params && params.apis.length > 0} style:--header-height="{headerHeight}px">
-        <!-- The APIs it read, one row each: a click goes to the next place of it. -->
         {#if params && params.apis.length > 0}
             <aside class="apis squircle" aria-label="Fingerprinting APIs read by this script">
                 <h2>Fingerprinting APIs <span class="count">{params.apis.length}</span></h2>
@@ -290,8 +284,7 @@
 {/if}
 
 <style>
-    /* The name over the script's address, and the way through its places; in view while the code
-       scrolls, on the page's background. */
+    /* In view while the code scrolls, on the page's background. */
     header {
         position: sticky;
         top: 0;
@@ -315,7 +308,6 @@
         font-size: 20px;
     }
 
-    /* The script's address, shortened in the middle keeping its file name (see MiddleTruncate), then ↗. */
     .original {
         display: flex;
         min-width: 0;
@@ -335,7 +327,7 @@
         text-decoration: underline;
     }
 
-    /* Previous, where it is, next: one track with the buttons on it, as the details page's tables. */
+    /* One track with the buttons on it, like the details page's tables. */
     .steps {
         display: flex;
         flex-shrink: 0;
@@ -493,8 +485,7 @@
         list-style: none;
     }
 
-    /* A row: the API's name over what it reveals and how often it was called where; lit up on hover,
-       and while one of its places is shown. */
+    /* Lit up on hover, and while one of its places is shown. */
     .api {
         display: grid;
         gap: 2px;
@@ -568,7 +559,6 @@
         min-width: 0;
     }
 
-    /* The code on a card, its line numbers in a column of their own. */
     .code {
         overflow: hidden;
         border-radius: 14px;

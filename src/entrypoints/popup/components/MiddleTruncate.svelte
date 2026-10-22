@@ -1,5 +1,4 @@
 <script module lang="ts">
-    // One canvas to measure text with, shared by all instances.
     let context: CanvasRenderingContext2D | null = null;
     function measure(text: string, font: string): number {
         context ??= document.createElement('canvas').getContext('2d');
@@ -29,7 +28,6 @@
     let box = $state<HTMLElement>();
     let width = $state(0);
 
-    /** Where a path's parameters start: its first "?" or ";", or its length without any. */
     function paramsAt(text: string): number {
         const at = text.search(/[?;]/);
         return at >= 0 ? at : text.length;
@@ -52,7 +50,6 @@
     function fit(text: string, end: string, prefix: string, font: string, suffix = ''): string | null {
         const fits = (n: number) => measure(prefix + text.slice(0, n) + '…' + end + suffix, font) <= width;
         if (!fits(0)) return null;
-        // The longest start that still fits, by binary search.
         let low = 0;
         let high = text.length - end.length;
         while (low < high) {

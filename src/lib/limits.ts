@@ -1,8 +1,8 @@
 // How many fingerprinting API calls are kept, so a long-running page doesn't take ever more memory and
 // time: per script, and per page (the tab's page with all its frames). Past a limit, further calls
 // aren't kept or scored, and the scores stay as they were; past the page's, its calls aren't even sent
-// to the background any more (see bridge). The page itself can't change them: they apply where its
-// scripts can't reach, as a recorder in the page could be told anything by them.
+// to the background any more (see bridge). They apply outside the page, where its scripts can't
+// change them.
 import { browser } from 'wxt/browser';
 import { loadStored, watchStored } from './storage';
 

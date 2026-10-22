@@ -64,7 +64,7 @@ function createPositionMapper(original: string, formatted: string): ((line: numb
     const formattedChars: number[] = [];
     for (let i = 0; i < formatted.length; i++) if (!isSpace(formatted[i]!)) formattedChars.push(i);
 
-    const nonSpaceBefore = new Uint32Array(original.length + 1); // non-whitespace characters before each offset
+    const nonSpaceBefore = new Uint32Array(original.length + 1);
     let count = 0;
     for (let i = 0; i < original.length; i++) {
         nonSpaceBefore[i] = count;
@@ -172,7 +172,6 @@ const OWNER_GLOBALS: Record<string, string> = {
     Document: 'document',
 };
 
-/** Finds the APIs by name, for those without recorded positions. */
 function searchApiNames(code: string, apiIds: string[]): CodeLocation[] {
     const locations: CodeLocation[] = [];
 

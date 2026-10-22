@@ -66,7 +66,6 @@ export async function removeOffSites(names: string[]): Promise<void> {
     await browser.storage.local.set({ [STORAGE_KEY]: sites });
 }
 
-/** Calls `onChange` with the list whenever it changes. */
 export function watchOffSites(onChange: (sites: OffSite[]) => void): () => void {
     return watchStored(STORAGE_KEY, (value) => onChange(listOf(value)));
 }

@@ -3,7 +3,7 @@ import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { ScoringSettings, SignalPart } from '@/lib/scoring';
 import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
 
-// Snapshots are the serializable views of the session state sent to the popup.
+// Snapshots are the serializable views of the session state sent to the popup and the dashboard.
 
 export interface MetricsSnapshot {
     distinctFpApis: string[];
@@ -24,7 +24,6 @@ export interface ScriptSnapshot {
     name: string;
     fpMetrics: MetricsSnapshot | null;
     fpSpikes: SpikeSnapshot[];
-    /** Number of calls per fingerprinting API id. */
     apiCounts: Record<string, number>;
     /** Distinct positions in the script each API was called from, most calls first. */
     apiLocations: Record<string, CallLocation[]>;
@@ -32,7 +31,7 @@ export interface ScriptSnapshot {
     apiTimes: Record<string, { first: number; last: number }>;
     /** What it stored in the browser, in the order first stored. */
     stored: StoredItem[];
-    /** Its requests carrying data, at any time (see carriesData), for the details page. */
+    /** Its requests carrying data, at any time (see carriesData). */
     requests: HttpConsolidatedEvent[];
     /** The CNAME-cloaked hosts of the site it sent data to, at any time (see isCnameCloaked). */
     cloakedHosts: string[];
@@ -43,7 +42,7 @@ export interface ScriptSnapshot {
 export type StorageKind = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB';
 
 /**
- * A tab's recorded events in the order they happened, for the details page's event log (see
+ * A tab's recorded events in the order they happened, for the dashboard's event log (see
  * GetEventLogMessage): asked for apart from the snapshot, as a page has up to tens of thousands.
  */
 export interface EventLog {

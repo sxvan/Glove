@@ -1,7 +1,6 @@
 <script lang="ts">
-    // The rows of the Blocking section: what happens right after blocking a script, and blocking
-    // scripts automatically (see BlockingOptions), saved as soon as changed, laid out like the scoring
-    // settings, each with its default; then the scripts blocked, to unblock them.
+    // The Blocking section's options (see BlockingOptions), saved as soon as changed; then the
+    // scripts blocked, to unblock them.
     import { onMount } from 'svelte';
     import {
         DEFAULT_BLOCKING_OPTIONS,
@@ -62,8 +61,6 @@
 
     // The blocked scripts, the latest first, those blocked automatically apart from those blocked by
     // hand; and, with automatic blocking, the scripts the user let run again, which it leaves alone.
-    // The lists show once opened. Each group has its action: unblocking, or letting a script be
-    // blocked automatically again.
     let blocked = $state<BlockedScript[]>([]);
     let exempt = $state<string[]>([]);
     let blockedOpen = $state(false);
@@ -74,7 +71,6 @@
         title: string;
         scripts: { key: string; detail: string }[];
         action: 'Unblock' | 'Remove';
-        /** Asked before acting on all of them. */
         confirm: (count: string) => string;
         act: (keys: string[]) => void;
     }
@@ -221,7 +217,6 @@
     {/each}
 {/if}
 
-<!-- A group's scripts, each with its action. -->
 {#snippet scripts(group: Group)}
     <ul class="blocked">
         {#each group.scripts as script (script.key)}
@@ -259,7 +254,6 @@
         font-weight: 500;
     }
 
-    /* A group's heading, with its button at the end. */
     .group-head {
         display: flex;
         align-items: center;
@@ -295,7 +289,6 @@
         min-width: 0;
     }
 
-    /* Its path, on one line; the tooltip has the whole address. */
     .address {
         min-width: 0;
         font-family: var(--mono);

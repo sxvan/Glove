@@ -95,7 +95,7 @@ function ensureScript(
     scriptUrl: string | null
 ): { tab: TabState; frame: FrameState; document: DocumentState; script: ScriptState } {
     const { tab, frame, document } = ensureDocument(session, tabId, frameId, documentId, url);
-    // A null scriptUrl is stored under the key "null", as plain JS object keys always were.
+    // Calls without a script (e.g. from the console) are kept under "null".
     const scriptKey = String(scriptUrl);
     if (!document.scripts[scriptKey]) {
         document.scripts[scriptKey] = {
@@ -127,8 +127,9 @@ export function updateCurrentDocument(session: Session, tabId: number, frameId: 
     dropEndedDocuments(frame, documentId);
 }
 
-// How long a frame's previous document is kept after another replaced it: its last events can
-// still arrive. Kept longer it would only add up, page after page.
+// How long a frame's previous document is kept at least after another replaced it, as its last
+// events can still arrive; it goes as the frame loads a document after that. Kept longer it would
+// only add up, page after page.
 const ENDED_DOCUMENT_MS = 30_000;
 
 /** Forgets the frame's documents that ended a while ago, other than `currentId`. */
@@ -174,7 +175,6 @@ export function recordingTarget(session: Session, tabId: number, frameId: number
     return target;
 }
 
-/** Forgets all a closed tab recorded. */
 export function dropTab(session: Session, tabId: number) {
     delete session.tabs[tabId];
 }

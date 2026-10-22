@@ -147,8 +147,8 @@ export interface FpApi {
  */
 export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hiddenCanvas';
 
-// Defaults for the bits and rarity (users can change them; scoring turns them into the identifying
-// information and unusual APIs signals). The bits are Andriamilanto et al. 2021, 4.1 million
+// Defaults for the bits and rarity (users can change them; scoring turns them into the rare
+// identifying APIs signals). The bits are Andriamilanto et al. 2021, 4.1 million
 // fingerprints (arxiv.org/abs/2006.09511, Table 16): the normalized entropy times 21.98 bits, what
 // an overlapping API adds its minimum normalized conditional entropy (MinNCE) the same way. Their
 // users were French, and only a quarter of them used Chrome:
@@ -188,7 +188,7 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 //   (0.1). (Chrome counts no use of navigator.webdriver: its IDL has no MeasureAs.)
 // - bound: a particular read is at most as common as the API it uses. Hidden canvases are read
 //   through toDataURL (14%), getImageData (8%) and toBlob (0.6%), most of those reads fingerprinting
-//   (0.9, 0.95; toBlob's 0.6% gives 0.994, rounded 0.99 for toBlob, so its hidden read keeps 0.994);
+//   (0.9, 0.95, and 0.994 from toBlob's 0.6%, which toBlob itself rounds to 0.99);
 //   font probing through measureText (8%), most of which is laying out text (0.96); the graphics
 //   card name in WebGL 2 through webgl2.getParameter (0.97, as rare as that); the WebGPU adapter's
 //   info after requestAdapter (10%; 0.95).

@@ -49,7 +49,6 @@ function windowsOf(events: FpMonkeyEvent[], { windowMs, minDistinctApis }: Burst
 
     let end = 0;
     for (let start = 0; start < events.length; start++) {
-        // Grow the window up to windowMs after its first call.
         while (end < events.length && events[end]!.timeStamp - events[start]!.timeStamp <= windowMs) {
             const id = events[end]!.id;
             const count = counts.get(id) ?? 0;
@@ -63,7 +62,6 @@ function windowsOf(events: FpMonkeyEvent[], { windowMs, minDistinctApis }: Burst
 
         if (distinct >= minDistinctApis) windows.push({ start, end, total, distinct });
 
-        // Drop the first call before moving on.
         const id = events[start]!.id;
         const count = counts.get(id)! - 1;
         counts.set(id, count);

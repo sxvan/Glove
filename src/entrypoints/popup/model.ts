@@ -1,5 +1,5 @@
-// Reduces a TabSnapshot to the three tracking categories the popup shows, each with a likelihood,
-// key numbers and the strongest evidence.
+// Turns a TabSnapshot into what the popup and the details page (entrypoints/dashboard) show: each
+// script's fingerprinting with its score tree, and what it read, sent and stored.
 import { blockKey } from '@/lib/blocking';
 import { placeKey } from '@/lib/call-stack';
 import { FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
@@ -22,8 +22,8 @@ export const LIKELIHOOD_LABELS: Record<Likelihood, string> = {
 };
 
 /**
- * Each API's rare bits read alone: its bits times its rarity to the exponent, what it counts toward
- * the score. For listing kinds of detail by what makes a script suspicious, not by what reveals most.
+ * Each API's rare bits read alone (its bits times its rarity to the exponent): to list kinds of
+ * detail by what makes a script suspicious, not by what reveals most.
  */
 function rareBitsOf(snapshot: TabSnapshot): Record<string, number> {
     const power = Math.max(0, snapshot.rarityPower);
@@ -45,7 +45,7 @@ function fpLikelihood(score: number, cutoffs: ScoringSettings['cutoffs']): Likel
     return score >= likely ? 'likely' : score >= possible ? 'possible' : 'unlikely';
 }
 
-// ---------- detail screens ----------
+// ---------- scripts ----------
 
 export interface ScriptDetail {
     /** Stable across updates: frame plus script URL. */
@@ -63,16 +63,12 @@ export interface ScriptDetail {
     /** The full host behind origin, and the alias it went through, for the tooltip. */
     originTitle: string;
     url: string;
-    /**
-     * What the script viewer needs to show the script: its file, or for an inline script its page.
-     * Null when it can't be shown, e.g. for generated scripts or URLs other than http and https.
-     */
+    /** Its file, or for an inline script its page; null for generated scripts and URLs other than http(s). */
     viewer: ViewerParams | null;
     /** The script's own host if it is such an alias, which origin then goes "through"; null otherwise. */
     via: string | null;
     likelihood: Likelihood;
     score: number;
-    /** The signals the score was combined from. */
     tree: ScoreNode[];
     calls: number;
     /** Whether its calls reached a limit (see lib/limits), so there were more than `calls`. */
@@ -83,18 +79,18 @@ export interface ScriptDetail {
     signals: Signal[];
     /** Fingerprinting APIs with call counts (null if unknown) and call positions, most called first. */
     apis: ViewerApi[];
-    /** The fingerprinting APIs it read in detail, for its page: the most identifying first. */
+    /** The fingerprinting APIs it read, those counting most toward the score first. */
     apiDetails: ApiDetail[];
     /** Requests carrying data that the script made right after fingerprinting, the most data first. */
     sent: SentRequest[];
-    /** All requests carrying data it made, at any time, for the details page: those right after reading with how long after. */
+    /** All requests carrying data it made, at any time: those right after reading with how long after. */
     requests: SentRequest[];
     /**
      * The site's own addresses that are CNAME aliases for another site, which it made requests to at
      * any time, with the site each leads to; for the page, those of all its requests.
      */
     aliased: { host: string; site: string }[];
-    /** Cookies and storage items it wrote: likely identifiers first, then possible ones, then the rest, each in the order first written. */
+    /** Cookies and storage items it wrote (see byIdentifier). */
     stored: StoredDetail[];
 }
 
@@ -148,7 +144,6 @@ function pageStored(scripts: ScriptDetail[]): StoredDetail[] {
     return [...byItem.values()].sort(byIdentifier);
 }
 
-/** A fingerprinting API a script read, with how and when (see apiDetails). */
 export interface ApiDetail {
     id: string;
     /** Its kind of detail, e.g. "Graphics card", and what it reveals, e.g. "graphics card name" (see FP_APIS). */
@@ -186,7 +181,6 @@ export interface SentRequest {
     site: string;
     /** The host it went to if that is a CNAME alias for site, which it then went "through"; null otherwise. */
     via: string | null;
-    /** The URL's path, e.g. "/b/ss/…". */
     path: string;
     /**
      * How much data it carried, in bytes: its body and its URL's query string, so a POST and a GET
@@ -195,7 +189,6 @@ export interface SentRequest {
     bytes: number;
 }
 
-/** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
 /** A blocked script that tried to load on the page (see lib/blocking). */
 export interface BlockedDetail {
     /** What it is blocked by (see blockKey). */
@@ -223,6 +216,7 @@ export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
     return [...byKey.values()].sort((a, b) => b.attempts - a.attempts);
 }
 
+/** Scripts that called fingerprinting APIs, across all frames, most suspicious first. */
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
     const cutoffs = snapshot.cutoffs;
     const traits = snapshot.apis;
@@ -294,8 +288,8 @@ export interface Signal {
 }
 
 /**
- * Different APIs read from one place in the code from which the popup mentions it. Ordinary scripts
- * read at most 2 there (e.g. { innerWidth, innerHeight } = window); the score counts from 3 on.
+ * Different APIs read from one place in the code from which a script's card mentions it. Ordinary
+ * scripts read at most 2 there (e.g. { innerWidth, innerHeight } = window); the score counts from 3 on.
  */
 const ONE_PLACE_MIN_APIS = 5;
 
@@ -429,7 +423,6 @@ function pageSent(scripts: ScriptDetail[]): SentRequest[] {
     return [...byRequest.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
-/** The metrics of the spike with the highest score. */
 function strongestSpike(spikes: SpikeSnapshot[]): MetricsSnapshot | null {
     return strongest(spikes, (spike) => spike.fpMetrics?.score ?? -1)?.fpMetrics ?? null;
 }
@@ -480,7 +473,6 @@ export interface ScoreNode {
     children: ScoreNode[];
 }
 
-/** The page's fingerprinting score and the signals it was combined from. */
 interface PageScore {
     score: number;
     likelihood: Likelihood;
@@ -651,7 +643,6 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
     });
 }
 
-/** A script's signals, sharing its score. */
 function scriptTree(script: ScriptSnapshot): ScoreNode[] {
     return scoreTree('script', script.fpMetrics, script.fpMetrics?.score ?? 0, (key) => {
         if (key !== 'strongestBurst') return null;
@@ -663,14 +654,12 @@ function scriptTree(script: ScriptSnapshot): ScoreNode[] {
 }
 
 /**
- * The signals of a score, most contributing first (ties in the order the settings list them),
- * sharing `total`, the score. A
- * signal made from another score or from APIs has children sharing its own value in turn, so each
- * level adds up to the ring of its parent. Signals combine as 1 − Π(1 − alone), which
- * isn't a sum, so the total is split as a waterfall: the strongest signal gets what it gives alone,
- * each next one, from strongest to weakest, what it adds on top of those before it. The shares add
- * up to exactly the total. Signals switched off (strength 0) are left out, as they can't contribute.
- * `expand` gives what a signal was made from, for those made from another score.
+ * The signals of a score, most contributing first (ties in the settings' order), sharing `total`.
+ * A signal made from another score or from APIs has children sharing its own value in turn, so each
+ * level adds up to its parent's ring. Signals combine as 1 − Π(1 − alone), which isn't a sum, so the
+ * total is split as a waterfall: the strongest signal gets what it gives alone, each next one what it
+ * adds on top of those before it. Signals switched off (strength 0) are left out. `expand` gives
+ * what a signal made from another score was made from.
  */
 function scoreTree(
     level: ScoreLevel,
@@ -741,7 +730,6 @@ function withShownShares(nodes: ScoreNode[], total: number): ScoreNode[] {
     return nodes.map((node, i) => ({ ...node, shownShare: shown[i]! / 100 }));
 }
 
-// Short names of the signals made from APIs, for "+0.10 to unusual" under an API's share.
 /** A score, share or signal value from 0 to 1 as shown, on the 0–100 scale of the score rings: 0.94 as 94. */
 function score(x: number): number {
     return Math.round(x * 100);
@@ -755,18 +743,13 @@ function treeLabel(label: string): string {
     return capitalize(label.replace(/fingerprinting APIs/i, 'APIs'));
 }
 
+/** Short names of the signals made from APIs, for "+0.10 to unusual" under an API's share. */
 const SHORT_NAMES: Record<string, string> = {
     rareIdentifying: 'rare identifying',
     onePlace: 'one place',
     generatedCode: 'generated',
 };
 
-/**
- * The APIs an API signal was made from, sharing the signal's value like signals share a score: as a
- * waterfall, from the API adding the most down, each adding its points relative to the full-at
- * (1 of 10 points is +0.10) until the signal is full; later ones add nothing beyond full. An API
- * whose information another API already counted adds nothing.
- */
 /** Whose score a signal's share goes to, in a word or two: "+6 to other scripts". */
 const SHARE_TO: Partial<Record<ScoreLevel, string>> = { otherScripts: 'other scripts', otherScriptsBeyondBurst: 'outside burst', scriptBeyondBurst: 'outside burst' };
 
@@ -825,14 +808,19 @@ function rareFactors(api: ApiAmount, fullAt: number, power: number, number: (x: 
     ];
 }
 
-/** Where the APIs a sum beyond is measured on were read (see apisSumsBeyond). */
-// Only page bursts are measured on top of something among bursts: the strongest script.
+/** Where the APIs were read that a sum beyond what is already counted is measured on (see apisSumsBeyond). */
 const KNOWN_WHERE: Partial<Record<ScoreLevel, string>> = {
     scriptBeyondBurst: 'read in the strongest burst',
     otherScriptsBeyondBurst: 'read by the strongest script or in the burst',
     burst: 'read by the strongest script',
 };
 
+/**
+ * The APIs an API signal was made from, sharing the signal's value like signals share a score: as a
+ * waterfall, from the API adding the most down, each adding its points relative to the full-at
+ * (1 of 10 points is +0.10) until the signal is full; later ones add nothing beyond full. An API
+ * whose information another API already counted adds nothing.
+ */
 function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: ScoreLevel): { detail: string; children: ScoreNode[] } {
     const number = (x: number) => +x.toFixed(2);
     // What the sum counts: bits of identifying information, or rare ones (bits times rarity).
@@ -878,7 +866,6 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
             shownShare: share,
             shareTo: signal,
             detail: api.countedWith ? `counted with ${api.countedWith}` : adds,
-
             note,
             children: sum.measure === 'rareBits' ? rareFactors(api, sum.fullAt, sum.rarityPower ?? 0, number) : [],
         };
@@ -891,11 +878,7 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
     return { detail, children: withShownShares(children, total) };
 }
 
-/**
- * APIs with call counts and call positions, most called first. Falls back to the distinct APIs
- * without counts or positions when the snapshot has none, e.g. from a background started before
- * they were added.
- */
+/** APIs with call counts and call positions, most called first; without counts, the distinct APIs read. */
 function apiList(
     apiCounts: Record<string, number> | undefined,
     apiLocations: Record<string, CallLocation[]> | undefined,

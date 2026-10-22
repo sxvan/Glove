@@ -38,8 +38,6 @@
     let status = $state('');
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-    // The pages, in the order of the navigation: everyday settings first, then those for tuning
-    // detection and scoring.
     type PageId = 'general' | 'blocking' | 'detection' | 'scoring' | 'apis';
     const PAGES: { id: PageId; title: string }[] = [
         { id: 'general', title: 'General' },
@@ -139,7 +137,6 @@
     ];
     const APIS_LEVELS: ApisLevel[] = ['page', 'script', 'pageBurst', 'burst'];
 
-    // The APIs grouped by category, in the order of the API list.
     const API_GROUPS = Object.entries(Object.groupBy(FP_APIS, (api) => api.category)) as [FpCategory, FpApi[]][];
 
     function scheduleSave() {
@@ -172,7 +169,6 @@
         status = 'All settings reset to their defaults.';
     }
 
-    /** Sets one part of the scoring settings back to its defaults, e.g. the cutoffs. */
     function resetPart<K extends keyof ScoringSettings>(key: K) {
         if (!settings) return;
         settings[key] = structuredClone($state.snapshot(DEFAULT_SETTINGS[key])) as ScoringSettings[K];
@@ -191,7 +187,6 @@
         resetPart('fullAt');
     }
 
-    /** Whether a part of the settings differs from its defaults. */
     const differs = (value: unknown, defaults: unknown) => JSON.stringify(value) !== JSON.stringify(defaults);
 
     // Whether the sections of their own differ from their defaults (each tells), and so whether
@@ -207,7 +202,6 @@
             (settings !== null && (Object.keys(DEFAULT_SETTINGS) as (keyof ScoringSettings)[]).some((key) => differs(settings![key], DEFAULT_SETTINGS[key])))
     );
 
-    /** True when the cutoffs don't make sense: "likely" has to be above "possible". */
     const invalidCutoffs = $derived(
         settings !== null && Object.values(settings.cutoffs).some((cutoffs) => cutoffs.likely <= cutoffs.possible)
     );
@@ -479,7 +473,6 @@
         list-style: none;
     }
 
-    /* The current page raised like a card, the others muted until hovered. */
     nav a {
         display: block;
         padding: 6px 12px;
@@ -554,8 +547,7 @@
         font-size: 12px;
     }
 
-    /* Sections are cards: no border, room inside, squircle corners (the .squircle class). Room
-       above one a link jumped to, so it doesn't stick to the window's edge. */
+    /* Room above a section a link jumped to, so it doesn't stick to the window's edge. */
     section {
         padding: 20px 24px;
         border-radius: 18px;
@@ -575,10 +567,6 @@
         text-underline-offset: 2px;
     }
 
-    .row.cutoffs + .row.cutoffs {
-        margin-top: 4px;
-    }
-
     h3 {
         margin: 24px 0 4px;
         font-size: 13px;
@@ -592,9 +580,8 @@
         font-weight: 400;
     }
 
-    /* APIs are listed compactly: one line each, with bits, what they add, the rare bits they count
-       and rarity. The rows share the list's columns (see settings.css), so these line up from row
-       to row, also where an API has no "adds" (an empty cell). */
+    /* The rows share the list's columns (see settings.css), so the numbers line up from row to row,
+       also where an API has no "adds" (an empty cell). */
     .apis {
         display: grid;
         grid-template-columns: minmax(0, 1fr) repeat(4, auto);

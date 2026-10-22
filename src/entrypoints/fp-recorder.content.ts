@@ -24,8 +24,7 @@ export default defineContentScript({
     },
 });
 
-// Native functions the recorder relies on, captured in installFpHooks before page scripts run,
-// so a page that patches them can't see, delay or break recording.
+// Captured in installFpHooks, before page scripts run (see lib/page-natives).
 let nativeSetTimeout: (handler: () => void, timeout: number) => number;
 let readStack: (hook: Function) => StackLocation[];
 // The document whose bridge gets the events: this frame's, or the one a blank frame belongs to.
@@ -173,7 +172,6 @@ function hookMethod(proto: any, prop: string, id: string) {
 // canvas's of the same size and format tells. Large canvases, beyond what fingerprinting or a format
 // check uses, aren't compared, so an image editor's exports cost no extra blank one.
 
-// Canvas pixels up to which an export is compared with a blank canvas's.
 const BLANK_COMPARE_MAX_PIXELS = 1_000_000;
 
 let createElement: typeof Document.prototype.createElement;
@@ -248,7 +246,6 @@ function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boole
     }
 }
 
-
 function hookGetter(proto: any, prop: string, id: string) {
     const descriptor = Object.getOwnPropertyDescriptor(proto, prop);
     const original = descriptor?.get;
@@ -273,8 +270,8 @@ function hookGetter(proto: any, prop: string, id: string) {
     });
 }
 
-// Frames kept per capture: the caller of the hook plus a few in case the first has no URL.
-// Fewer frames saves formatting time; V8 still walks the whole stack, so deep stacks cost more.
+// Frames read per call: the caller of the hook plus a few in case the first has no URL. V8 stops
+// walking the stack once it has that many, so a hook called thousands of times stays cheap.
 const STACK_FRAMES = 4;
 
 /** The script and position the hooked API was called from: the first page script on the stack. */

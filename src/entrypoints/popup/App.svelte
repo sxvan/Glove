@@ -15,7 +15,6 @@
     let status = $state<Status>('loading');
     let snapshot = $state<TabSnapshot | undefined>();
 
-    // The page's card, then its scripts' (see FingerprintingDetail).
     const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
     const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 
@@ -29,8 +28,8 @@
         browser.tabs.create({ url: `${browser.runtime.getURL('/dashboard.html')}?tab=${tabId}${script}#${tableOf(statement)}` });
     }
 
-    // The tab, and whether the extension is off for its site (see lib/sites): then nothing was
-    // recorded there, and the popup says so instead of showing scores.
+    // Off for the tab's site (see lib/sites), nothing was recorded there: the popup says so instead
+    // of showing scores.
     let tabId = $state<number | undefined>();
     let tabUrl = $state<string | undefined>();
     let offSites = $state<OffSite[]>([]);
@@ -78,7 +77,6 @@
             );
         });
 
-        // Live updates from the background while the popup is open
         const onMessage = (message: AnalysisUpdatedMessage) => {
             if (message?.type !== 'ANALYSIS_UPDATED') return;
 
@@ -97,13 +95,11 @@
 </script>
 
 <header>
-    <!-- The extension's name, small, over the site the popup is about. -->
     <div class="title">
         <span class="brand">Glove</span>
         <h1 title={url ?? ''}><MiddleTruncate text={host || 'This tab'} /></h1>
     </div>
     <div class="actions">
-        <!-- The extension on or off for the site, like an ad blocker's power switch. -->
         {#if tabHost}
             <Switch status checked={!offEntry} onchange={setOn} label={offEntry ? `Off for ${offEntry.site}: turn it on` : `On for this site: turn it off`} />
         {/if}
@@ -142,14 +138,12 @@
         padding: 16px 16px 8px;
     }
 
-    /* The name over the site: taking the room the actions leave. */
     .title {
         display: grid;
         flex: 1;
         min-width: 0;
     }
 
-    /* One line, shortened in the middle when too long (see MiddleTruncate). */
     h1 {
         min-width: 0;
         margin: 0;

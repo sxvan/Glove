@@ -30,11 +30,9 @@ import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage,
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
 import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
-// The user's scoring settings (see lib/scoring); the defaults until they are loaded.
+// The user's settings; the defaults until they are loaded.
 let settings: ScoringSettings = DEFAULT_SETTINGS;
-// How many calls are kept (see lib/limits); the defaults until they are loaded.
 let limits = DEFAULT_LIMITS;
-// What may be sent off the browser (see lib/privacy); the defaults until they are loaded.
 let privacy = DEFAULT_PRIVACY;
 
 export default defineBackground(() => {
@@ -53,7 +51,6 @@ export default defineBackground(() => {
         });
     }
 
-    /** Scores every open page again, e.g. after the user changed the scoring settings. */
     function reanalyzeAll() {
         for (const tabId of Object.keys(session.tabs).map(Number)) {
             for (const document of currentDocuments(session, tabId)) analyzeDocumentFp(document, session.dnsResults, settings);
@@ -68,9 +65,7 @@ export default defineBackground(() => {
     follow('privacy options', loadPrivacy, watchPrivacy, (loaded) => (privacy = loaded));
     follow('performance limits', loadLimits, watchLimits, (loaded) => (limits = loaded));
 
-    // The scripts the user blocked (see lib/blocking), by what they are blocked by, and the sites the
-    // extension is off for (see lib/sites); the browser's rules and the registered recorders follow
-    // them.
+    // The browser's blocking rules and the registered recorders follow these lists.
     let blockedList: BlockedScript[] = [];
     let blocked = new Set<string>();
     let offSites: OffSite[] = [];
@@ -104,9 +99,8 @@ export default defineBackground(() => {
         return keys.size;
     }
 
-    /** Whether the extension is off for the page at `url` (see lib/sites). */
     const isOff = (url: string | null | undefined) => offEntryFor(switchableHost(url), offSites) !== undefined;
-    /** Whether it is off for the page in the tab, by its top document. */
+    /** By the tab's top document. */
     function tabIsOff(tabId: number): boolean {
         return isOff(currentDocument(session.tabs[tabId]?.frames[0])?.currentUrl);
     }
@@ -132,7 +126,7 @@ export default defineBackground(() => {
                 sendResponse(false);
             }
         );
-        // Answered once done.
+        // Keeps the channel open: answered once done.
         return true;
     });
 
@@ -175,7 +169,7 @@ export default defineBackground(() => {
             console.warn('Could not block or unblock the script', error);
             sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
         });
-        // Answered once done.
+        // Keeps the channel open: answered once done.
         return true;
     });
 
@@ -413,7 +407,6 @@ export default defineBackground(() => {
         }
     });
 
-    // A closed tab's recording is of no more use.
     browser.tabs.onRemoved.addListener((tabId) => {
         dropTab(session, tabId);
         forgetTabIcon(tabId);
@@ -475,7 +468,7 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
     return bytes;
 }
 
-// Open popups, each connected by a port while it is open (see the popup's App and watchPopups).
+// Open popups and dashboards, each connected by a port named 'popup' while it is open.
 const openPopups = new Set<Browser.runtime.Port>();
 
 function watchPopups() {
@@ -487,9 +480,8 @@ function watchPopups() {
 }
 
 /**
- * After an analysis: updates the tab's toolbar ring, and sends an open popup the tab's snapshot.
- * The snapshot copies all the tab has recorded, so it is only built while a popup shows it; the
- * ring needs just the page's score, read from the session.
+ * After an analysis: updates the tab's toolbar ring, and sends open popups and dashboards the tab's
+ * snapshot. The snapshot copies all the tab has recorded, so it is only built while one is open.
  */
 function broadcastTabSnapshot(session: Session, tabId: number) {
     showPageScore(session, tabId);
@@ -497,7 +489,7 @@ function broadcastTabSnapshot(session: Session, tabId: number) {
     const snapshot = buildTabSnapshot(session, tabId);
     if (!snapshot) return;
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
-    // Rejects when no popup is open to receive it, which is the usual case.
+    // Rejects when no open page listens for it.
     browser.runtime.sendMessage(message).catch(() => {});
 }
 
@@ -511,8 +503,8 @@ function showPageScore(session: Session, tabId: number) {
 }
 
 /**
- * What the popup shows for a tab; undefined for a tab without recorded data, e.g. one opened before
- * the extension was (re)loaded, which the popup asks to reload.
+ * What the popup and the dashboard show for a tab; undefined for a tab without recorded data, e.g.
+ * one opened before the extension was (re)loaded, which the popup asks to reload.
  */
 function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefined {
     const tabState = session.tabs[tabId];

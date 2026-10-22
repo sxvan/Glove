@@ -1,10 +1,8 @@
 <script lang="ts">
-    // A page's fingerprinting in full, for the tab in the address (?tab=): what all its scripts read,
-    // sent and stored, as tables to search and sort, a row per script and API, request or stored
-    // value, and every recorded event in the order it happened (the event log). Opened from an info
-    // line in the popup, at its table (#apis, #requests, #stored, #log) and
-    // script (&script=). Follows the tab's recording while it records; once the tab is closed, it
-    // keeps the last one, as the extension keeps nothing of a closed tab.
+    // A page's fingerprinting in full, for the tab in the address (?tab=): what its scripts read, sent
+    // and stored, and every recorded event (the event log). Opened from an info line in the popup, at
+    // its table (#apis, #requests, #stored, #log) and script (&script=). Once the tab is closed, it
+    // keeps the last recording, as the extension keeps nothing of a closed tab.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import { viewerUrl } from '@/lib/script-viewer';
@@ -34,10 +32,8 @@
 
     let snapshot = $state<TabSnapshot | undefined>();
     let status = $state<'loading' | 'ready' | 'unavailable'>('loading');
-    // The tab was closed: what shows is its last recording.
     let closed = $state(false);
     let table = $state<TableId>(tableOf(location.hash));
-    // The script the tables are narrowed to, by its key; empty for all of them.
     let scriptKey = $state(params.get('script') ?? '');
     let query = $state('');
 
@@ -185,7 +181,6 @@
     // ---------- how values read ----------
 
     const HOW: Record<NonNullable<SentRequest['how']>, string> = { fetch: 'fetch', xhr: 'XMLHttpRequest', beacon: 'sendBeacon', image: 'Image (pixel)' };
-    // Points with one decimal, or two below 1, as in the score's breakdown.
 
     const DAY = 24 * 60 * 60 * 1000;
     /** How long it stays after it was written; storage kept until cleared sorts as the longest. */
@@ -193,7 +188,7 @@
         if (item.kind !== 'cookie') return item.kind === 'sessionStorage' ? 0 : Infinity;
         return item.expires === null ? 0 : item.expires - item.last;
     }
-    /** As the popup says it: "1 year", "30 days", "until cleared", "until the browser closes". */
+    /** E.g. "1 year", "30 days", "until cleared", "until the browser closes". */
     function kept(item: StoredItem): string {
         if (item.kind !== 'cookie') return item.kind === 'sessionStorage' ? 'until the tab closes' : 'until cleared';
         if (item.expires === null) return 'until the browser closes';
@@ -401,7 +396,6 @@
         color: var(--muted);
     }
 
-    /* The tables to choose from, then the search and the script it is narrowed to. */
     .controls {
         display: flex;
         flex-wrap: wrap;
@@ -494,7 +488,6 @@
         max-width: 28em;
     }
 
-    /* The kind of event, told apart by a tint: reads in the accent, requests and stored values muted. */
     .kind {
         font-size: 12px;
         font-weight: 500;

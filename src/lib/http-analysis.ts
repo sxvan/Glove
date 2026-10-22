@@ -4,9 +4,8 @@ import type { DocumentState } from '@/types/session';
 import { getEtld1, getHostname } from './http-utils';
 
 /**
- * Adds DNS-based fields to the document's requests whose lookup has finished. Requests still
- * waiting for (or without) a DNS result are kept unchanged and enriched by a later analysis; those
- * already enriched are skipped, as their DNS result doesn't change.
+ * Adds DNS-based fields to the document's requests whose lookup has finished; the others get them
+ * in a later analysis. Those that have them already are skipped: their DNS result doesn't change.
  */
 export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>) {
     for (const request of document.httpRequests) {
@@ -14,9 +13,9 @@ export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: M
         const dnsEntry = request.hostname ? dnsResults.get(request.hostname) : undefined;
         if (!dnsEntry) continue;
 
-        // Cloaking is judged against the tab's page: a host of an ad frame's own domain isn't hiding
-        // behind the site the user visits. A host of the page's site, other than the page's, whose
-        // aliases end at another site.
+        // Cloaked: a host of the page's site, other than the page's, whose aliases end at another
+        // site. Judged against the tab's page: a host of an ad frame's own domain isn't hiding behind
+        // the site the user visits.
         const pageHost = getHostname(request.pageUrl);
         const pageSite = getEtld1(pageHost);
         request.cNameDepth = dnsEntry.cNameDepth;
@@ -69,7 +68,7 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
     const used = new Set<number>();
 
     for (const httpEvent of httpEvents) {
-        // An XHR sent before open() has no URL and cannot be matched.
+        // One whose address couldn't be resolved has nothing to match.
         if (!httpEvent.requestUrl) continue;
         const eventUrl = withoutFragment(httpEvent.requestUrl);
 
