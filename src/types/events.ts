@@ -2,13 +2,13 @@ import type { StorageKind } from './snapshot';
 
 /** The events the main-world recorders hand to the bridge, by name, with what each carries. */
 export interface RecorderEvents {
-    'fp-monkey': FpMonkeyEvent[];
-    'storage-monkey': StorageMonkeyEvent[];
-    'http-monkey': HttpMonkeyEvent;
+    'glove-api-calls': ApiCallEvent[];
+    'glove-storage': StorageWriteEvent[];
+    'glove-request': RequestEvent;
 }
 
 /** A call to a fingerprinting API, recorded in the page by the fp-recorder content script. */
-export interface FpMonkeyEvent {
+export interface ApiCallEvent {
     id: string;
     timeStamp: number;
     scriptUrl: string | null;
@@ -26,7 +26,7 @@ export interface FpMonkeyEvent {
 }
 
 /** A request a script made (fetch, XHR, beacon, image pixel), recorded by the http-recorder content script. */
-export interface HttpMonkeyEvent {
+export interface RequestEvent {
     id: 'fetch' | 'xhr' | 'beacon' | 'image';
     timeStamp: number;
     /** The innermost page script on the stack; often a wrapper around fetch or XHR (see scriptUrls). */
@@ -39,7 +39,7 @@ export interface HttpMonkeyEvent {
 }
 
 /** A value a script stored in the browser (a cookie, local or session storage, IndexedDB), recorded by fp-recorder. */
-export interface StorageMonkeyEvent {
+export interface StorageWriteEvent {
     kind: StorageKind;
     /** The cookie's or item's name; for IndexedDB the database, the store and the key if given. */
     name: string;

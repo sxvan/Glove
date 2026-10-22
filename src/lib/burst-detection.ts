@@ -1,5 +1,5 @@
-import type { FpSpike } from '@/types/analysis';
-import type { FpMonkeyEvent } from '@/types/events';
+import type { FpBurst } from '@/types/analysis';
+import type { ApiCallEvent } from '@/types/events';
 import type { BurstDetection } from './scoring';
 
 /**
@@ -11,7 +11,7 @@ import type { BurstDetection } from './scoring';
  * tab open for long has tens of thousands of calls and is analyzed again with every few new ones.
  * Sorts `events` in place by timestamp; the bursts come in time order.
  */
-export function detectSpikes(events: FpMonkeyEvent[], detection: BurstDetection, weight: (apiId: string) => number): FpSpike[] {
+export function detectBursts(events: ApiCallEvent[], detection: BurstDetection, weight: (apiId: string) => number): FpBurst[] {
     events.sort((a, b) => a.timeStamp - b.timeStamp);
 
     const windows = windowsOf(events, detection, weight).sort((a, b) => b.total - a.total || b.distinct - a.distinct || a.start - b.start);
@@ -37,7 +37,7 @@ interface Window {
  * The window starting at each call, up to `windowMs` after it, that reads at least
  * `minDistinctApis` different APIs, in one pass over `events` (sorted by time).
  */
-function windowsOf(events: FpMonkeyEvent[], { windowMs, minDistinctApis }: BurstDetection, weight: (apiId: string) => number): Window[] {
+function windowsOf(events: ApiCallEvent[], { windowMs, minDistinctApis }: BurstDetection, weight: (apiId: string) => number): Window[] {
     const weights = new Map<string, number>();
     const weightOf = (id: string) => weights.get(id) ?? weights.set(id, weight(id)).get(id)!;
 

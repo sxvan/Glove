@@ -1,7 +1,7 @@
 import type { IdentifierRules } from '@/lib/identifiers';
 import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { ScoringSettings, SignalPart } from '@/lib/scoring';
-import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
+import type { ApiCallEvent, RequestEvent } from './events';
 
 // Snapshots are the serializable views of the session state sent to the popup and the dashboard.
 
@@ -14,8 +14,8 @@ export interface MetricsSnapshot {
     signals?: Record<string, SignalPart>;
 }
 
-export interface SpikeSnapshot {
-    events: FpMonkeyEvent[];
+export interface BurstSnapshot {
+    events: ApiCallEvent[];
     fpMetrics: MetricsSnapshot | null;
     httpCorrelations?: HttpConsolidatedEvent[];
 }
@@ -23,7 +23,7 @@ export interface SpikeSnapshot {
 export interface ScriptSnapshot {
     name: string;
     fpMetrics: MetricsSnapshot | null;
-    fpSpikes: SpikeSnapshot[];
+    bursts: BurstSnapshot[];
     apiCounts: Record<string, number>;
     /** Distinct positions in the script each API was called from, most calls first. */
     apiLocations: Record<string, CallLocation[]>;
@@ -63,7 +63,7 @@ export type EventLogEntry = { frameId: string; script: string; time: number } & 
           /** Which of the script's bursts of calls it was in, counted from 1 in time order; null outside them. */
           burst: number | null;
       }
-    | { kind: 'request'; how: HttpMonkeyEvent['id']; method: string | null; url: string | null }
+    | { kind: 'request'; how: RequestEvent['id']; method: string | null; url: string | null }
     /** A stored value at its first write: single writes aren't kept, only how many there were. */
     | { kind: 'stored'; storage: StorageKind; name: string; writes: number }
 );
@@ -100,7 +100,7 @@ export interface DocumentSnapshot {
     startTime: number;
     fpMetrics: MetricsSnapshot | null;
     /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
-    spikes: MetricsSnapshot[];
+    bursts: MetricsSnapshot[];
     scripts: ScriptSnapshot[];
     /** Blocked scripts that tried to load (see lib/blocking). */
     blockedScripts: { url: string; attempts: number }[];

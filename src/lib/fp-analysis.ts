@@ -1,14 +1,14 @@
-import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent } from '@/types/analysis';
-import type { FpMonkeyEvent } from '@/types/events';
+import type { DnsResult, FpMetrics, FpBurst, HttpConsolidatedEvent } from '@/types/analysis';
+import type { ApiCallEvent } from '@/types/events';
 import type { DocumentState, ScriptState } from '@/types/session';
 import { placeKey } from './call-stack';
 import { carriesData, consolidateHttpEvents, enrichHttpRequestsWithDns, requestIndexOf } from './http-analysis';
 import { apisSums, apisSumsBeyond, combineParts, type ApisLevel, type ApisSum, type ApisSums, type ScoredParts, type ScoringSettings } from './scoring';
-import { detectSpikes } from './spike-detection';
+import { detectBursts } from './burst-detection';
 
 /**
  * How much an API adds to a burst's API signals, to find the window reading the most (see
- * detectSpikes): its bits (not what it adds beyond overlapping ones) times its rarity to
+ * detectBursts): its bits (not what it adds beyond overlapping ones) times its rarity to
  * rarityPower, relative to where the signal is full and weighed by its strength. Close to the
  * burst's score, and cheap to add up.
  */
@@ -24,7 +24,7 @@ function burstWeight(level: 'burst' | 'pageBurst', settings: ScoringSettings): (
 
 /** Scores the document's scripts, their bursts of calls and the requests right after (see scoring). */
 export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<string, DnsResult>, settings: ScoringSettings) {
-    const documentFpEvents: FpMonkeyEvent[] = [];
+    const documentFpEvents: ApiCallEvent[] = [];
 
     enrichHttpRequestsWithDns(document, dnsResults);
     const requestIndex = requestIndexOf(document);
@@ -38,13 +38,13 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
 
         script.httpConsolidatedEvents = consolidateHttpEvents(script.httpEvents, document.httpRequests, requestIndex);
 
-        script.fpSpikes = detectSpikes(script.fpEvents, settings.bursts, burstWeight('burst', settings));
+        script.bursts = detectBursts(script.fpEvents, settings.bursts, burstWeight('burst', settings));
 
-        for (const spike of script.fpSpikes) {
-            spike.httpCorrelations = getCorrelatedHttpCandidates(spike, script.httpConsolidatedEvents, settings.bursts.requestWindowMs);
-            spike.fpMetrics = getFpMetrics(spike.events);
-            if (spike.fpMetrics) {
-                setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings));
+        for (const burst of script.bursts) {
+            burst.httpCorrelations = getCorrelatedHttpCandidates(burst, script.httpConsolidatedEvents, settings.bursts.requestWindowMs);
+            burst.fpMetrics = getFpMetrics(burst.events);
+            if (burst.fpMetrics) {
+                setScore(burst.fpMetrics, computeBurstFpScore(burst, burst.fpMetrics, settings));
             }
         }
 
@@ -65,17 +65,17 @@ export function analyzeDocumentFp(document: DocumentState, dnsResults: Map<strin
     // Scripts without calls were skipped above, so they have no requests matched either.
     const others = Object.values(document.scripts).filter((script) => script !== strongest && script.fpEvents.length > 0);
     const weight = burstWeight('pageBurst', settings);
-    document.spikes = detectSpikes(
+    document.bursts = detectBursts(
         others.flatMap((script) => script.fpEvents),
         settings.bursts,
         (id) => (known.has(id) ? 0 : weight(id))
     );
     const othersHttpEvents = others.flatMap((script) => script.httpConsolidatedEvents);
-    for (const spike of document.spikes) {
-        spike.httpCorrelations = getCorrelatedHttpCandidates(spike, othersHttpEvents, settings.bursts.requestWindowMs);
-        spike.fpMetrics = getFpMetrics(spike.events);
-        if (spike.fpMetrics) {
-            setScore(spike.fpMetrics, computeSpikeFpScore(spike, spike.fpMetrics, settings, 'pageBurst', known));
+    for (const burst of document.bursts) {
+        burst.httpCorrelations = getCorrelatedHttpCandidates(burst, othersHttpEvents, settings.bursts.requestWindowMs);
+        burst.fpMetrics = getFpMetrics(burst.events);
+        if (burst.fpMetrics) {
+            setScore(burst.fpMetrics, computeBurstFpScore(burst, burst.fpMetrics, settings, 'pageBurst', known));
         }
     }
 
@@ -94,7 +94,7 @@ function setScore(metrics: FpMetrics, scored: ScoredParts) {
     metrics.signals = scored.parts;
 }
 
-function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
+function getFpMetrics(fpEvents: ApiCallEvent[]): FpMetrics | null {
     if (fpEvents.length === 0) {
         return null;
     }
@@ -113,9 +113,9 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
  * generated code keep the burst's level: a place in the code belongs to one script, so they don't
  * add up over scripts like the APIs read do.
  */
-function computeSpikeFpScore(spike: FpSpike, metrics: FpMetrics, settings: ScoringSettings, apisLevel: ApisLevel = 'burst', known?: Set<string>): ScoredParts {
+function computeBurstFpScore(burst: FpBurst, metrics: FpMetrics, settings: ScoringSettings, apisLevel: ApisLevel = 'burst', known?: Set<string>): ScoredParts {
     const apis = known ? apiSignalsBeyond(known, metrics.distinctFpApis, apisLevel, settings) : apiSignals(metrics.distinctFpApis, apisLevel, settings);
-    const events = known ? spike.events.filter((event) => !known.has(event.id)) : spike.events;
+    const events = known ? burst.events.filter((event) => !known.has(event.id)) : burst.events;
     const onePlace = onePlaceSum(events, 'burst', settings);
     const generated = generatedCodeSum(events, 'burst', settings);
 
@@ -140,12 +140,12 @@ function servedThroughAlias(url: string, document: DocumentState): boolean {
 
 function computeScriptFpScore(script: ScriptState, url: string, document: DocumentState, settings: ScoringSettings): ScoredParts {
     const metrics = script.fpMetrics!;
-    const burstScores = script.fpSpikes.map((s) => s.fpMetrics?.score ?? 0);
+    const burstScores = script.bursts.map((s) => s.fpMetrics?.score ?? 0);
 
     // A fallback for collecting spread out: the script's own API signals count only what it read
     // beyond its strongest burst, which counted the rest, on top of what the burst revealed (see
     // apisSumsBeyond). So splitting a collection into several bursts doesn't hide it.
-    const strongest = script.fpSpikes.reduce<FpSpike | null>((best, spike) => ((spike.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? spike : best), null);
+    const strongest = script.bursts.reduce<FpBurst | null>((best, burst) => ((burst.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? burst : best), null);
     const counted = new Set(strongest?.events.map((event) => event.id) ?? []);
     const beyond = script.fpEvents.filter((event) => !counted.has(event.id));
     const apis = apiSignalsBeyond(counted, metrics.distinctFpApis, 'script', settings);
@@ -165,7 +165,7 @@ function computeScriptFpScore(script: ScriptState, url: string, document: Docume
                 strongestBurst: Math.max(...burstScores, 0),
                 beyondBurst: beyondBurst.score,
                 cnameCloaked: servedThroughAlias(url, document) ? 1 : 0,
-                sentThroughAlias: script.fpSpikes.some((spike) => spike.httpCorrelations?.some((c) => c.httpRequest?.isCnameCloaked)) ? 1 : 0,
+                sentThroughAlias: script.bursts.some((burst) => burst.httpCorrelations?.some((c) => c.httpRequest?.isCnameCloaked)) ? 1 : 0,
             },
             settings
         ),
@@ -195,7 +195,7 @@ function computeDocumentFpScore(document: DocumentState, settings: ScoringSettin
     // apisSumsBeyond). A page with one collector adds nothing; one whose scripts each collect a
     // part shows it here.
     const strongest = strongestScript(document);
-    const burst = document.spikes.reduce<FpSpike | null>((best, spike) => ((spike.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? spike : best), null);
+    const burst = document.bursts.reduce<FpBurst | null>((best, burst) => ((burst.fpMetrics?.score ?? 0) > (best?.fpMetrics?.score ?? 0) ? burst : best), null);
     const known = new Set([...(strongest?.fpMetrics?.distinctFpApis ?? []), ...(burst?.fpMetrics?.distinctFpApis ?? [])]);
     const others = Object.values(document.scripts).filter((s) => s.fpMetrics && s !== strongest);
     const apis = apiSignalsBeyond(known, metrics.distinctFpApis, 'page', settings);
@@ -229,7 +229,7 @@ const ONE_PLACE_MIN_APIS = 2;
  * generated code count at their place inside it (see placeKey), so a piece of generated code isn't
  * one place just because it was generated at one.
  */
-function onePlaceSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
+function onePlaceSum(fpEvents: ApiCallEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
     const byPlace = new Map<string, Set<string>>();
     for (const event of fpEvents) {
         if (event.line == null || event.column == null) continue;
@@ -262,7 +262,7 @@ function apiSignalsOf({ rareIdentifying }: ApisSums) {
  * calls came from generated code, however many didn't. Counting rare identifying APIs rather than
  * the share keeps e.g. a template engine reading document.cookie through eval from counting much.
  */
-function generatedCodeSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
+function generatedCodeSum(fpEvents: ApiCallEvent[], level: ApisLevel, settings: ScoringSettings): ApisSum {
     const generated = new Set<string>();
     for (const event of fpEvents) {
         if (event.generated) generated.add(event.id);
@@ -270,7 +270,7 @@ function generatedCodeSum(fpEvents: FpMonkeyEvent[], level: ApisLevel, settings:
     return apisSums(generated, level, settings).rareIdentifying;
 }
 
-function getDistinctFpApis(fpEvents: FpMonkeyEvent[]): Set<string> {
+function getDistinctFpApis(fpEvents: ApiCallEvent[]): Set<string> {
     const apiSet = new Set<string>();
     for (const event of fpEvents) {
         apiSet.add(event.id);
@@ -280,9 +280,9 @@ function getDistinctFpApis(fpEvents: FpMonkeyEvent[]): Set<string> {
 }
 
 /** The requests carrying data that the script made from the start of the burst until shortly after it. */
-function getCorrelatedHttpCandidates(fpSpike: FpSpike, consolidatedHttps: HttpConsolidatedEvent[], windowMs: number): HttpConsolidatedEvent[] {
-    const start = fpSpike.events[0]!.timeStamp;
-    const end = fpSpike.events[fpSpike.events.length - 1]!.timeStamp + windowMs;
+function getCorrelatedHttpCandidates(burst: FpBurst, consolidatedHttps: HttpConsolidatedEvent[], windowMs: number): HttpConsolidatedEvent[] {
+    const start = burst.events[0]!.timeStamp;
+    const end = burst.events[burst.events.length - 1]!.timeStamp + windowMs;
 
     return consolidatedHttps.filter((c) => c.httpEvent.timeStamp >= start && c.httpEvent.timeStamp <= end && carriesData(c));
 }

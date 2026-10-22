@@ -1,5 +1,5 @@
 import type { Browser } from 'wxt/browser';
-import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
+import type { ApiCallEvent, RequestEvent } from './events';
 import type { SignalPart } from '@/lib/scoring';
 
 /** One answer record of a DNS response (see dns-lookup). */
@@ -48,12 +48,12 @@ export interface FpMetrics {
 }
 
 export interface HttpConsolidatedEvent {
-    httpEvent: HttpMonkeyEvent;
+    httpEvent: RequestEvent;
     httpRequest: HttpRequest;
 }
 
-export interface FpSpike {
-    events: FpMonkeyEvent[];
+export interface FpBurst {
+    events: ApiCallEvent[];
     fpMetrics?: FpMetrics | null;
     httpCorrelations?: HttpConsolidatedEvent[];
 }

@@ -1,5 +1,5 @@
 import { placeKey } from './call-stack';
-import type { FpMonkeyEvent, HttpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
+import type { ApiCallEvent, RequestEvent, StorageWriteEvent } from '@/types/events';
 import type { DocumentRef, DocumentState, FrameState, ScriptState, Session, TabState } from '@/types/session';
 
 export function createSession(): Session {
@@ -71,7 +71,7 @@ export function ensureDocument(
             endTime: null,
             httpRequests: [],
             scripts: {},
-            spikes: [],
+            bursts: [],
             blockedScripts: {},
         };
     } else if (url !== null) {
@@ -104,7 +104,7 @@ function ensureScript(
             callCount: 0,
             httpEvents: [],
             httpConsolidatedEvents: [],
-            fpSpikes: [],
+            bursts: [],
             stored: {},
         };
     }
@@ -199,7 +199,7 @@ export function dropPreviousPageFrames(session: Session, tabId: number, committe
  * Keeps a call for its script, unless the script already has `maxCalls` (see lib/limits); then it
  * is marked as capped. Whether it was kept.
  */
-export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: FpMonkeyEvent, maxCalls = Infinity): boolean {
+export function storeFpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: ApiCallEvent, maxCalls = Infinity): boolean {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     if (script.callCount >= maxCalls) {
         script.capped = true;
@@ -226,7 +226,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
  * Stores the request for every script on its stack: a script wrapping fetch or XHR (monitoring,
  * bot protection) sits above the one that made the request, and both should see it.
  */
-export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: HttpMonkeyEvent) {
+export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: RequestEvent) {
     const scriptUrls = event.scriptUrls.length > 0 ? event.scriptUrls : [event.scriptUrl];
     for (const scriptUrl of scriptUrls) {
         const { script } = ensureScript(session, tabId, frameId, documentId, url, scriptUrl);
@@ -235,7 +235,7 @@ export function storeHttpEvent(session: Session, tabId: number, frameId: number,
 }
 
 /** Notes a value the script stored, keeping the latest value of each cookie or item. */
-export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: StorageMonkeyEvent) {
+export function storeStorageEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: StorageWriteEvent) {
     const { script } = ensureScript(session, tabId, frameId, documentId, url, event.scriptUrl);
     const item = (script.stored[`${event.kind}|${event.name}`] ??= { kind: event.kind, name: event.name, value: null, expires: null, writes: 0, first: event.timeStamp, last: event.timeStamp });
     item.value = event.value;

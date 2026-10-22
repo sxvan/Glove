@@ -25,10 +25,10 @@ import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, currentDocument, currentDocuments, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
-import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
+import type { FpMetrics, FpBurst, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
-import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
+import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, BurstSnapshot, TabSnapshot } from '@/types/snapshot';
 
 // The user's settings; the defaults until they are loaded.
 let settings: ScoringSettings = DEFAULT_SETTINGS;
@@ -36,7 +36,7 @@ let limits = DEFAULT_LIMITS;
 let privacy = DEFAULT_PRIVACY;
 
 export default defineBackground(() => {
-    watchPopups();
+    watchViews();
     const session = createSession();
     const fpScheduler = createScheduler();
 
@@ -46,7 +46,7 @@ export default defineBackground(() => {
     function scheduleAnalysis(document: DocumentState, tabId: number) {
         fpScheduler.notify(document, () => {
             analyzeDocumentFp(document, session.dnsResults, settings);
-            broadcastTabSnapshot(session, tabId);
+            publishAnalysis(session, tabId);
             blockAutomatically(tabId);
         });
     }
@@ -54,7 +54,7 @@ export default defineBackground(() => {
     function reanalyzeAll() {
         for (const tabId of Object.keys(session.tabs).map(Number)) {
             for (const document of currentDocuments(session, tabId)) analyzeDocumentFp(document, session.dnsResults, settings);
-            broadcastTabSnapshot(session, tabId);
+            publishAnalysis(session, tabId);
         }
     }
 
@@ -310,7 +310,7 @@ export default defineBackground(() => {
             // Past the page's limit, the bridge stops sending its calls.
             if (pageCalls >= limits.callsPerPage) {
                 sendResponse({ stop: true });
-                broadcastTabSnapshot(session, tabId);
+                publishAnalysis(session, tabId);
             }
             return;
         }
@@ -375,7 +375,7 @@ export default defineBackground(() => {
             const attempt = (document.blockedScripts[key] ??= { url: details.url, attempts: 0 });
             attempt.attempts++;
             showBlockedCount(tabId, blockedOnPage(tabId));
-            broadcastTabSnapshot(session, tabId);
+            publishAnalysis(session, tabId);
         },
         { urls: ['<all_urls>'], types: ['script'] }
     );
@@ -468,14 +468,14 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
     return bytes;
 }
 
-// Open popups and dashboards, each connected by a port named 'popup' while it is open.
-const openPopups = new Set<Browser.runtime.Port>();
+// Open popups and dashboards, each connected by a port named 'view' while it is open.
+const openViews = new Set<Browser.runtime.Port>();
 
-function watchPopups() {
+function watchViews() {
     browser.runtime.onConnect.addListener((port) => {
-        if (port.name !== 'popup') return;
-        openPopups.add(port);
-        port.onDisconnect.addListener(() => openPopups.delete(port));
+        if (port.name !== 'view') return;
+        openViews.add(port);
+        port.onDisconnect.addListener(() => openViews.delete(port));
     });
 }
 
@@ -483,9 +483,9 @@ function watchPopups() {
  * After an analysis: updates the tab's toolbar ring, and sends open popups and dashboards the tab's
  * snapshot. The snapshot copies all the tab has recorded, so it is only built while one is open.
  */
-function broadcastTabSnapshot(session: Session, tabId: number) {
+function publishAnalysis(session: Session, tabId: number) {
     showPageScore(session, tabId);
-    if (openPopups.size === 0) return;
+    if (openViews.size === 0) return;
     const snapshot = buildTabSnapshot(session, tabId);
     if (!snapshot) return;
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
@@ -540,9 +540,9 @@ function buildEventLog(session: Session, tabId: number): EventLog | undefined {
         if (!document) continue;
         if (frameId === '0') startTime = document.startTime;
         for (const [script, state] of Object.entries(document.scripts)) {
-            // Bursts are runs of the script's own calls (see detectSpikes), in time order.
+            // Bursts are runs of the script's own calls (see detectBursts), in time order.
             const burstOf = new Map<object, number>();
-            state.fpSpikes.forEach((spike, i) => spike.events.forEach((event) => burstOf.set(event, i + 1)));
+            state.bursts.forEach((burst, i) => burst.events.forEach((event) => burstOf.set(event, i + 1)));
             for (const event of state.fpEvents) {
                 entries.push({ kind: 'api', frameId, script, time: event.timeStamp, api: event.id, line: event.line, column: event.column, generated: event.generated, burst: burstOf.get(event) ?? null });
             }
@@ -575,7 +575,7 @@ function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot
         url: document.currentUrl,
         startTime: document.startTime,
         fpMetrics: convertToMetricsSnapshot(document.fpMetrics),
-        spikes: document.spikes.map((spike) => convertToMetricsSnapshot(spike.fpMetrics)).filter((metrics) => metrics !== null),
+        bursts: document.bursts.map((burst) => convertToMetricsSnapshot(burst.fpMetrics)).filter((metrics) => metrics !== null),
         scripts: Object.entries(document.scripts).map(([scriptName, script]) => scriptSnapshotFromScript(script, scriptName)),
         blockedScripts: Object.values(document.blockedScripts).map((attempt) => ({ ...attempt })),
     };
@@ -596,7 +596,7 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
     return {
         name: scriptName,
         fpMetrics: convertToMetricsSnapshot(script.fpMetrics),
-        fpSpikes: script.fpSpikes.map(convertToSpikeSnapshot),
+        bursts: script.bursts.map(convertToBurstSnapshot),
         apiCounts,
         apiLocations,
         apiTimes,
@@ -634,10 +634,10 @@ function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): Metr
     };
 }
 
-function convertToSpikeSnapshot(fpSpike: FpSpike): SpikeSnapshot {
+function convertToBurstSnapshot(burst: FpBurst): BurstSnapshot {
     return {
-        events: fpSpike.events,
-        fpMetrics: convertToMetricsSnapshot(fpSpike.fpMetrics),
-        httpCorrelations: fpSpike.httpCorrelations,
+        events: burst.events,
+        fpMetrics: convertToMetricsSnapshot(burst.fpMetrics),
+        httpCorrelations: burst.httpCorrelations,
     };
 }

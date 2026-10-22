@@ -259,9 +259,9 @@ export const DEFAULT_SETTINGS: ScoringSettings = {
     identifiers: DEFAULT_IDENTIFIER_RULES,
 };
 
-/** What counts as a burst of calls: one collection of details (see spike-detection). */
+/** What counts as a burst of calls: one collection of details (see burst-detection). */
 export interface BurstDetection {
-    /** How long a burst is at most: the window that slides over the calls (see spike-detection). */
+    /** How long a burst is at most: the window that slides over the calls (see burst-detection). */
     windowMs: number;
     /** Fewer different APIs are a couple of reads, not a collection. */
     minDistinctApis: number;

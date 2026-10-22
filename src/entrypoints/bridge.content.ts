@@ -48,13 +48,13 @@ export default defineContentScript({
             document.documentElement.addEventListener(name, (event) => onEvent((event as CustomEvent<RecorderEvents[K]>).detail), { signal: listening.signal });
         }
 
-        listen('fp-monkey', (detail) => {
+        listen('glove-api-calls', (detail) => {
             if (!callsStopped && Array.isArray(detail) && detail.length > 0) send({ type: 'fp-batch', payload: detail });
         });
-        listen('storage-monkey', (detail) => {
+        listen('glove-storage', (detail) => {
             if (Array.isArray(detail) && detail.length > 0) send({ type: 'storage-batch', payload: detail });
         });
-        listen('http-monkey', (detail) => {
+        listen('glove-request', (detail) => {
             if (detail) send({ type: 'http', payload: detail });
         });
     },

@@ -3,7 +3,7 @@ import { createStackReader } from '@/lib/call-stack';
 import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import { handOver, nativeGetter, reflectApply } from '@/lib/page-natives';
 import { recordingDocument } from '@/lib/recording-document';
-import type { HttpMonkeyEvent } from '@/types/events';
+import type { RequestEvent } from '@/types/events';
 
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
 // XMLHttpRequest, beacons and image pixels.
@@ -53,10 +53,10 @@ function isNetworkUrl(url: string | null): url is string {
  * @param hook our wrapper that was called; stack frames from it inward are skipped
  * @param wrapped whether a page script has replaced our wrapper with its own (see scriptsOnStack)
  */
-function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: string | null, credentials: string, hook: Function, wrapped: boolean) {
+function recordHttpEvent(id: RequestEvent['id'], url: string | null, method: string | null, credentials: string, hook: Function, wrapped: boolean) {
     if (!isNetworkUrl(url)) return;
     const scriptUrls = scriptsOnStack(hook, wrapped);
-    const httpMonkeyEvent: HttpMonkeyEvent = {
+    const requestEvent: RequestEvent = {
         id: id,
         timeStamp: Date.now(),
         scriptUrl: scriptUrls[0] ?? null,
@@ -66,7 +66,7 @@ function recordHttpEvent(id: HttpMonkeyEvent['id'], url: string | null, method: 
         credentials: credentials,
     };
 
-    handOver(recordTo, 'http-monkey', httpMonkeyEvent);
+    handOver(recordTo, 'glove-request', requestEvent);
 }
 
 /**

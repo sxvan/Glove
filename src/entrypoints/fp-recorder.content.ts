@@ -2,7 +2,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { FP_APIS, type FpApiOwner, type SpecialRead } from '@/lib/fp-apis';
 import { createStackReader, type StackLocation } from '@/lib/call-stack';
 import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
-import type { FpMonkeyEvent, StorageMonkeyEvent } from '@/types/events';
+import type { ApiCallEvent, StorageWriteEvent } from '@/types/events';
 import type { StorageKind } from '@/types/snapshot';
 import { STORED_VALUE_MAX } from '@/lib/identifiers';
 import { handOver, nativeGetter, nativeSetters, reflectApply } from '@/lib/page-natives';
@@ -78,7 +78,7 @@ function getProtoForOwner(owner: FpApiOwner): object | null {
 // the bridge in batches instead of one dispatch (and one extension message) per call.
 const FLUSH_INTERVAL_MS = 100;
 
-const pendingEvents: FpMonkeyEvent[] = [];
+const pendingEvents: ApiCallEvent[] = [];
 let flushScheduled = false;
 
 /** @param hook the wrapper that was called; stack frames from it inward are skipped */
@@ -100,10 +100,10 @@ function recordFpEvent(id: string, hook: Function) {
 function flushFpEvents() {
     flushScheduled = false;
     if (pendingEvents.length > 0) {
-        handOver(recordTo, 'fp-monkey', pendingEvents.splice(0));
+        handOver(recordTo, 'glove-api-calls', pendingEvents.splice(0));
     }
     if (pendingStored.length > 0) {
-        handOver(recordTo, 'storage-monkey', pendingStored.splice(0));
+        handOver(recordTo, 'glove-storage', pendingStored.splice(0));
     }
 }
 
@@ -288,7 +288,7 @@ function getCallerLocation(hook: Function): StackLocation | null {
 // A write counts for the innermost page script on the stack, as an API call does; a framework that
 // wraps the storage calls for the whole page is then credited with the writes passing through it.
 
-const pendingStored: StorageMonkeyEvent[] = [];
+const pendingStored: StorageWriteEvent[] = [];
 
 // The page's storages, to tell which one setItem was called on; null where they can't be used,
 // e.g. in a sandboxed frame.
@@ -354,7 +354,7 @@ function installStorageHooks() {
     }
 }
 
-type StoredWrite = Pick<StorageMonkeyEvent, 'kind' | 'name' | 'value' | 'expires'>;
+type StoredWrite = Pick<StorageWriteEvent, 'kind' | 'name' | 'value' | 'expires'>;
 
 function storageKind(storage: unknown): StorageKind | null {
     return storage === localStorageOf ? 'localStorage' : storage === sessionStorageOf ? 'sessionStorage' : null;

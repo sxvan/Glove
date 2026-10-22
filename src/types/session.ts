@@ -1,5 +1,5 @@
-import type { DnsResult, FpMetrics, FpSpike, HttpConsolidatedEvent, HttpRequest } from './analysis';
-import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
+import type { DnsResult, FpMetrics, FpBurst, HttpConsolidatedEvent, HttpRequest } from './analysis';
+import type { ApiCallEvent, RequestEvent } from './events';
 import type { CallLocation, StoredItem } from './snapshot';
 
 /** An API's calls by a script: how many, and from where in the code (by "line:column"). */
@@ -12,16 +12,16 @@ export interface ApiCalls {
 }
 
 export interface ScriptState {
-    fpEvents: FpMonkeyEvent[];
+    fpEvents: ApiCallEvent[];
     /** Its calls per API, counted as they arrive. */
     calls: Record<string, ApiCalls>;
     /** How many calls it made, counted as they arrive, up to the limit (see lib/limits). */
     callCount: number;
     /** Set once it reached the limit of calls kept per script: further ones weren't kept. */
     capped?: boolean;
-    httpEvents: HttpMonkeyEvent[];
+    httpEvents: RequestEvent[];
     httpConsolidatedEvents: HttpConsolidatedEvent[];
-    fpSpikes: FpSpike[];
+    bursts: FpBurst[];
     fpMetrics?: FpMetrics | null;
     /** What it stored in the browser, by kind and name (see storeStorageEvent). */
     stored: Record<string, StoredItem>;
@@ -35,7 +35,7 @@ export interface DocumentState {
     httpRequests: HttpRequest[];
     /** Keyed by the URL of the script that made the calls. */
     scripts: Record<string, ScriptState>;
-    spikes: FpSpike[];
+    bursts: FpBurst[];
     fpMetrics?: FpMetrics | null;
     /** Blocked scripts that tried to load (see lib/blocking), by what they are blocked by. */
     blockedScripts: Record<string, BlockedAttempt>;

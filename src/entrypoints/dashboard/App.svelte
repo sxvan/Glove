@@ -206,8 +206,8 @@
             status = 'unavailable';
             return;
         }
-        // As a popup does, so the background sends the tab's updates (see broadcastTabSnapshot).
-        const port = browser.runtime.connect({ name: 'popup' });
+        // As a popup does, so the background sends the tab's updates (see publishAnalysis).
+        const port = browser.runtime.connect({ name: 'view' });
         const message: GetTabSnapshotMessage = { type: 'GET_TAB_SNAPSHOT', tabId };
         browser.runtime.sendMessage(message).then(
             (next: TabSnapshot | undefined) => {

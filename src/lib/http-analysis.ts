@@ -1,5 +1,5 @@
 import type { DnsResult, HttpConsolidatedEvent, HttpRequest } from '@/types/analysis';
-import type { HttpMonkeyEvent } from '@/types/events';
+import type { RequestEvent } from '@/types/events';
 import type { DocumentState } from '@/types/session';
 import { getEtld1, getHostname } from './http-utils';
 
@@ -63,7 +63,7 @@ export function requestIndexOf(document: DocumentState): RequestIndex {
  * `index` looks the requests up by URL (see requestIndexOf), so a match costs only the requests
  * to the same URL rather than all of them.
  */
-export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequests: HttpRequest[], index: RequestIndex, maxDeltaMs = 1000): HttpConsolidatedEvent[] {
+export function consolidateHttpEvents(httpEvents: RequestEvent[], httpRequests: HttpRequest[], index: RequestIndex, maxDeltaMs = 1000): HttpConsolidatedEvent[] {
     const correlations: HttpConsolidatedEvent[] = [];
     const used = new Set<number>();
 
@@ -121,7 +121,7 @@ export function carriesData(consolidated: HttpConsolidatedEvent): boolean {
 }
 
 // Whether a recorded request carries data, worked out once per request it's matched to.
-const carriesDataOf = new WeakMap<HttpMonkeyEvent, { request: HttpRequest; value: boolean }>();
+const carriesDataOf = new WeakMap<RequestEvent, { request: HttpRequest; value: boolean }>();
 
 function computeCarriesData({ httpEvent, httpRequest }: HttpConsolidatedEvent): boolean {
     const method = (httpEvent.method ?? httpRequest.method ?? 'GET').toUpperCase();

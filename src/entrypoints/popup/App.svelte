@@ -59,9 +59,9 @@
     }
 
     onMount(() => {
-        // Tells the background a popup is open, so it sends updates (see broadcastTabSnapshot); the
+        // Tells the background a popup is open, so it sends updates (see publishAnalysis); the
         // port closes with the popup.
-        const port = browser.runtime.connect({ name: 'popup' });
+        const port = browser.runtime.connect({ name: 'view' });
         loadOffSites().then((sites) => (offSites = sites));
         const stopOffSites = watchOffSites((sites) => (offSites = sites));
         getActiveTabId().then((tabId) => {

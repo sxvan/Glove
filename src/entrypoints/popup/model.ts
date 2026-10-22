@@ -8,7 +8,7 @@ import { findIdentifier, type IdentifierLevel, type StoredPlace } from '@/lib/id
 import { SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
-import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
+import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, BurstSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
 import { amount, capitalize, duration, plural } from './format';
 
 /** How likely tracking is; "unknown" while nothing was recorded for the tab yet. */
@@ -114,9 +114,9 @@ function byIdentifier(a: StoredDetail, b: StoredDetail): number {
 function storedDetails(snapshot: TabSnapshot, script: ScriptSnapshot): StoredDetail[] {
     const page: StoredPlace[] = snapshot.frames.flatMap((frame) => frame?.document.scripts.flatMap((other) => other.stored) ?? []);
     const possible = snapshot.cutoffs.fingerprinting.possible;
-    const bursts = script.fpSpikes
-        .filter((spike) => (spike.fpMetrics?.score ?? 0) >= possible)
-        .map((spike) => spike.events.map((event) => event.timeStamp))
+    const bursts = script.bursts
+        .filter((burst) => (burst.fpMetrics?.score ?? 0) >= possible)
+        .map((burst) => burst.events.map((event) => event.timeStamp))
         .filter((times) => times.length > 0)
         .map((times) => ({ start: Math.min(...times), end: Math.max(...times) }));
     const rules = snapshot.identifiers;
@@ -233,11 +233,11 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                     const { name, path, origin, host, linkable, inline } = describeScript(script.name, frame.document.url);
                     const score = script.fpMetrics?.score ?? 0;
                     // Sent right after reading: only after bursts that are possible fingerprinting on their own, as for what it stored (see storedDetails).
-                    const correlations = script.fpSpikes
-                        .filter((spike) => (spike.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
-                        .flatMap((spike) => {
-                            const burstEnd = Math.max(...spike.events.map((event) => event.timeStamp));
-                            return (spike.httpCorrelations ?? []).map((correlation) => ({ ...correlation, burstEnd }));
+                    const correlations = script.bursts
+                        .filter((burst) => (burst.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
+                        .flatMap((burst) => {
+                            const burstEnd = Math.max(...burst.events.map((event) => event.timeStamp));
+                            return (burst.httpCorrelations ?? []).map((correlation) => ({ ...correlation, burstEnd }));
                         });
                     const apis = apiList(script.apiCounts, script.apiLocations, script.fpMetrics?.distinctFpApis ?? []);
                     // An inline script is shown from its page, which is the script's URL in stack traces.
@@ -423,8 +423,8 @@ function pageSent(scripts: ScriptDetail[]): SentRequest[] {
     return [...byRequest.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
-function strongestSpike(spikes: SpikeSnapshot[]): MetricsSnapshot | null {
-    return strongest(spikes, (spike) => spike.fpMetrics?.score ?? -1)?.fpMetrics ?? null;
+function strongestBurst(bursts: BurstSnapshot[]): MetricsSnapshot | null {
+    return strongest(bursts, (burst) => burst.fpMetrics?.score ?? -1)?.fpMetrics ?? null;
 }
 
 /** The item scoring highest, the first of those tied. */
@@ -632,7 +632,7 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
                 detail: scripts > 0 ? `${plural(scripts, 'script')}, on top of the strongest` : '',
                 children: scoreTree('otherScripts', metrics, other.value, (inner) => {
                     if (inner !== 'strongestBurst') return null;
-                    const burst = [...document.spikes].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
+                    const burst = [...document.bursts].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
                     if (!burst) return null;
                     const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}`;
                     return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
@@ -646,7 +646,7 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
 function scriptTree(script: ScriptSnapshot): ScoreNode[] {
     return scoreTree('script', script.fpMetrics, script.fpMetrics?.score ?? 0, (key) => {
         if (key !== 'strongestBurst') return null;
-        const burst = strongestSpike(script.fpSpikes);
+        const burst = strongestBurst(script.bursts);
         if (!burst) return null;
         const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}`;
         return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
