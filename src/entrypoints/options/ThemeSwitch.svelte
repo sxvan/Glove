@@ -16,46 +16,25 @@
     }
 </script>
 
-<div class="segments" role="radiogroup" aria-label="Appearance">
+<div class="segments segmented" role="radiogroup" aria-label="Appearance">
     {#each THEMES as option (option.theme)}
-        <button type="button" role="radio" class="segment" class:active={theme === option.theme} aria-checked={theme === option.theme} onclick={() => choose(option.theme)}>
+        <button type="button" role="radio" aria-checked={theme === option.theme} onclick={() => choose(option.theme)}>
             {option.label}
         </button>
     {/each}
 </div>
 
 <style>
-    /* One rounded track with the chosen segment raised on it, as in Apple's segmented controls. */
+    /* Segments as wide as the widest, on the page's background, as it sits on a section. */
     .segments {
         display: inline-grid;
         grid-auto-columns: 1fr;
         grid-auto-flow: column;
-        gap: 2px;
-        padding: 2px;
-        border-radius: 9px;
         background: var(--bg);
     }
 
-    .segment {
-        min-width: 80px;
+    .segments > button {
         padding: 5px 14px;
-        border: 0;
-        border-radius: 7px;
-        background: none;
-        color: var(--muted);
-        font: inherit;
         font-size: 14px;
-        cursor: pointer;
-    }
-
-    .segment:hover {
-        color: var(--text);
-    }
-
-    .segment.active {
-        background: var(--surface);
-        box-shadow: 0 1px 3px var(--shadow);
-        color: var(--text);
-        font-weight: 500;
     }
 </style>

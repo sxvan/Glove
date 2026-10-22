@@ -221,7 +221,7 @@
                 <li><a href="#{p.id}" aria-current={page === p.id ? 'page' : undefined}>{p.title}</a></li>
             {/each}
         </ul>
-        <button type="button" class="reset-all" disabled={!anyChanged} title={anyChanged ? undefined : 'All settings are at their defaults'} onclick={reset}>
+        <button type="button" class="button reset-all" disabled={!anyChanged} title={anyChanged ? undefined : 'All settings are at their defaults'} onclick={reset}>
             Reset all to defaults
         </button>
         <p class="status" role="status">{status}</p>
@@ -531,21 +531,7 @@
 
     .reset-all {
         padding: 6px 12px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        cursor: pointer;
-    }
-
-    .reset-all:hover:not(:disabled) {
-        border-color: var(--muted);
-    }
-
-    /* Like a section's Reset with nothing to reset (see SectionHead). */
-    .reset-all:disabled {
-        color: var(--muted);
-        opacity: 0.6;
-        cursor: default;
+        font-size: inherit;
     }
 
     .intro {

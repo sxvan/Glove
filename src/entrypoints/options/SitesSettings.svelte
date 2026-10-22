@@ -36,8 +36,8 @@
     </div>
     <div class="actions">
         {#if sites.length > 0}
-            <button type="button" aria-expanded={open} onclick={() => (open = !open)}>{open ? 'Hide' : 'Show'}</button>
-            <button type="button" onclick={turnOnAll}>Turn on all</button>
+            <button type="button" class="button" aria-expanded={open} onclick={() => (open = !open)}>{open ? 'Hide' : 'Show'}</button>
+            <button type="button" class="button" onclick={turnOnAll}>Turn on all</button>
         {/if}
     </div>
 </div>
@@ -49,42 +49,13 @@
                     <div class="site">{site}</div>
                     <div class="description">And its subdomains · {day(since)}</div>
                 </div>
-                <button type="button" onclick={() => removeOffSites([site])}>Turn on</button>
+                <button type="button" class="button" onclick={() => removeOffSites([site])}>Turn on</button>
             </li>
         {/each}
     </ul>
 {/if}
 
 <style>
-    .count {
-        margin-left: 4px;
-        color: var(--muted);
-        font-weight: 400;
-    }
-
-    /* Spans the input and default columns, the buttons at their end (see BlockingSettings). */
-    .actions {
-        display: flex;
-        grid-column: 2 / -1;
-        justify-content: flex-end;
-        gap: 8px;
-    }
-
-    button {
-        padding: 5px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        color: var(--text);
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-    }
-
-    button:hover {
-        border-color: var(--muted);
-    }
-
     .sites {
         display: grid;
         gap: 2px;

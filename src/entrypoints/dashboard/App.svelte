@@ -330,7 +330,7 @@
         <p class="state">No recording for this tab: it was closed, or the page hasn't loaded since the extension started. Reload the page and open this again from the popup.</p>
     {:else}
         <div class="controls">
-            <div class="tables" role="tablist">
+            <div class="segmented" role="tablist">
                 {#each TABLES as { id, label } (id)}
                     {@const count = id === 'apis' ? apiRows.length : id === 'requests' ? requestRows.length : id === 'stored' ? storedRows.length : log ? logRows.length : null}
                     <button type="button" role="tab" aria-selected={table === id} onclick={() => choose(id)}>{label} {#if count !== null}<span class="count">{count.toLocaleString('en-US')}</span>{/if}</button>
@@ -408,36 +408,6 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-    }
-
-    .tables {
-        display: flex;
-        gap: 2px;
-        padding: 2px;
-        border-radius: 9px;
-        background: var(--fill);
-    }
-
-    .tables button {
-        padding: 6px 12px;
-        border: 0;
-        border-radius: 7px;
-        background: none;
-        color: var(--muted);
-        font: inherit;
-        font-size: 13px;
-        cursor: pointer;
-    }
-
-    .tables button:hover {
-        color: var(--text);
-    }
-
-    .tables button[aria-selected='true'] {
-        background: var(--surface);
-        box-shadow: 0 1px 3px var(--shadow);
-        color: var(--text);
-        font-weight: 500;
     }
 
     .count {

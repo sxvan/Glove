@@ -191,8 +191,8 @@
     </div>
     <div class="actions">
         {#if exempt.length > 0}
-            <button type="button" aria-expanded={exemptOpen} onclick={() => (exemptOpen = !exemptOpen)}>{exemptOpen ? 'Hide' : 'Show'}</button>
-            <button type="button" onclick={() => actOnAll(exemptGroup)}>Remove all</button>
+            <button type="button" class="button" aria-expanded={exemptOpen} onclick={() => (exemptOpen = !exemptOpen)}>{exemptOpen ? 'Hide' : 'Show'}</button>
+            <button type="button" class="button" onclick={() => actOnAll(exemptGroup)}>Remove all</button>
         {/if}
     </div>
 </div>
@@ -207,7 +207,7 @@
     </div>
     <div class="actions">
         {#if blocked.length > 0}
-            <button type="button" aria-expanded={blockedOpen} onclick={() => (blockedOpen = !blockedOpen)}>{blockedOpen ? 'Hide' : 'Show'}</button>
+            <button type="button" class="button" aria-expanded={blockedOpen} onclick={() => (blockedOpen = !blockedOpen)}>{blockedOpen ? 'Hide' : 'Show'}</button>
         {/if}
     </div>
 </div>
@@ -215,7 +215,7 @@
     {#each blockedGroups as group (group.id)}
         <div class="group-head">
             <h3>{group.title} <span class="count">{group.scripts.length}</span></h3>
-            <button type="button" onclick={() => actOnAll(group)}>{group.action} all</button>
+            <button type="button" class="button" onclick={() => actOnAll(group)}>{group.action} all</button>
         </div>
         {@render scripts(group)}
     {/each}
@@ -232,19 +232,13 @@
                     <div class="address"><MiddleTruncate text={pathname} path /></div>
                     <div class="description">{[host, script.detail].filter(Boolean).join(' · ')}</div>
                 </div>
-                <button type="button" onclick={() => group.act([script.key])}>{group.action}</button>
+                <button type="button" class="button" onclick={() => group.act([script.key])}>{group.action}</button>
             </li>
         {/each}
     </ul>
 {/snippet}
 
 <style>
-    .count {
-        margin-left: 4px;
-        color: var(--muted);
-        font-weight: 400;
-    }
-
     /* Marks a setting still being tried out: a small tag after its name, in the color of a warning. */
     .experimental {
         margin-left: 8px;
@@ -263,30 +257,6 @@
         color: var(--likely);
         font-size: 12px;
         font-weight: 500;
-    }
-
-    /* Spans the input and default columns, the button at their end, like the groups' buttons below. */
-    .actions {
-        display: flex;
-        grid-column: 2 / -1;
-        justify-content: flex-end;
-        gap: 8px;
-    }
-
-    /* Like the page's other buttons (see the header's). */
-    button {
-        padding: 5px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        color: var(--text);
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-    }
-
-    button:hover {
-        border-color: var(--muted);
     }
 
     /* A group's heading, with its button at the end. */

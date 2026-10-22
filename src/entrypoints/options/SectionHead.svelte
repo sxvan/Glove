@@ -8,7 +8,7 @@
 <div class="head">
     <h2>{title}</h2>
     {#if onreset}
-        <button type="button" disabled={!changed} title={changed ? "Set this section's settings back to their defaults" : 'All at their defaults'} onclick={onreset}>
+        <button type="button" class="button" disabled={!changed} title={changed ? "Set this section's settings back to their defaults" : 'All at their defaults'} onclick={onreset}>
             Reset
         </button>
     {/if}
@@ -35,23 +35,6 @@
     button {
         margin-block: -4px;
         padding: 3px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        color: var(--text);
-        font: inherit;
-        font-size: 12px;
         line-height: 1.4;
-        cursor: pointer;
-    }
-
-    button:hover:not(:disabled) {
-        border-color: var(--muted);
-    }
-
-    button:disabled {
-        color: var(--muted);
-        opacity: 0.6;
-        cursor: default;
     }
 </style>

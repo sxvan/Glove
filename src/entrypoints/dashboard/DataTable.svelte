@@ -64,7 +64,7 @@
     {:else if pageSize && sorted.length > shown}
         <p class="more">
             {shown.toLocaleString('en-US')} of {sorted.length.toLocaleString('en-US')} shown
-            <button type="button" onclick={() => (shown += pageSize)}>Show {Math.min(pageSize, sorted.length - shown).toLocaleString('en-US')} more</button>
+            <button type="button" class="button" onclick={() => (shown += pageSize)}>Show {Math.min(pageSize, sorted.length - shown).toLocaleString('en-US')} more</button>
         </p>
     {/if}
 </div>
@@ -170,17 +170,4 @@
         font-size: 12px;
     }
 
-    .more button {
-        padding: 5px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
-        color: var(--text);
-        font: inherit;
-        cursor: pointer;
-    }
-
-    .more button:hover {
-        border-color: var(--muted);
-    }
 </style>

@@ -126,6 +126,60 @@ button {
     background: var(--surface);
 }
 
+/* A small bordered button, such as Show, Reset or Show more; a use may set its own padding and size. */
+.button {
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+    border-color: var(--muted);
+}
+
+.button:disabled {
+    color: var(--muted);
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* One rounded track with the chosen segment raised on it, as in Apple's segmented controls. */
+.segmented {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--fill);
+}
+
+.segmented > button {
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.segmented > button:hover {
+    color: var(--text);
+}
+
+.segmented > [aria-selected='true'],
+.segmented > [aria-checked='true'] {
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow);
+    color: var(--text);
+    font-weight: 500;
+}
+
 /* Sets --color for an element showing a likelihood. */
 .tone-unlikely {
     --color: var(--unlikely);
