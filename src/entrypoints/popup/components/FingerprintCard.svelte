@@ -16,14 +16,8 @@
 
     // With `onOpen`, the whole card opens a screen about it and nothing in it is clickable on its
     // own: on the overview, the page's card leads to the fingerprinting screen. `onDetails` opens
-    // the script's page at the section of a statement (by its key). As `headOnly`, only the head
-    // and the score's breakdown: the script's page shows the statements in sections of their own.
-    let {
-        script,
-        onOpen,
-        onDetails,
-        headOnly = false,
-    }: { script: ScriptDetail; onOpen?: () => void; onDetails?: (section: string) => void; headOnly?: boolean } = $props();
+    // the details page at the section of a statement (by its key).
+    let { script, onOpen, onDetails }: { script: ScriptDetail; onOpen?: () => void; onDetails?: (section: string) => void } = $props();
 
     // Whether the signals the score was combined from show.
     let breakdown = $state(false);
@@ -99,8 +93,7 @@
         <ScoreTree nodes={script.tree} openStrongest />
     {/if}
 
-    {#if !headOnly}
-    <!-- Lines leading to the same section of the script's page share one chevron, in their middle. -->
+    <!-- Lines leading to the same table of the details page share one chevron, in their middle. -->
     <ul class="statements">
         {#each bySection(statements(script)) as lines (lines[0]!.key)}
             {@const details = !onOpen && !!onDetails}
@@ -120,7 +113,6 @@
             {/if}
         {/each}
     </ul>
-    {/if}
 
     {#if blockable}
         <BlockToggle url={script.url} label="Block this script" />

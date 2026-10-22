@@ -11,7 +11,7 @@
     // Scripts unlikely to fingerprint come after them, under a heading of their own, so the suspicious
     // ones are what shows. Each heading folds its cards (see FoldHeading): the scripts' open at first,
     // the unlikely ones' folded; `open` is kept by the caller, so it stays after a script's page.
-    // `onDetails` opens a script's page (by its key) at a section.
+    // `onDetails` opens the details page for a script (by its key) at a statement's table.
     let {
         page,
         scripts,

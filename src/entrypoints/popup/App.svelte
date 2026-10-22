@@ -2,14 +2,13 @@
     import { browser } from 'wxt/browser';
     import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, SetSiteOffMessage } from '@/types/messages';
     import type { TabSnapshot } from '@/types/snapshot';
-    import DetailHeader from './components/DetailHeader.svelte';
     import MiddleTruncate from './components/MiddleTruncate.svelte';
     import Switch from './components/Switch.svelte';
     import { loadOffSites, offEntryFor, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
     import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from './model';
+    import { sectionOf } from './statements';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
-    import ScriptPage from './screens/ScriptPage.svelte';
-    import { onMount, tick } from 'svelte';
+    import { onMount } from 'svelte';
 
     type Status = 'loading' | 'ready' | 'unavailable';
 
@@ -20,22 +19,20 @@
     const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
     const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 
-    // Which lists of scripts are unfolded (see FingerprintingDetail), kept across a script's page.
+    // Which lists of scripts are unfolded (see FingerprintingDetail).
     let open = $state({ scripts: true, unlikely: false });
 
-    // A script's page, and where the main screen was scrolled to, to return there.
-    let openScript = $state<{ key: string; section: string } | null>(null);
-    let scrolledTo = 0;
+    // The table of the details page an info line leads to, by the section of its statement.
+    const DETAILS_TABLES: Record<string, string> = { read: 'apis', code: 'apis', cloaked: 'apis', sent: 'requests', 'sent-alias': 'requests', stored: 'stored' };
 
-    function openScriptPage(key: string, section: string) {
-        scrolledTo = window.scrollY;
-        openScript = { key, section };
-    }
-
-    async function closeScriptPage() {
-        openScript = null;
-        await tick();
-        window.scrollTo(0, scrolledTo);
+    /**
+     * Opens the details page (entrypoints/dashboard) in a tab: the tab's recording in full, at the
+     * table of the line's section, narrowed to the script; from the page's card, to all scripts.
+     */
+    function openDetails(key: string, statement: string) {
+        if (tabId === undefined) return;
+        const script = key === page?.key ? '' : `&script=${encodeURIComponent(key)}`;
+        browser.tabs.create({ url: `${browser.runtime.getURL('/dashboard.html')}?tab=${tabId}${script}#${DETAILS_TABLES[sectionOf(statement)] ?? 'apis'}` });
     }
 
     // The tab, and whether the extension is off for its site (see lib/sites): then nothing was
@@ -134,15 +131,7 @@
     {:else if status === 'unavailable'}
         <p class="state">No data for this tab yet. Reload the page to check it.</p>
     {:else if snapshot && page}
-        {@const shownScript = openScript ? [page, ...scripts].find((s) => s.key === openScript?.key) : undefined}
-        {#if shownScript && openScript}
-            <DetailHeader onBack={closeScriptPage} />
-            {#key openScript}
-                <ScriptPage script={shownScript} section={openScript.section} />
-            {/key}
-        {:else}
-            <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openScriptPage} bind:open />
-        {/if}
+        <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openDetails} bind:open />
     {/if}
 </main>
 
