@@ -1,5 +1,10 @@
 # Glove
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/popup-dark.png">
+  <img src="docs/popup-light.png" align="right" width="300" hspace="16" alt="Glove's popup on fingerprint.com: the page and its one script score 91, likely fingerprinting, after reading 57 fingerprinting APIs worth up to 74 bits, sending 4.4 KB right after and storing 5 likely identifiers">
+</picture>
+
 See which scripts on a page fingerprint your browser and how, so you can avoid them or block them.
 
 Glove is a Chrome extension. On every page you visit, it records which scripts read the browser
@@ -7,11 +12,15 @@ details that fingerprinting relies on (canvas and WebGL images, audio, fonts, sc
 scores each script by how rare and identifying what it reads is, and lets you block the ones you
 don't want.
 
+**To install**, download the zip of the [latest release](https://github.com/sxvan/Glove/releases/latest)
+and unpack it, open `chrome://extensions`, turn on developer mode and choose "Load unpacked" with the
+unpacked folder. Glove isn't in the Chrome Web Store yet.
+
 ## What it shows
 
 - **The page's score on the toolbar icon**, as a ring filled to how likely the page fingerprints you.
 - **A card per script in the popup**, most suspicious first, with what it read, how identifying that
-  is together ("Up to 31 bits of identifying information"), signs of fingerprinting such as reading
+  is together ("Up to 74 bits of identifying information"), signs of fingerprinting such as reading
   from generated code or from a single place, the data it sent right after reading, CNAME aliases
   it sent data through, and identifiers it stored in cookies or storage. "How the score came about"
   breaks the score down into the signals it was made from.
@@ -19,7 +28,14 @@ don't want.
   log, searchable and sortable.
 - **A script viewer** that shows a script's code with the fingerprinting calls marked.
 
+<br clear="right">
+
 ## Blocking
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/popup-blocked-dark.png">
+  <img src="docs/popup-blocked-light.png" align="right" width="300" hspace="16" alt="Glove's popup on fingerprint.com with its script blocked at both addresses it loads from: both tried to load once, and the page scores 1, unlikely fingerprinting">
+</picture>
 
 A script can be blocked from its card. Blocked scripts are refused by the browser on every site from
 their next load; the popup lists those that tried to load, to let them run again. Optionally, the page
@@ -40,6 +56,8 @@ A script scores high when it reads much that is both identifying and rarely need
 calls. Signals such as reading from generated code or sending data right after reading add to the
 score as independent evidence. Every value is a default you can change in the settings, where each
 is explained with its source.
+
+<br clear="right">
 
 ## Limits
 
@@ -67,12 +85,6 @@ except where you allow it in the settings (Privacy):
 | `declarativeNetRequest` | Blocking the scripts you block |
 | `browsingData` | Clearing a site's data after blocking, if you turned that on |
 | `storage` | Keeping your settings, blocked scripts and the sites Glove is off for |
-
-## Install
-
-Glove isn't in the Chrome Web Store yet. Download the zip of the
-[latest release](https://github.com/sxvan/Glove/releases/latest), unpack it, open
-`chrome://extensions`, turn on developer mode and choose "Load unpacked" with the unpacked folder.
 
 ## Roadmap
 
