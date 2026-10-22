@@ -4,6 +4,7 @@
 // to the background any more (see bridge). The page itself can't change them: they apply where its
 // scripts can't reach, as a recorder in the page could be told anything by them.
 import { browser } from 'wxt/browser';
+import { loadStored, watchStored } from './storage';
 
 export interface PerformanceLimits {
     callsPerScript: number;
@@ -35,8 +36,7 @@ export const LIMIT_FIELDS: { key: keyof PerformanceLimits; label: string; descri
 const STORAGE_KEY = 'performanceLimits';
 
 export async function loadLimits(): Promise<PerformanceLimits> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as Partial<PerformanceLimits> | undefined;
-    return { ...DEFAULT_LIMITS, ...stored };
+    return { ...DEFAULT_LIMITS, ...(await loadStored<Partial<PerformanceLimits>>(STORAGE_KEY)) };
 }
 
 export function saveLimits(limits: PerformanceLimits): Promise<void> {
@@ -45,9 +45,5 @@ export function saveLimits(limits: PerformanceLimits): Promise<void> {
 
 /** Calls `onChange` with the limits whenever the user changes them. */
 export function watchLimits(onChange: (limits: PerformanceLimits) => void): () => void {
-    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && STORAGE_KEY in changes) onChange({ ...DEFAULT_LIMITS, ...(changes[STORAGE_KEY]!.newValue as Partial<PerformanceLimits> | undefined) });
-    };
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
+    return watchStored<Partial<PerformanceLimits>>(STORAGE_KEY, (value) => onChange({ ...DEFAULT_LIMITS, ...value }));
 }

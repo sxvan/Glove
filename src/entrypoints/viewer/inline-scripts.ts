@@ -25,7 +25,7 @@ const JAVASCRIPT_TYPE = /^(?:|module|(?:text|application)\/(?:x-)?(?:java|ecma)s
  */
 export function inlineScripts(html: string, apis: ViewerApi[]): { scripts: InlineScript[]; matched: boolean } {
     const pageLines = lineStarts(html);
-    const elements = scriptElements(html);
+    const elements = scriptElements(html, pageLines);
 
     // Per script element, per API: the positions falling into it.
     const found = new Map<number, Map<string, SourcePosition[]>>();
@@ -68,8 +68,7 @@ interface ScriptElement {
 }
 
 /** The page's inline JavaScript elements: without a src attribute, and of a JavaScript type. */
-function scriptElements(html: string): ScriptElement[] {
-    const pageLines = lineStarts(html);
+function scriptElements(html: string, pageLines: number[]): ScriptElement[] {
     const elements: ScriptElement[] = [];
     for (const match of html.matchAll(SCRIPT_ELEMENT)) {
         const attributes = match[1] ?? '';

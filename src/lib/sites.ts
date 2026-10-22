@@ -4,6 +4,8 @@
 // its subdomains, so turning it off on www.tiktok.com covers tiktok.com and login.tiktok.com too,
 // while turning it off on login.tiktok.com covers only that one and its subdomains.
 import { browser } from 'wxt/browser';
+import { listOf, loadStored, watchStored } from './storage';
+import { normalizeHostname } from './http-utils';
 
 export interface OffSite {
     /** The name it covers, with its subdomains (see siteOf). */
@@ -16,13 +18,13 @@ const STORAGE_KEY = 'offSites';
 
 /** The entry turning the extension off on `host` makes: the host without a leading "www.". */
 function siteOf(host: string): string {
-    return host.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
+    return normalizeHostname(host).replace(/^www\./, '');
 }
 
 /** The entry that turns the extension off on `host`, if any: the host itself or one it is a subdomain of. */
 export function offEntryFor(host: string | null | undefined, sites: OffSite[]): OffSite | undefined {
     if (!host) return undefined;
-    const name = host.toLowerCase().replace(/\.$/, '');
+    const name = normalizeHostname(host);
     return sites.find(({ site }) => name === site || name.endsWith(`.${site}`));
 }
 
@@ -37,8 +39,7 @@ export function switchableHost(url: string | null | undefined): string | null {
 }
 
 export async function loadOffSites(): Promise<OffSite[]> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
-    return Array.isArray(stored) ? (stored as OffSite[]) : [];
+    return listOf(await loadStored(STORAGE_KEY));
 }
 
 /**
@@ -67,11 +68,7 @@ export async function removeOffSites(names: string[]): Promise<void> {
 
 /** Calls `onChange` with the list whenever it changes. */
 export function watchOffSites(onChange: (sites: OffSite[]) => void): () => void {
-    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && STORAGE_KEY in changes) onChange(Array.isArray(changes[STORAGE_KEY]!.newValue) ? (changes[STORAGE_KEY]!.newValue as OffSite[]) : []);
-    };
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
+    return watchStored(STORAGE_KEY, (value) => onChange(listOf(value)));
 }
 
 /** The match patterns of the entries: each name, and all its subdomains. */

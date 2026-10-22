@@ -12,6 +12,7 @@
 // the options page; the defaults and the "full at" limits are defined here.
 import { DEFAULT_IDENTIFIER_RULES, type IdentifierRules } from './identifiers';
 import { browser } from 'wxt/browser';
+import { loadStored, watchStored } from './storage';
 import { FP_APIS, FP_APIS_BY_ID } from './fp-apis';
 
 export interface SignalDefinition {
@@ -611,8 +612,7 @@ type StoredSettings = Partial<ScoringSettings> & { version?: number };
 
 /** The user's settings, with defaults for anything not set (e.g. signals added since). */
 export async function loadScoringSettings(): Promise<ScoringSettings> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as StoredSettings | undefined;
-    return withDefaults(stored);
+    return withDefaults(await loadStored<StoredSettings>(STORAGE_KEY));
 }
 
 /**
@@ -643,11 +643,7 @@ export function resetScoringSettings(): Promise<void> {
 
 /** Calls `onChange` with the new settings whenever the user changes them. */
 export function watchScoringSettings(onChange: (settings: ScoringSettings) => void): () => void {
-    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && STORAGE_KEY in changes) onChange(withDefaults(changes[STORAGE_KEY]!.newValue as StoredSettings | undefined));
-    };
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
+    return watchStored<StoredSettings>(STORAGE_KEY, (value) => onChange(withDefaults(value)));
 }
 
 function withDefaults(stored: StoredSettings | undefined): ScoringSettings {

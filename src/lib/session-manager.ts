@@ -27,6 +27,18 @@ function ensureFrame(session: Session, tabId: number, frameId: number): { tab: T
     return { tab, frame: tab.frames[frameId] };
 }
 
+/** The document a frame shows now, if any. */
+export function currentDocument(frame: FrameState | undefined): DocumentState | undefined {
+    return frame?.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+}
+
+/** The documents a tab's frames show now: its page's. */
+export function currentDocuments(session: Session, tabId: number): DocumentState[] {
+    return Object.values(session.tabs[tabId]?.frames ?? {})
+        .map(currentDocument)
+        .filter((document) => document !== undefined);
+}
+
 export function documentExists(session: Session, tabId: number, frameId: number, documentId: string): boolean {
     const tab = session.tabs[tabId];
     if (!tab) {

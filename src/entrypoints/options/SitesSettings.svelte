@@ -3,6 +3,7 @@
     // of the Blocking section.
     import { onMount } from 'svelte';
     import { loadOffSites, removeOffSites, watchOffSites, type OffSite } from '@/lib/sites';
+    import { day } from '../popup/format';
     import SectionHead from './SectionHead.svelte';
 
     let sites = $state<OffSite[]>([]);
@@ -20,7 +21,6 @@
         }
     }
 
-    const day = (since: number) => new Date(since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 </script>
 
 <!-- No reset: the list is the user's choices, turned on again with its own buttons. -->

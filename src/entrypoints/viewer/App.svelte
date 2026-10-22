@@ -6,7 +6,7 @@
     import SignalLine from '../popup/components/SignalLine.svelte';
     import { FP_APIS_BY_ID } from '@/lib/fp-apis';
     import { loadPrivacy, savePrivacy } from '@/lib/privacy';
-    import { plural } from '../popup/format';
+    import { capitalize, plural } from '../popup/format';
     import { highlightWithLocations } from './highlight';
     import { inlineScripts } from './inline-scripts';
     import { locateApis, type CodeLocation } from './locations';
@@ -60,7 +60,6 @@
     let headerHeight = $state(0);
     // The APIs of the place gone to, lit up in the list.
     const currentApis = $derived(locations[current]?.apis ?? []);
-    const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
     // The server the code is downloaded from again, named when asking.
     const server = params ? new URL(params.url).host : '';
@@ -200,7 +199,7 @@
 {:else if status === 'loading'}
     <p class="state">Downloading the {params?.inline ? 'page' : 'script'}…</p>
 {:else if status === 'formatting'}
-    <p class="state">Formatting the script…</p>
+    <p class="state">Formatting the {params?.inline ? 'scripts' : 'script'}…</p>
 {:else if status === 'error'}
     <p class="state error">{error}</p>
 {:else}
@@ -453,7 +452,8 @@
         display: grid;
         gap: 20px;
         align-items: start;
-        padding: 0 24px 48px;
+        --gutter: 24px;
+        padding: 0 var(--gutter) 48px;
     }
 
     main.with-apis {
@@ -461,13 +461,13 @@
     }
 
     /* In view below the header while the code scrolls, scrolling on its own when longer than the
-       room left, with the page's padding at the bottom. */
+       room left, with the page's side padding below it. */
     .apis {
         position: sticky;
         top: var(--header-height);
         display: grid;
         gap: 12px;
-        max-height: calc(100vh - var(--header-height) - 24px);
+        max-height: calc(100vh - var(--header-height) - var(--gutter));
         overflow-y: auto;
         padding: 14px 10px 16px;
         border-radius: 14px;

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { untrack } from 'svelte';
+    import { amount } from '../format';
     import type { ScoreNode } from '../model';
     import { nodeColor, shareSegments } from '../signal-colors';
     import MiddleTruncate from './MiddleTruncate.svelte';
@@ -39,10 +40,8 @@
         return signals.length > 0 ? shareSegments(signals) : [];
     };
 
-    // Points with one decimal, or two below 1 (e.g. 0.75), without trailing zeros.
-    const points = (x: number) => String(+x.toFixed(x < 1 ? 2 : 1));
     const ringTitle = (node: ScoreNode) =>
-        node.points ? `${points(node.points.total)} points, full at ${points(node.points.fullAt)}. ${node.note}` : node.note;
+        node.points ? `${amount(node.points.total)} points, full at ${amount(node.points.fullAt)}. ${node.note}` : node.note;
 </script>
 
 <ul class="tree">

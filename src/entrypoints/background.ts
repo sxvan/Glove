@@ -24,7 +24,7 @@ import { carriesData } from '@/lib/http-analysis';
 import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
-import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
+import { createSession, currentDocument, currentDocuments, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
@@ -55,42 +55,18 @@ export default defineBackground(() => {
 
     /** Scores every open page again, e.g. after the user changed the scoring settings. */
     function reanalyzeAll() {
-        for (const [tabId, tab] of Object.entries(session.tabs)) {
-            for (const frame of Object.values(tab.frames)) {
-                const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-                if (document) analyzeDocumentFp(document, session.dnsResults, settings);
-            }
-            broadcastTabSnapshot(session, Number(tabId));
+        for (const tabId of Object.keys(session.tabs).map(Number)) {
+            for (const document of currentDocuments(session, tabId)) analyzeDocumentFp(document, session.dnsResults, settings);
+            broadcastTabSnapshot(session, tabId);
         }
     }
 
-    loadScoringSettings().then(
-        (loaded) => {
-            settings = loaded;
-            reanalyzeAll();
-        },
-        (error) => console.warn('Could not load the scoring settings; using the defaults', error)
-    );
-    watchScoringSettings((changed) => {
-        settings = changed;
+    follow('scoring settings', loadScoringSettings, watchScoringSettings, (loaded) => {
+        settings = loaded;
         reanalyzeAll();
     });
-    let privacyChanged = false;
-    loadPrivacy().then((loaded) => {
-        if (!privacyChanged) privacy = loaded;
-    });
-    watchPrivacy((changed) => {
-        privacyChanged = true;
-        privacy = changed;
-    });
-    let limitsChanged = false;
-    loadLimits().then((loaded) => {
-        if (!limitsChanged) limits = loaded;
-    });
-    watchLimits((changed) => {
-        limitsChanged = true;
-        limits = changed;
-    });
+    follow('privacy options', loadPrivacy, watchPrivacy, (loaded) => (privacy = loaded));
+    follow('performance limits', loadLimits, watchLimits, (loaded) => (limits = loaded));
 
     // The scripts the user blocked (see lib/blocking), by what they are blocked by, and the sites the
     // extension is off for (see lib/sites); the browser's rules and the registered recorders follow
@@ -98,7 +74,6 @@ export default defineBackground(() => {
     let blockedList: BlockedScript[] = [];
     let blocked = new Set<string>();
     let offSites: OffSite[] = [];
-    let offSitesChanged = false;
     // One update of the rules at a time, each with the lists as they are then: an update replaces
     // all rules by their ids, so two at once collide when the number of blocked scripts changed.
     let rulesSynced: Promise<void> = Promise.resolve();
@@ -117,22 +92,14 @@ export default defineBackground(() => {
         offSites = sites;
         return Promise.all([syncRules(), registerRecorders(sites).catch((error) => console.warn('Could not register the recorders', error))]);
     }
-    loadBlocked().then(applyBlocked, (error) => console.warn('Could not load the blocked scripts', error));
-    watchBlocked(applyBlocked);
-    loadOffSites().then((sites) => {
-        if (!offSitesChanged) applyOffSites(sites);
-    });
-    watchOffSites((sites) => {
-        offSitesChanged = true;
-        applyOffSites(sites);
-    });
+    follow('blocked scripts', loadBlocked, watchBlocked, applyBlocked);
+    follow('sites turned off', loadOffSites, watchOffSites, applyOffSites);
 
     /** How many different blocked scripts tried to load on the tab's page, in all its frames. */
     function blockedOnPage(tabId: number): number {
         const keys = new Set<string>();
-        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
-            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-            for (const key of Object.keys(document?.blockedScripts ?? {})) keys.add(key);
+        for (const document of currentDocuments(session, tabId)) {
+            for (const key of Object.keys(document.blockedScripts)) keys.add(key);
         }
         return keys.size;
     }
@@ -141,8 +108,7 @@ export default defineBackground(() => {
     const isOff = (url: string | null | undefined) => offEntryFor(switchableHost(url), offSites) !== undefined;
     /** Whether it is off for the page in the tab, by its top document. */
     function tabIsOff(tabId: number): boolean {
-        const top = session.tabs[tabId]?.frames[0];
-        return isOff(top?.currentDocumentId ? top.documents[top.currentDocumentId]?.currentUrl : null);
+        return isOff(currentDocument(session.tabs[tabId]?.frames[0])?.currentUrl);
     }
 
     /**
@@ -153,7 +119,6 @@ export default defineBackground(() => {
         if (msg?.type !== 'SET_SITE_OFF') return;
         (async () => {
             await setSiteOff(msg.host, msg.off);
-            offSitesChanged = true;
             await applyOffSites(await loadOffSites());
             if (msg.off) {
                 dropTab(session, msg.tabId);
@@ -172,25 +137,10 @@ export default defineBackground(() => {
     });
 
     // What to do after blocking, and the scripts never to block automatically (see lib/blocking).
-    // A change seen while loading is newer than what the load read, so the load doesn't overwrite it.
     let blockingOptions = DEFAULT_BLOCKING_OPTIONS;
     let exempt = new Set<string>();
-    let optionsChanged = false;
-    let exemptChanged = false;
-    loadBlockingOptions().then((loaded) => {
-        if (!optionsChanged) blockingOptions = loaded;
-    });
-    watchBlockingOptions((changed) => {
-        optionsChanged = true;
-        blockingOptions = changed;
-    });
-    loadExempt().then((keys) => {
-        if (!exemptChanged) exempt = new Set(keys);
-    });
-    watchExempt((keys) => {
-        exemptChanged = true;
-        exempt = new Set(keys);
-    });
+    follow('blocking options', loadBlockingOptions, watchBlockingOptions, (loaded) => (blockingOptions = loaded));
+    follow('exempt scripts', loadExempt, watchExempt, (keys) => (exempt = new Set(keys)));
 
     // Scripts being blocked automatically: analyses meanwhile don't block them again.
     const autoBlocking = new Set<string>();
@@ -203,9 +153,8 @@ export default defineBackground(() => {
     function blockAutomatically(tabId: number) {
         if (!blockingOptions.autoBlock || tabIsOff(tabId)) return;
         const found = new Map<string, number>();
-        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
-            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-            for (const [name, script] of Object.entries(document?.scripts ?? {})) {
+        for (const document of currentDocuments(session, tabId)) {
+            for (const [name, script] of Object.entries(document.scripts)) {
                 const score = script.fpMetrics?.score ?? 0;
                 const key = blockKey(name);
                 if (score < blockingOptions.autoBlockFrom || !key || blocked.has(key) || exempt.has(key) || autoBlocking.has(key)) continue;
@@ -260,9 +209,8 @@ export default defineBackground(() => {
         if (!pageUrl || !/^https?:/.test(pageUrl)) return;
         const origins = new Set([new URL(pageUrl).origin]);
         const keys = new Set(scriptUrls.map(blockKey));
-        for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
-            const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-            if (!document?.currentUrl || !/^https?:/.test(document.currentUrl)) continue;
+        for (const document of currentDocuments(session, tabId)) {
+            if (!document.currentUrl || !/^https?:/.test(document.currentUrl)) continue;
             if (Object.keys(document.scripts).some((name) => keys.has(blockKey(name)))) origins.add(new URL(document.currentUrl).origin);
         }
         await navigateAndWait(tabId, 'about:blank');
@@ -308,8 +256,7 @@ export default defineBackground(() => {
         if (!document) return;
 
         const hostname = getHostname(details.url);
-        const top = session.tabs[tabId]?.frames['0'];
-        const page = top?.currentDocumentId ? top.documents[top.currentDocumentId] : undefined;
+        const page = currentDocument(session.tabs[tabId]?.frames[0]);
         const pageUrl = page?.currentUrl ?? document.currentUrl;
         // Nothing is recorded on a site the extension is off for: a page loading counts by its own address.
         if (isOff(details.type === 'main_frame' ? details.url : pageUrl)) return;
@@ -473,12 +420,29 @@ export default defineBackground(() => {
     });
 });
 
+/**
+ * Calls `apply` with what `load` reads, then with every change `watch` sees. A change seen while
+ * loading is newer than what the load read, so the load doesn't overwrite it.
+ */
+function follow<T>(name: string, load: () => Promise<T>, watch: (onChange: (value: T) => void) => unknown, apply: (value: T) => unknown) {
+    let changed = false;
+    load().then(
+        (loaded) => {
+            if (!changed) apply(loaded);
+        },
+        (error) => console.warn(`Could not load the ${name}; using the defaults`, error)
+    );
+    watch((value) => {
+        changed = true;
+        apply(value);
+    });
+}
+
 /** How many calls the tab's page made, all its frames together, as kept (see lib/limits). */
 function callsOnPage(session: Session, tabId: number): number {
     let calls = 0;
-    for (const frame of Object.values(session.tabs[tabId]?.frames ?? {})) {
-        const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-        for (const script of Object.values(document?.scripts ?? {})) calls += script.callCount;
+    for (const document of currentDocuments(session, tabId)) {
+        for (const script of Object.values(document.scripts)) calls += script.callCount;
     }
     return calls;
 }
@@ -539,11 +503,8 @@ function broadcastTabSnapshot(session: Session, tabId: number) {
 
 /** The page's score on the tab's toolbar ring, as the popup shows it: its most suspicious document's. */
 function showPageScore(session: Session, tabId: number) {
-    const frames = session.tabs[tabId]?.frames;
-    if (!frames) return;
-    const current = (frame: FrameState | undefined) => (frame?.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined);
-    const documents = Object.values(frames).map(current).filter((document) => document !== undefined);
-    const page = current(frames[0]) ?? documents[0];
+    const documents = currentDocuments(session, tabId);
+    const page = currentDocument(session.tabs[tabId]?.frames[0]) ?? documents[0];
     if (!page) return;
     const score = Math.max(0, ...documents.map((document) => document.fpMetrics?.score ?? 0));
     showScoreIcon(tabId, page.documentId, score, settings.cutoffs.fingerprinting);
@@ -583,7 +544,7 @@ function buildEventLog(session: Session, tabId: number): EventLog | undefined {
     const requests = new Set<object>();
     let startTime: number | null = null;
     for (const [frameId, frame] of Object.entries(frames)) {
-        const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+        const document = currentDocument(frame);
         if (!document) continue;
         if (frameId === '0') startTime = document.startTime;
         for (const [script, state] of Object.entries(document.scripts)) {
@@ -607,8 +568,7 @@ function buildEventLog(session: Session, tabId: number): EventLog | undefined {
 }
 
 function frameSnapshotFromFrame(frame: FrameState, frameId: string): FrameSnapshot | null {
-    const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
-
+    const document = currentDocument(frame);
     if (!document) return null;
 
     return {
@@ -665,26 +625,7 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
 }
 
 function collectCnameCloakedRequestsForTab(session: Session, tabId: number): HttpRequest[] {
-    const tab = session.tabs[tabId];
-    if (!tab) return [];
-
-    const results: HttpRequest[] = [];
-
-    for (const frame of Object.values(tab.frames)) {
-        const docId = frame.currentDocumentId;
-        if (!docId) continue;
-
-        const doc = frame.documents[docId];
-        if (!doc || !doc.httpRequests) continue;
-
-        for (const req of doc.httpRequests) {
-            if (req && req.isCnameCloaked) {
-                results.push(req);
-            }
-        }
-    }
-
-    return results;
+    return currentDocuments(session, tabId).flatMap((document) => document.httpRequests.filter((request) => request.isCnameCloaked));
 }
 
 function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): MetricsSnapshot | null {

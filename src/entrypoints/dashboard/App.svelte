@@ -11,7 +11,7 @@
     import { FP_APIS_BY_ID } from '@/lib/fp-apis';
     import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage } from '@/types/messages';
     import type { EventLog, EventLogEntry, StoredItem, TabSnapshot } from '@/types/snapshot';
-    import { bytes, elapsed, plural } from '../popup/format';
+    import { amount, bytes, capitalize, elapsed, plural } from '../popup/format';
     import { fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type ApiDetail, type ScriptDetail, type SentRequest, type StoredDetail } from '../popup/model';
     import { STORAGE_WORDS } from '../popup/statements';
     import LikelihoodLabel from '../popup/components/LikelihoodLabel.svelte';
@@ -102,9 +102,10 @@
     const scriptsByKey = $derived(new Map(scripts.map((script) => [script.key, script])));
     const logRows = $derived(
         (log?.entries ?? [])
-            .filter((entry) => !scriptKey || `${entry.frameId}|${entry.script}` === scriptKey)
-            .map((entry): LogRow => {
-                const script = scriptsByKey.get(`${entry.frameId}|${entry.script}`);
+            .map((entry) => ({ entry, key: `${entry.frameId}|${entry.script}` }))
+            .filter(({ key }) => !scriptKey || key === scriptKey)
+            .map(({ entry, key }): LogRow => {
+                const script = scriptsByKey.get(key);
                 const what =
                     entry.kind === 'api'
                         ? words(entry.api, FP_APIS_BY_ID[entry.api]?.reveals)
@@ -185,8 +186,6 @@
 
     const HOW: Record<NonNullable<SentRequest['how']>, string> = { fetch: 'fetch', xhr: 'XMLHttpRequest', beacon: 'sendBeacon', image: 'Image (pixel)' };
     // Points with one decimal, or two below 1, as in the score's breakdown.
-    const amount = (x: number) => String(+x.toFixed(x < 1 ? 2 : 1));
-    const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
     const DAY = 24 * 60 * 60 * 1000;
     /** How long it stays after it was written; storage kept until cleared sorts as the longest. */

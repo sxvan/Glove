@@ -10,6 +10,20 @@ export function listWords(items: string[], shown = Infinity): string {
     return before.length > 0 ? `${before.join(', ')} and ${last}` : (last ?? '');
 }
 
+export function capitalize(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** An amount, e.g. in a ring: one decimal, two below 1 ("0.07"), without trailing zeros. */
+export function amount(x: number): string {
+    return String(+x.toFixed(x < 1 ? 2 : 1));
+}
+
+/** A day, e.g. "18 Oct 2026". */
+export function day(time: number): string {
+    return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
     return `${count} ${count === 1 ? singular : pluralForm}`;
 }

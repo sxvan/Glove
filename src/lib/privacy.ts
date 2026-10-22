@@ -2,6 +2,7 @@
 // subdomains asked at a resolver (Quad9) to find CNAME cloaking, off by default; and the script
 // viewer's download of a script again from its server, asked about first by default.
 import { browser } from 'wxt/browser';
+import { loadStored, watchStored } from './storage';
 
 export interface PrivacyOptions {
     dnsLookups: boolean;
@@ -17,8 +18,7 @@ export const DEFAULT_PRIVACY: PrivacyOptions = { dnsLookups: false, askBeforeDow
 const STORAGE_KEY = 'privacyOptions';
 
 export async function loadPrivacy(): Promise<PrivacyOptions> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY] as Partial<PrivacyOptions> | undefined;
-    return { ...DEFAULT_PRIVACY, ...stored };
+    return { ...DEFAULT_PRIVACY, ...(await loadStored<Partial<PrivacyOptions>>(STORAGE_KEY)) };
 }
 
 export function savePrivacy(options: PrivacyOptions): Promise<void> {
@@ -27,9 +27,5 @@ export function savePrivacy(options: PrivacyOptions): Promise<void> {
 
 /** Calls `onChange` with the options whenever the user changes them. */
 export function watchPrivacy(onChange: (options: PrivacyOptions) => void): () => void {
-    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && STORAGE_KEY in changes) onChange({ ...DEFAULT_PRIVACY, ...(changes[STORAGE_KEY]!.newValue as Partial<PrivacyOptions> | undefined) });
-    };
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
+    return watchStored<Partial<PrivacyOptions>>(STORAGE_KEY, (value) => onChange({ ...DEFAULT_PRIVACY, ...value }));
 }

@@ -186,11 +186,9 @@
     }
 
     function resetApis() {
-        if (!settings) return;
-        settings.apis = structuredClone(DEFAULT_SETTINGS.apis);
-        settings.rarityPower = DEFAULT_SETTINGS.rarityPower;
-        settings.fullAt = structuredClone(DEFAULT_SETTINGS.fullAt);
-        scheduleSave();
+        resetPart('apis');
+        resetPart('rarityPower');
+        resetPart('fullAt');
     }
 
     /** Whether a part of the settings differs from its defaults. */
@@ -456,13 +454,14 @@
         justify-content: center;
         align-items: start;
         gap: 32px;
-        padding: 24px 20px 48px;
+        --page-top: 24px;
+        padding: var(--page-top) 20px 48px;
     }
 
-    /* Stays in view while a long page scrolls. */
+    /* Stays in view while a long page scrolls, where it starts. */
     nav {
         position: sticky;
-        top: 24px;
+        top: var(--page-top);
         display: grid;
         gap: 16px;
     }

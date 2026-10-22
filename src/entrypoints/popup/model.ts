@@ -9,7 +9,7 @@ import { SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, r
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
-import { duration, plural } from './format';
+import { amount, capitalize, duration, plural } from './format';
 
 /** How likely tracking is; "unknown" while nothing was recorded for the tab yet. */
 export type Likelihood = 'unknown' | 'unlikely' | 'possible' | 'likely';
@@ -372,10 +372,6 @@ function learnedKinds(apiIds: string[], rare: Record<string, number>): LearnedKi
     return [...byKind.entries()].map(([category, facts]) => ({ kind: capitalize(fpCategoryName(category)), facts }));
 }
 
-function capitalize(text: string): string {
-    return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 /**
  * All requests with data a script made (`requests`), one per URL: those it made right after
  * fingerprinting (`correlations`) with how long after.
@@ -435,12 +431,12 @@ function pageSent(scripts: ScriptDetail[]): SentRequest[] {
 
 /** The metrics of the spike with the highest score. */
 function strongestSpike(spikes: SpikeSnapshot[]): MetricsSnapshot | null {
-    return (
-        spikes
-            .map((spike) => spike.fpMetrics)
-            .filter((metrics) => metrics != null)
-            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null
-    );
+    return strongest(spikes, (spike) => spike.fpMetrics?.score ?? -1)?.fpMetrics ?? null;
+}
+
+/** The item scoring highest, the first of those tied. */
+function strongest<T>(items: T[], score: (item: T) => number): T | undefined {
+    return items.reduce<T | undefined>((best, item) => (best === undefined || score(item) > score(best) ? item : best), undefined);
 }
 
 // ---------- score trees ----------
@@ -494,7 +490,7 @@ interface PageScore {
 /** The fingerprinting score of the page's most suspicious document (a frame), and its tree. */
 function fingerprintingPage(snapshot: TabSnapshot): PageScore {
     const documents = snapshot.frames.filter((f) => f !== null).map((f) => f.document);
-    const document = documents.sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
+    const document = strongest(documents, (document) => document.fpMetrics?.score ?? 0);
     const score = document?.fpMetrics?.score ?? 0;
     return { score, likelihood: fpLikelihood(score, snapshot.cutoffs), tree: document ? pageTree(document, score) : [] };
 }
@@ -629,7 +625,7 @@ function sortApiDetails(details: ApiDetail[], power: number): ApiDetail[] {
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
     return scoreTree('page', document.fpMetrics, total, (key) => {
         if (key === 'strongestScript') {
-            const script = [...document.scripts].sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
+            const script = strongest(document.scripts, (script) => script.fpMetrics?.score ?? 0);
             if (!script) return null;
             const { name, path } = describeScript(script.name, document.url);
             return { detail: name, detailPath: path, children: scriptTree(script) };
@@ -787,11 +783,6 @@ function partsSource(
     const source = (SIGNAL_SOURCES[level] as Record<string, string> | undefined)?.[key];
     if (!part.parts || !source || source === 'apis' || !(source in SIGNALS)) return null;
     return { detail: '', children: scoreTree(source as ScoreLevel, { signals: part.parts } as MetricsSnapshot, part.value, expand) };
-}
-
-/** An amount in a ring: one decimal, two below 1 ("0.07"), without trailing zeros. */
-function amount(x: number): string {
-    return String(+x.toFixed(x < 1 ? 2 : 1));
 }
 
 /**

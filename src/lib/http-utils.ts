@@ -6,7 +6,7 @@ import { getDomain } from 'tldts';
 const PSL = { allowPrivateDomains: true };
 
 /** Lowercase, without the trailing dot of a fully qualified name. */
-function normalizeHostname(name: string): string {
+export function normalizeHostname(name: string): string {
     return name.toLowerCase().replace(/\.$/, '');
 }
 

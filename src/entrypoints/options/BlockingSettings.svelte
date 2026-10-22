@@ -18,6 +18,7 @@
         type BlockingOptions,
     } from '@/lib/blocking';
     import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
+    import { day, plural } from '../popup/format';
     import { percent, percentFromInput } from './inputs';
     import Switch from '../popup/components/Switch.svelte';
     import SectionHead from './SectionHead.svelte';
@@ -129,14 +130,13 @@
     const reset = () => saveBlockingOptions({ ...DEFAULT_BLOCKING_OPTIONS });
 
     function actOnAll(group: Group) {
-        const count = `${group.scripts.length} ${group.scripts.length === 1 ? 'script' : 'scripts'} ${group.title.toLowerCase()}`;
+        const count = `${plural(group.scripts.length, 'script')} ${group.title.toLowerCase()}`;
         if (confirm(group.confirm(count))) group.act(group.scripts.map((script) => script.key));
     }
 
     /** When it was blocked, and if automatically at which score: "At score 91, 18 Oct 2026", "18 Oct 2026". */
     function how(script: BlockedScript): string {
-        const day = new Date(script.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-        return script.auto ? `At score ${Math.round(script.auto.score * 100)}, ${day}` : day;
+        return script.auto ? `At score ${Math.round(script.auto.score * 100)}, ${day(script.since)}` : day(script.since);
     }
 
     function setSwitch(key: SwitchKey, checked: boolean, experimental?: Experimental) {

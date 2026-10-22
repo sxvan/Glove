@@ -5,6 +5,7 @@
 // blocked script tried to load, and, if the user chose so, blocks scripts that reach a score by
 // itself (see BlockingOptions.autoBlock and background).
 import { browser } from 'wxt/browser';
+import { listOf, loadStored, watchStored } from './storage';
 
 export interface BlockedScript {
     /** What it is blocked by: its address without query or fragment (see blockKey). */
@@ -36,14 +37,12 @@ export function blockKey(url: string): string | null {
 }
 
 export async function loadBlocked(): Promise<BlockedScript[]> {
-    const stored = (await browser.storage.local.get(STORAGE_KEY))[STORAGE_KEY];
-    return Array.isArray(stored) ? (stored as BlockedScript[]) : [];
+    return listOf(await loadStored(STORAGE_KEY));
 }
 
 /** The scripts the user let run again (see EXEMPT_KEY). */
 export async function loadExempt(): Promise<string[]> {
-    const stored = (await browser.storage.local.get(EXEMPT_KEY))[EXEMPT_KEY];
-    return Array.isArray(stored) ? (stored as string[]) : [];
+    return listOf(await loadStored(EXEMPT_KEY));
 }
 
 /** Lets scripts the user let run again be blocked automatically again, by what they are blocked by. */
@@ -72,23 +71,14 @@ export async function setBlocked(urls: string[], blocked: boolean, auto?: Map<st
     await browser.storage.local.set({ [STORAGE_KEY]: list, ...(auto ? {} : { [EXEMPT_KEY]: exempt }) });
 }
 
-/** Calls `onChange` with the stored value of `key` whenever it changes. */
-function watchStored<T>(key: string, onChange: (value: T | undefined) => void): () => void {
-    const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-        if (area === 'local' && key in changes) onChange(changes[key]!.newValue as T | undefined);
-    };
-    browser.storage.onChanged.addListener(listener);
-    return () => browser.storage.onChanged.removeListener(listener);
-}
-
 /** Calls `onChange` with the list whenever it changes. */
 export function watchBlocked(onChange: (list: BlockedScript[]) => void): () => void {
-    return watchStored<unknown>(STORAGE_KEY, (value) => onChange(Array.isArray(value) ? (value as BlockedScript[]) : []));
+    return watchStored(STORAGE_KEY, (value) => onChange(listOf(value)));
 }
 
 /** Calls `onChange` with the exempt scripts whenever they change. */
 export function watchExempt(onChange: (keys: string[]) => void): () => void {
-    return watchStored<unknown>(EXEMPT_KEY, (value) => onChange(Array.isArray(value) ? (value as string[]) : []));
+    return watchStored(EXEMPT_KEY, (value) => onChange(listOf(value)));
 }
 
 /**
@@ -144,8 +134,7 @@ export const DEFAULT_BLOCKING_OPTIONS: BlockingOptions = { reload: true, clearDa
 const OPTIONS_KEY = 'blockingOptions';
 
 export async function loadBlockingOptions(): Promise<BlockingOptions> {
-    const stored = (await browser.storage.local.get(OPTIONS_KEY))[OPTIONS_KEY] as Partial<BlockingOptions> | undefined;
-    return { ...DEFAULT_BLOCKING_OPTIONS, ...stored };
+    return { ...DEFAULT_BLOCKING_OPTIONS, ...(await loadStored<Partial<BlockingOptions>>(OPTIONS_KEY)) };
 }
 
 export function saveBlockingOptions(options: BlockingOptions): Promise<void> {
