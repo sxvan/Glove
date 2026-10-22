@@ -1,7 +1,7 @@
 import type { IdentifierRules } from '@/lib/identifiers';
 import type { HttpConsolidatedEvent, HttpRequest } from './analysis';
 import type { ScoringSettings, SignalPart } from '@/lib/scoring';
-import type { FpMonkeyEvent } from './events';
+import type { FpMonkeyEvent, HttpMonkeyEvent } from './events';
 
 // Snapshots are the serializable views of the session state sent to the popup.
 
@@ -44,6 +44,33 @@ export interface ScriptSnapshot {
 }
 
 export type StorageKind = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB';
+
+/**
+ * A tab's recorded events in the order they happened, for the details page's event log (see
+ * GetEventLogMessage): asked for apart from the snapshot, as a page has up to tens of thousands.
+ */
+export interface EventLog {
+    /** When the tab's page started (ms since the epoch); null without one. */
+    startTime: number | null;
+    entries: EventLogEntry[];
+}
+
+/** One recorded event: who made it (a script's URL, as in its snapshot, in a frame), and when (ms since the epoch). */
+export type EventLogEntry = { frameId: string; script: string; time: number } & (
+    | {
+          kind: 'api';
+          api: string;
+          /** Where in the script it was called (1-based); for generated code, where the script generated it. */
+          line: number | null;
+          column: number | null;
+          generated: boolean;
+          /** Which of the script's bursts of calls it was in, counted from 1 in time order; null outside them. */
+          burst: number | null;
+      }
+    | { kind: 'request'; how: HttpMonkeyEvent['id']; method: string | null; url: string | null }
+    /** A stored value at its first write: single writes aren't kept, only how many there were. */
+    | { kind: 'stored'; storage: StorageKind; name: string; writes: number }
+);
 
 /** A cookie or storage item a script wrote, with its latest value. */
 export interface StoredItem {

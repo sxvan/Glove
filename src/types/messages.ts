@@ -13,6 +13,12 @@ export interface GetTabSnapshotMessage {
     tabId: number;
 }
 
+/** Details page -> background; answered with the tab's EventLog, or undefined without a recording. */
+export interface GetEventLogMessage {
+    type: 'GET_EVENT_LOG';
+    tabId: number;
+}
+
 /** Background -> popup */
 export interface AnalysisUpdatedMessage {
     type: 'ANALYSIS_UPDATED';

@@ -26,9 +26,9 @@ import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type Scori
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
 import type { FpMetrics, FpSpike, HttpRequest } from '@/types/analysis';
-import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
+import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
-import type { CallLocation, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
+import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
 const DEBOUNCE_MS = 500;
 const MAX_INTERVAL_MS = 5000;
@@ -389,11 +389,15 @@ export default defineBackground(() => {
         }
     });
 
-    browser.runtime.onMessage.addListener((msg: GetTabSnapshotMessage, sender, sendResponse) => {
+    browser.runtime.onMessage.addListener((msg: GetTabSnapshotMessage | GetEventLogMessage, sender, sendResponse) => {
         if (msg.type === 'GET_TAB_SNAPSHOT') {
             const tabId = Number(msg.tabId);
             const snapshot = buildTabSnapshot(session, tabId);
             sendResponse(snapshot);
+            return;
+        }
+        if (msg.type === 'GET_EVENT_LOG') {
+            sendResponse(buildEventLog(session, Number(msg.tabId)));
             return;
         }
     });
@@ -563,6 +567,41 @@ function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefi
     };
 
     return tabSnapshot;
+}
+
+/**
+ * The tab's recorded events, of the documents its snapshot shows (each frame's current one), in
+ * time order. A request counts for every script on its stack (see storeHttpEvent), so it is in each
+ * of their lists: here it is once, for the script that made the call.
+ */
+function buildEventLog(session: Session, tabId: number): EventLog | undefined {
+    const frames = session.tabs[tabId]?.frames;
+    if (!frames) return undefined;
+    const entries: EventLogEntry[] = [];
+    const requests = new Set<object>();
+    let startTime: number | null = null;
+    for (const [frameId, frame] of Object.entries(frames)) {
+        const document = frame.currentDocumentId ? frame.documents[frame.currentDocumentId] : undefined;
+        if (!document) continue;
+        if (frameId === '0') startTime = document.startTime;
+        for (const [script, state] of Object.entries(document.scripts)) {
+            // Bursts are runs of the script's own calls (see detectSpikes), in time order.
+            const burstOf = new Map<object, number>();
+            state.fpSpikes.forEach((spike, i) => spike.events.forEach((event) => burstOf.set(event, i + 1)));
+            for (const event of state.fpEvents) {
+                entries.push({ kind: 'api', frameId, script, time: event.timeStamp, api: event.id, line: event.line, column: event.column, generated: event.generated, burst: burstOf.get(event) ?? null });
+            }
+            for (const event of state.httpEvents) {
+                if (requests.has(event)) continue;
+                requests.add(event);
+                entries.push({ kind: 'request', frameId, script: String(event.scriptUrls?.[0] ?? event.scriptUrl), time: event.timeStamp, how: event.id, method: event.method, url: event.requestUrl });
+            }
+            for (const item of Object.values(state.stored)) {
+                entries.push({ kind: 'stored', frameId, script, time: item.first, storage: item.kind, name: item.name, writes: item.writes });
+            }
+        }
+    }
+    return { startTime, entries: entries.sort((a, b) => a.time - b.time) };
 }
 
 function frameSnapshotFromFrame(frame: FrameState, frameId: string): FrameSnapshot | null {

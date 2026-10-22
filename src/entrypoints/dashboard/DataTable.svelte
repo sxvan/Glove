@@ -1,8 +1,9 @@
 <script lang="ts" generics="Row">
     // A table of rows, sorted by the column whose heading was clicked last; a second click on it
     // turns the order around. The caller draws the cells (`cell`, by row and column key) and filters
-    // the rows; the table sorts them.
-    import type { Snippet } from 'svelte';
+    // the rows; the table sorts them. With `pageSize`, it shows that many of the sorted rows, and more
+    // on request: a page's thousands of calls would take long to draw at once.
+    import { untrack, type Snippet } from 'svelte';
     import type { Column, Sorting } from './columns';
 
     let {
@@ -11,7 +12,10 @@
         cell,
         sorting = $bindable(),
         empty,
-    }: { rows: Row[]; columns: Column<Row>[]; cell: Snippet<[Row, string]>; sorting: Sorting; empty: string } = $props();
+        pageSize,
+    }: { rows: Row[]; columns: Column<Row>[]; cell: Snippet<[Row, string]>; sorting: Sorting; empty: string; pageSize?: number } = $props();
+
+    let shown = $state(untrack(() => pageSize ?? Infinity));
 
     const sorted = $derived.by(() => {
         const column = columns.find((c) => c.key === sorting.key);
@@ -46,7 +50,7 @@
             </tr>
         </thead>
         <tbody>
-            {#each sorted as row, i (i)}
+            {#each sorted.slice(0, shown) as row, i (i)}
                 <tr>
                     {#each columns as column (column.key)}
                         <td class:numeric={column.numeric} class:nowrap={column.nowrap}>{@render cell(row, column.key)}</td>
@@ -57,6 +61,11 @@
     </table>
     {#if rows.length === 0}
         <p class="empty">{empty}</p>
+    {:else if pageSize && sorted.length > shown}
+        <p class="more">
+            {shown.toLocaleString('en-US')} of {sorted.length.toLocaleString('en-US')} shown
+            <button type="button" onclick={() => (shown += pageSize)}>Show {Math.min(pageSize, sorted.length - shown).toLocaleString('en-US')} more</button>
+        </p>
     {/if}
 </div>
 
@@ -148,5 +157,30 @@
         margin: 0;
         padding: 24px 12px;
         color: var(--muted);
+    }
+
+    /* How many rows show, and a button for the next page, as the page's other buttons. */
+    .more {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 0;
+        padding: 16px 12px 10px;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .more button {
+        padding: 5px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .more button:hover {
+        border-color: var(--muted);
     }
 </style>

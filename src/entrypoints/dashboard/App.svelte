@@ -1,14 +1,16 @@
 <script lang="ts">
     // A page's fingerprinting in full, for the tab in the address (?tab=): what all its scripts read,
     // sent and stored, as tables to search and sort, a row per script and API, request or stored
-    // value. Opened from an info line in the popup, at its table (#apis, #requests, #stored) and
+    // value, and every recorded event in the order it happened (the event log). Opened from an info
+    // line in the popup, at its table (#apis, #requests, #stored, #log) and
     // script (&script=). Follows the tab's recording while it records; once the tab is closed, it
     // keeps the last one, as the extension keeps nothing of a closed tab.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
     import { viewerUrl } from '@/lib/script-viewer';
-    import type { AnalysisUpdatedMessage, GetTabSnapshotMessage } from '@/types/messages';
-    import type { StoredItem, TabSnapshot } from '@/types/snapshot';
+    import { FP_APIS_BY_ID } from '@/lib/fp-apis';
+    import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage } from '@/types/messages';
+    import type { EventLog, EventLogEntry, StoredItem, TabSnapshot } from '@/types/snapshot';
     import { bytes, elapsed, plural } from '../popup/format';
     import { fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type ApiDetail, type ScriptDetail, type SentRequest, type StoredDetail } from '../popup/model';
     import { STORAGE_WORDS } from '../popup/statements';
@@ -21,11 +23,12 @@
     const params = new URLSearchParams(location.search);
     const tabId = Number(params.get('tab'));
 
-    type TableId = 'apis' | 'requests' | 'stored';
+    type TableId = 'apis' | 'requests' | 'stored' | 'log';
     const TABLES: { id: TableId; label: string }[] = [
         { id: 'apis', label: 'APIs read' },
         { id: 'requests', label: 'Requests sent' },
         { id: 'stored', label: 'Values stored' },
+        { id: 'log', label: 'Event log' },
     ];
     const tableOf = (hash: string): TableId => TABLES.find((t) => `#${t.id}` === hash)?.id ?? 'apis';
 
@@ -46,6 +49,31 @@
     function choose(id: TableId) {
         table = id;
         history.replaceState(null, '', `${location.search}#${id}`);
+        if (id === 'log' && !log) loadLog();
+    }
+
+    // ---------- the event log ----------
+
+    // Asked for apart from the snapshot, once the log is looked at (see GetEventLogMessage), and again
+    // as the tab records while it shows, at most every few seconds: it can be tens of thousands of events.
+    let log = $state<EventLog | undefined>();
+    const LOG_REFRESH_MS = 3000;
+    const LOG_PAGE = 500;
+    let logAskedAt = 0;
+
+    function loadLog() {
+        logAskedAt = Date.now();
+        const message: GetEventLogMessage = { type: 'GET_EVENT_LOG', tabId };
+        browser.runtime.sendMessage(message).then(
+            (next: EventLog | undefined) => {
+                if (next) log = next;
+            },
+            () => {}
+        );
+    }
+
+    function refreshLog() {
+        if (table === 'log' && Date.now() - logAskedAt >= LOG_REFRESH_MS) loadLog();
     }
 
     // ---------- the rows, each with the text the search looks in ----------
@@ -53,6 +81,8 @@
     type ApiRow = { script: ScriptDetail; api: ApiDetail; text: string };
     type RequestRow = { script: ScriptDetail; request: SentRequest; text: string };
     type StoredRow = { script: ScriptDetail; item: StoredDetail; text: string };
+    // A script without fingerprinting calls (one that only sent or stored) has no card: its URL stands for it.
+    type LogRow = { entry: EventLogEntry; script: ScriptDetail | undefined; text: string };
 
     const words = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(' ').toLowerCase();
     const scriptWords = (script: ScriptDetail) => words(script.name, script.origin, script.url);
@@ -67,6 +97,22 @@
         shownScripts.flatMap((script) =>
             script.stored.map((item): StoredRow => ({ script, item, text: words(scriptWords(script), item.name, STORAGE_WORDS[item.kind], item.value, item.identifier && `${item.identifier} identifier`) }))
         )
+    );
+
+    const scriptsByKey = $derived(new Map(scripts.map((script) => [script.key, script])));
+    const logRows = $derived(
+        (log?.entries ?? [])
+            .filter((entry) => !scriptKey || `${entry.frameId}|${entry.script}` === scriptKey)
+            .map((entry): LogRow => {
+                const script = scriptsByKey.get(`${entry.frameId}|${entry.script}`);
+                const what =
+                    entry.kind === 'api'
+                        ? words(entry.api, FP_APIS_BY_ID[entry.api]?.reveals)
+                        : entry.kind === 'request'
+                          ? words(entry.method, entry.how, entry.url)
+                          : words(STORAGE_WORDS[entry.storage], entry.name);
+                return { entry, script, text: words(script ? scriptWords(script) : entry.script, KIND_WORDS[entry.kind], what) };
+            })
     );
 
     /** Rows holding every word searched for, in any column. */
@@ -111,12 +157,29 @@
         { key: 'value', label: 'Value', width: '30%', sortBy: (row) => row.item.value },
     ];
 
+    const KIND_WORDS: Record<EventLogEntry['kind'], string> = { api: 'API read', request: 'Request', stored: 'Stored' };
+    const KIND_ORDER: Record<EventLogEntry['kind'], number> = { api: 0, request: 1, stored: 2 };
+    const LOG_COLUMNS: Column<LogRow>[] = [
+        { key: 'time', label: 'Time', numeric: true, largestFirst: false, title: 'When it happened, after the page started; the clock time on hover', sortBy: (row) => row.entry.time },
+        { key: 'script', label: 'Script', sortBy: (row) => row.script?.name ?? row.entry.script },
+        { key: 'kind', label: 'Event', nowrap: true, sortBy: (row) => KIND_ORDER[row.entry.kind] },
+        { key: 'what', label: 'What', sortBy: (row) => (row.entry.kind === 'api' ? row.entry.api : row.entry.kind === 'request' ? row.entry.url : row.entry.name) },
+        { key: 'where', label: 'In the code', nowrap: true, title: 'Where in the script it was called: line and column; for generated code, where the script generated it', sortBy: (row) => (row.entry.kind === 'api' ? row.entry.line : null) },
+        { key: 'burst', label: 'Burst', numeric: true, largestFirst: false, title: 'Which of the script’s bursts of calls it was in, counted in time order', sortBy: (row) => (row.entry.kind === 'api' ? row.entry.burst : null) },
+    ];
+
     // Each table's order, kept while switching between them.
     let sorting = $state<Record<TableId, Sorting>>({
         apis: { key: 'rareBits', descending: true },
         requests: { key: 'bytes', descending: true },
         stored: { key: 'identifier', descending: true },
+        log: { key: 'time', descending: false },
     });
+
+    /** A time after the page started, to the millisecond: "1.234 s". */
+    const sincePageStart = (time: number) => `${((time - (log?.startTime ?? time)) / 1000).toFixed(3)} s`;
+    /** The clock time, to the millisecond: "14:03:21.456". */
+    const clockTime = (time: number) => new Date(time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hour12: false });
 
     // ---------- how values read ----------
 
@@ -159,16 +222,18 @@
             },
             () => (status = 'unavailable')
         );
+        if (table === 'log') loadLog();
         const onMessage = (update: AnalysisUpdatedMessage) => {
             if (update?.type === 'ANALYSIS_UPDATED' && update.tabId === tabId && !closed) {
                 snapshot = update.data;
                 status = 'ready';
+                refreshLog();
             }
         };
         const onRemoved = (removedId: number) => {
             if (removedId === tabId) closed = true;
         };
-        const onHash = () => (table = tableOf(location.hash));
+        const onHash = () => choose(tableOf(location.hash));
         browser.runtime.onMessage.addListener(onMessage);
         browser.tabs.onRemoved.addListener(onRemoved);
         window.addEventListener('hashchange', onHash);
@@ -195,6 +260,20 @@
         {/if}
         <span class="origin" title={script.originTitle}>{#if script.path}<MiddleTruncate text={script.origin} />{:else}{script.origin}{/if}</span>
     </div>
+{/snippet}
+
+{#snippet logCell(row: LogRow, key: string)}
+    {@const entry = row.entry}
+    {#if key === 'time'}<span title={clockTime(entry.time)}>{sincePageStart(entry.time)}</span>
+    {:else if key === 'script'}{#if row.script}{@render scriptCell(row.script)}{:else}<div class="script"><span class="name" title={entry.script}><MiddleTruncate text={entry.script} path /></span></div>{/if}
+    {:else if key === 'kind'}<span class="kind kind-{entry.kind}">{KIND_WORDS[entry.kind]}</span>
+    {:else if key === 'what'}
+        {#if entry.kind === 'api'}<span class="code">{entry.api}</span><span class="origin">{capitalize(FP_APIS_BY_ID[entry.api]?.reveals ?? '')}</span>
+        {:else if entry.kind === 'request'}<span class="code path" title={entry.url ?? ''}>{entry.method ?? ''} <MiddleTruncate text={entry.url ?? '(unknown)'} path /></span><span class="origin">{entry.how ? HOW[entry.how] : ''}</span>
+        {:else}<span class="code">{entry.name || '(no name)'}</span><span class="origin">{capitalize(STORAGE_WORDS[entry.storage])}{entry.writes > 1 ? `, first of ${entry.writes} writes` : ''}</span>{/if}
+    {:else if key === 'where'}{#if entry.kind === 'api' && entry.line !== null}<span class="code">{entry.line}:{entry.column}</span>{#if entry.generated}<span class="origin">generated code</span>{/if}{:else}–{/if}
+    {:else if key === 'burst'}{entry.kind === 'api' && entry.burst !== null ? `#${entry.burst}` : '–'}
+    {/if}
 {/snippet}
 
 {#snippet apiCell(row: ApiRow, key: string)}
@@ -254,8 +333,8 @@
         <div class="controls">
             <div class="tables" role="tablist">
                 {#each TABLES as { id, label } (id)}
-                    {@const count = id === 'apis' ? apiRows.length : id === 'requests' ? requestRows.length : storedRows.length}
-                    <button type="button" role="tab" aria-selected={table === id} onclick={() => choose(id)}>{label} <span class="count">{count}</span></button>
+                    {@const count = id === 'apis' ? apiRows.length : id === 'requests' ? requestRows.length : id === 'stored' ? storedRows.length : log ? logRows.length : null}
+                    <button type="button" role="tab" aria-selected={table === id} onclick={() => choose(id)}>{label} {#if count !== null}<span class="count">{count.toLocaleString('en-US')}</span>{/if}</button>
                 {/each}
             </div>
             <div class="filters">
@@ -274,8 +353,12 @@
                 <DataTable rows={matching(apiRows)} columns={API_COLUMNS} cell={apiCell} bind:sorting={sorting.apis} empty="No fingerprinting APIs read that match." />
             {:else if table === 'requests'}
                 <DataTable rows={matching(requestRows)} columns={REQUEST_COLUMNS} cell={requestCell} bind:sorting={sorting.requests} empty="No requests with data that match." />
-            {:else}
+            {:else if table === 'stored'}
                 <DataTable rows={matching(storedRows)} columns={STORED_COLUMNS} cell={storedCell} bind:sorting={sorting.stored} empty="No stored values that match." />
+            {:else if log}
+                <DataTable rows={matching(logRows)} columns={LOG_COLUMNS} cell={logCell} bind:sorting={sorting.log} pageSize={LOG_PAGE} empty="No recorded events that match." />
+            {:else}
+                <p class="state loading">Loading the event log…</p>
             {/if}
         </section>
     {/if}
@@ -295,12 +378,6 @@
         align-items: center;
         justify-content: space-between;
         gap: 24px;
-    }
-
-    .brand {
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 600;
     }
 
     h1 {
@@ -446,6 +523,25 @@
     .path {
         display: block;
         max-width: 28em;
+    }
+
+    /* The kind of event, told apart by a tint: reads in the accent, requests and stored values muted. */
+    .kind {
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .kind-api {
+        color: var(--info);
+    }
+
+    .kind-request,
+    .kind-stored {
+        color: var(--muted);
+    }
+
+    .loading {
+        padding: 24px 12px;
     }
 
     .tag {
