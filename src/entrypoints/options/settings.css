@@ -55,9 +55,10 @@ section {
     color: var(--possible);
 }
 
-/* Room for the largest values, 5 digits (25000), and the arrows. */
+/* Room for the largest values, 5 digits (25000), beside the arrows and inside the padding, which the
+   width includes. */
 .field input {
-    width: 8ch;
+    width: 10ch;
     padding: 4px 6px;
     border: 1px solid var(--border);
     border-radius: 6px;
