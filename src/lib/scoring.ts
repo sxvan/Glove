@@ -401,6 +401,8 @@ export interface ApisSum {
     known?: number;
     /** Most added first. */
     apis: ApiAmount[];
+    /** For rare bits: the exponent each API's rarity counted with (see ScoringSettings.rarityPower). */
+    rarityPower?: number;
 }
 
 /**
@@ -455,7 +457,7 @@ function rareBits(bits: ApisSum, settings: ScoringSettings, fullAt: number, know
         .sort((a, b) => b.amount - a.amount || a.id.localeCompare(b.id));
     const total = apis.reduce((sum, api) => sum + api.amount, 0);
     const value = known === undefined ? saturate(total, fullAt) : fullAt > 0 ? Math.min(total, Math.max(0, fullAt - known)) / fullAt : 0;
-    return { measure: 'rareBits', value, total, fullAt, known, apis };
+    return { measure: 'rareBits', value, total, fullAt, known, apis, rarityPower: power };
 }
 
 /**

@@ -87,7 +87,7 @@ function getProtoForOwner(owner: FpApiOwner): any {
         case 'AudioBuffer':
             return AudioBuffer.prototype;
         case 'MediaDevices':
-            return navigator.mediaDevices;
+            return window.MediaDevices?.prototype ?? null;
         case 'RTCPeerConnection':
             return window.RTCPeerConnection && RTCPeerConnection.prototype;
         case 'IntlDateTimeFormat':
@@ -294,7 +294,7 @@ function isSpecialRead(read: SpecialRead, self: unknown, args: unknown[]): boole
 /** Sets properties through their native setters, in order (e.g. width and height); throws if that fails. */
 function nativeSetters(proto: object, props: string[]): (target: unknown, values: unknown[]) => void {
     const setters = props.map((prop) => Object.getOwnPropertyDescriptor(proto, prop)?.set);
-    return (target, values) => setters.forEach((set, i) => Reflect.apply(set!, target, [values[i]]));
+    return (target, values) => setters.forEach((set, i) => reflectApply(set!, target, [values[i]]));
 }
 
 /** Reads a property through its native getter, so a page can't fake it; undefined if that fails. */
@@ -303,7 +303,7 @@ function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | 
     return (target) => {
         if (!get || target === null || typeof target !== 'object') return undefined;
         try {
-            return Reflect.apply(get, target, []) as T;
+            return reflectApply(get, target, []) as T;
         } catch {
             return undefined;
         }

@@ -4,6 +4,9 @@ import { disguise, installDisguise, isDisguised } from '@/lib/disguise';
 import { recordingDocument } from '@/lib/recording-document';
 import type { HttpMonkeyEvent } from '@/types/events';
 
+// Captured before page scripts run, so a page replacing it can't see the hooks' calls or break them.
+const reflectApply = Reflect.apply;
+
 // Runs in the page's main world so it can wrap the page's own ways of sending data: fetch,
 // XMLHttpRequest, beacons and image pixels.
 // Registered by the background, which leaves out the sites the extension is off for (see lib/recorders).
@@ -45,7 +48,7 @@ const startsWith = String.prototype.startsWith;
  * hold a whole embedded response (YouTube's: 350 KB), which would only be copied around.
  */
 function isNetworkUrl(url: string | null): url is string {
-    return url !== null && (Reflect.apply(startsWith, url, ['https:']) || Reflect.apply(startsWith, url, ['http:']));
+    return url !== null && (reflectApply(startsWith, url, ['https:']) || reflectApply(startsWith, url, ['http:']));
 }
 
 /**
@@ -107,7 +110,7 @@ function hookFetch() {
                 recordHttpEvent('fetch', url, method, credentials, hookedFetch, isReplaced(() => window.fetch, hookedFetch));
             } catch {}
 
-            return Reflect.apply(originalFetch, this, arguments);
+            return reflectApply(originalFetch, this, arguments);
         },
     }.fetch;
 
@@ -168,7 +171,7 @@ function nativeGetter<T>(proto: object, prop: string): (target: unknown) => T | 
         }
 
         try {
-            return Reflect.apply(get, target, []) as T;
+            return reflectApply(get, target, []) as T;
         } catch {
             return undefined;
         }
@@ -196,12 +199,14 @@ function hookXHR() {
     // send without open, repeated send) reach the native method untouched and emit no event.
     const hookedOpen = {
         open(this: XMLHttpRequest, method: string, url: string | URL) {
-            const result = Reflect.apply(originalOpen, this, arguments);
-
-            openedRequests.set(this, {
-                method: method ? String(method) : null,
-                url: url ? resolveUrl(String(url)) : null,
-            });
+            const result = reflectApply(originalOpen, this, arguments);
+            // Recording never keeps the page's request from going out.
+            try {
+                openedRequests.set(this, {
+                    method: method ? String(method) : null,
+                    url: url ? resolveUrl(String(url)) : null,
+                });
+            } catch {}
 
             return result;
         },
@@ -209,14 +214,16 @@ function hookXHR() {
 
     const hookedSend = {
         send(this: XMLHttpRequest) {
-            const request = openedRequests.get(this);
-            if (request) {
-                openedRequests.delete(this);
-                const wrapped = isReplaced(() => proto.send, hookedSend) || isReplaced(() => proto.open, hookedOpen);
-                recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit', hookedSend, wrapped);
-            }
+            try {
+                const request = openedRequests.get(this);
+                if (request) {
+                    openedRequests.delete(this);
+                    const wrapped = isReplaced(() => proto.send, hookedSend) || isReplaced(() => proto.open, hookedOpen);
+                    recordHttpEvent('xhr', request.url, request.method, this.withCredentials ? 'include' : 'omit', hookedSend, wrapped);
+                }
+            } catch {}
 
-            return Reflect.apply(originalSend, this, arguments);
+            return reflectApply(originalSend, this, arguments);
         },
     }.send;
 
@@ -238,7 +245,7 @@ function hookBeacon() {
                 recordHttpEvent('beacon', resolveUrl(String(url)), 'POST', 'include', hookedBeacon, isReplaced(() => navigator.sendBeacon, hookedBeacon));
             } catch {}
 
-            return Reflect.apply(originalBeacon, this, arguments) as boolean;
+            return reflectApply(originalBeacon, this, arguments) as boolean;
         },
     }.sendBeacon;
 
@@ -266,7 +273,7 @@ function hookImagePixels() {
                     if (url && url.includes('?')) recordHttpEvent('image', url, 'GET', 'include', hookedSet, false);
                 } catch {}
 
-                Reflect.apply(originalSet, this, [value]);
+                reflectApply(originalSet, this, [value]);
             },
         },
         'src'

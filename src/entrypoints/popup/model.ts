@@ -890,7 +890,7 @@ function amount(x: number): string {
  * What an API's rare bits are made of, as rows under it: its bits (on its own, or what it adds beside
  * an overlapping API) on the signal's scale, and its rarity weight. Their rings multiply to its own.
  */
-function rareFactors(api: ApiAmount, fullAt: number, number: (x: number) => number): ScoreNode[] {
+function rareFactors(api: ApiAmount, fullAt: number, power: number, number: (x: number) => number): ScoreNode[] {
     const own = api.bits ?? api.basis;
     const rarity = api.rarity ?? 0;
     const weight = api.weight ?? 0;
@@ -921,7 +921,7 @@ function rareFactors(api: ApiAmount, fullAt: number, number: (x: number) => numb
             weight,
             weight.toFixed(2),
             `${number(rarity)}, ${share < 1 ? 'under 1%' : `${share}%`} of page loads read it`,
-            `Rarity ${number(rarity)} to the fourth power: ${number(weight)}, the share of its bits that counts.`
+            `Rarity ${number(rarity)} to the power ${number(power)}: ${number(weight)}, the share of its bits that counts.`
         ),
     ];
 }
@@ -981,7 +981,7 @@ function apisSource(sum: ApisSum, total: number, signal: string, signalLevel: Sc
             detail: api.countedWith ? `counted with ${api.countedWith}` : adds,
 
             note,
-            children: sum.measure === 'rareBits' ? rareFactors(api, sum.fullAt, number) : [],
+            children: sum.measure === 'rareBits' ? rareFactors(api, sum.fullAt, sum.rarityPower ?? 0, number) : [],
         };
     });
     // Beyond what is already counted: "9 bits on top of 31, 2 of them toward 33".

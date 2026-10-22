@@ -102,11 +102,14 @@ export default defineBackground(() => {
     let blocked = new Set<string>();
     let offSites: OffSite[] = [];
     let offSitesChanged = false;
+    // One update of the rules at a time, each with the lists as they are then: an update replaces
+    // all rules by their ids, so two at once collide when the number of blocked scripts changed.
+    let rulesSynced: Promise<void> = Promise.resolve();
     function syncRules() {
-        return syncBlockingRules(
-            blockedList,
-            offSites.map(({ site }) => site)
-        ).catch((error) => console.warn('Could not update the blocking rules', error));
+        rulesSynced = rulesSynced
+            .then(() => syncBlockingRules(blockedList, offSites.map(({ site }) => site)))
+            .catch((error) => console.warn('Could not update the blocking rules', error));
+        return rulesSynced;
     }
     function applyBlocked(list: BlockedScript[]) {
         blockedList = list;
@@ -313,7 +316,9 @@ export default defineBackground(() => {
         const pageUrl = page?.currentUrl ?? document.currentUrl;
         // Nothing is recorded on a site the extension is off for: a page loading counts by its own address.
         if (isOff(details.type === 'main_frame' ? details.url : pageUrl)) return;
-        const httpEvent: HttpRequest = { ...details, documentUrl: document.currentUrl, pageUrl, hostname, bodyBytes: bodySize(details.requestBody) };
+        // Its body only for its size: kept, the raw bytes of every request would add up.
+        const { requestBody, ...request } = details;
+        const httpEvent: HttpRequest = { ...request, documentUrl: document.currentUrl, pageUrl, hostname, bodyBytes: bodySize(requestBody) };
         document.httpRequests.push(httpEvent);
 
         scheduleAnalysis(document, tabId);

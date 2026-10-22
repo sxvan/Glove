@@ -67,7 +67,9 @@ export function ensureDocument(
         document.currentUrl = url ?? null;
     }
 
-    frame.currentDocumentId = documentId;
+    // The first document seen in a frame is its current one; after that, only a page load changes it
+    // (see updateCurrentDocument), so a late event of the previous page doesn't bring it back.
+    frame.currentDocumentId ??= documentId;
 
     return { tab, frame, document: frame.documents[documentId] };
 }
@@ -108,20 +110,12 @@ export function updateDocumentRoute(session: Session, tabId: number, frameId: nu
 }
 
 export function updateCurrentDocument(session: Session, tabId: number, frameId: number, documentId: string, url: string) {
+    const previousDocumentId = session.tabs[tabId]?.frames[frameId]?.currentDocumentId ?? null;
     const { frame } = ensureDocument(session, tabId, frameId, documentId, url);
-
-    const previousDocumentId = frame.currentDocumentId;
-
-    if (!previousDocumentId) {
-        frame.currentDocumentId = documentId;
-        return;
-    }
-
-    if (previousDocumentId !== documentId) {
+    if (previousDocumentId && previousDocumentId !== documentId) {
         const previousDocument = frame.documents[previousDocumentId];
         if (previousDocument) previousDocument.endTime = Date.now();
     }
-
     frame.currentDocumentId = documentId;
     dropEndedDocuments(frame, documentId);
 }
