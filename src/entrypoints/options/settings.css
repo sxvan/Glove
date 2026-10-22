@@ -1,5 +1,25 @@
 /* Rows of settings, shared by the options page and its nested levels (LevelSettings). */
 
+/* Room above a section a link jumped to, so it doesn't stick to the window's edge. */
+section {
+    padding: 20px 24px;
+    border-radius: 18px;
+    background: var(--surface);
+    scroll-margin-top: 16px;
+}
+
+.section-note {
+    margin: 0 0 6px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+/* Sources of the default values. */
+.section-note a {
+    color: var(--info);
+    text-underline-offset: 2px;
+}
+
 /* A section's rows share its columns: name and description | input | default. Each row, and what
    groups rows, takes them over (subgrid), so a column is as wide as its widest content and lines up
    from row to row; everything else in a section spans them all. */
