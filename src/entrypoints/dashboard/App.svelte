@@ -129,7 +129,7 @@
         scriptColumn(),
         { key: 'api', label: 'API', sortBy: (row) => row.api.id },
         { key: 'reveals', label: 'Reveals', sortBy: (row) => row.api.reveals },
-        { key: 'rareBits', label: 'Rare bits', numeric: true, title: 'What it counts toward the score: its bits, as counted beside the other APIs read, times its rarity weight', sortBy: (row) => row.api.counted.rareBits },
+        { key: 'rareBits', label: 'Rare bits', numeric: true, title: 'What it counts toward the score: its bits, as counted beside the other APIs read, times its rarity weight', sortBy: (row) => row.api.rareBits },
         { key: 'bits', label: 'Bits', numeric: true, title: 'Identifying information on its own: 6 bits tell one browser in 64 apart', sortBy: (row) => row.api.bits },
         { key: 'rarity', label: 'Rarity', numeric: true, title: 'How rarely pages use it: 1 − the share of page loads using it, from Chrome’s usage statistics', sortBy: (row) => row.api.rarity },
         { key: 'calls', label: 'Calls', numeric: true, sortBy: (row) => row.api.calls },
@@ -280,7 +280,7 @@
     {#if key === 'script'}{@render scriptCell(row.script)}
     {:else if key === 'api'}<span class="code">{row.api.id}</span>
     {:else if key === 'reveals'}{capitalize(row.api.reveals || row.api.kind)}
-    {:else if key === 'rareBits'}<strong>{amount(row.api.counted.rareBits)}</strong>
+    {:else if key === 'rareBits'}<strong>{amount(row.api.rareBits)}</strong>
     {:else if key === 'bits'}{amount(row.api.bits)}
     {:else if key === 'rarity'}<span title="Used on {+((1 - row.api.rarity) * 100).toFixed(1)}% of page loads">{row.api.rarity}</span>
     {:else if key === 'calls'}{row.api.calls.toLocaleString('en-US')}
@@ -319,7 +319,7 @@
         </div>
         {#if page}
             <div class="rating">
-                <ScoreRing value={page.score} color="var(--{page.likelihood})" scale={100} empty={page.likelihood === 'unknown'} title="The page's score: {Math.round(page.score * 100)}" />
+                <ScoreRing value={page.score} color="var(--{page.likelihood})" empty={page.likelihood === 'unknown'} title="The page's score: {Math.round(page.score * 100)}" />
                 <LikelihoodLabel likelihood={page.likelihood} />
             </div>
         {/if}

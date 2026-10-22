@@ -87,10 +87,6 @@ export interface ScriptDetail {
      * Null when it can't be shown, e.g. for generated scripts or URLs other than http and https.
      */
     viewer: ViewerParams | null;
-    /** Whose script it is; null when its source is unknown. A host that is a CNAME alias for another site counts as third party. */
-    party: 'first' | 'third' | null;
-    /** The server the script's host is a CNAME alias for, if it is cloaked; null otherwise. */
-    aliasOf: string | null;
     /** The script's own host if it is such an alias, which origin then goes "through"; null otherwise. */
     via: string | null;
     likelihood: Likelihood;
@@ -124,12 +120,6 @@ export interface ScriptDetail {
 /** A cookie or storage item a script wrote, and how likely it is an identifier (see findIdentifier). */
 export interface StoredDetail extends StoredItem {
     identifier: IdentifierLevel | null;
-    /** Other items on the page holding the same identifier. */
-    copies: StoredPlace[];
-    /** Whether it was stored during or right after one of the script's bursts. */
-    afterReading: boolean;
-    /** On the page's own screen, which of its scripts wrote it, named like their cards. */
-    by?: Pick<ScriptDetail, 'name' | 'path' | 'origin' | 'url'>[];
 }
 
 const IDENTIFIER_ORDER: Record<IdentifierLevel, number> = { likely: 2, possible: 1 };
@@ -156,26 +146,22 @@ function storedDetails(snapshot: TabSnapshot, script: ScriptSnapshot): StoredDet
     const afterMs = snapshot.rightAfterMs ?? DEFAULT_SETTINGS.bursts.requestWindowMs;
     return (script.stored ?? [])
         .map((item): StoredDetail => {
-            const { level, copies, afterReading } = findIdentifier(item, page, bursts, afterMs, rules);
-            return { ...item, identifier: level, copies, afterReading };
+            return { ...item, identifier: findIdentifier(item, page, bursts, afterMs, rules).level };
         })
         .sort(byIdentifier);
 }
 
 /**
- * What the page's scripts stored, one row per cookie or item with the scripts that wrote it: several
- * can write the same one. Of their judgments the strongest, as each judges by its own bursts.
+ * What the page's scripts stored, once per cookie or item, as several can write the same one: with
+ * the strongest of their judgments, as each judges by its own bursts.
  */
 function pageStored(scripts: ScriptDetail[]): StoredDetail[] {
-    const byItem = new Map<string, StoredDetail & { by: NonNullable<StoredDetail['by']> }>();
+    const byItem = new Map<string, StoredDetail>();
     for (const script of scripts) {
         for (const item of script.stored) {
             const key = `${item.kind}|${item.name}`;
             const known = byItem.get(key);
-            const writer = { name: script.name, path: script.path, origin: script.origin, url: script.url };
-            if (!known) byItem.set(key, { ...item, by: [writer] });
-            else if (byIdentifier(item, known) < 0) byItem.set(key, { ...item, by: [...known.by, writer] });
-            else known.by.push(writer);
+            if (!known || byIdentifier(item, known) < 0) byItem.set(key, item);
         }
     }
     return [...byItem.values()].sort(byIdentifier);
@@ -192,20 +178,10 @@ export interface ApiDetail {
     adds: number;
     rarity: number;
     calls: number;
-    /** When it was first and last called, in ms since the page started; null if unknown. */
+    /** When it was first called, in ms since the page started; null if unknown. */
     first: number | null;
-    last: number | null;
-    /** How many places in the code it was called from, and whether any of them is generated code. */
-    places: number;
-    generated: boolean;
-    /** Whether it was read in the strongest burst, the one its score comes from. */
-    inStrongestBurst: boolean;
-    /**
-     * What it counts toward the score among everything the script (or the page) read: the bits it
-     * counted (all of them, what it adds beside an overlapping API, or none for a value another API
-     * counted), times its rarity weight (its rarity to the exponent), its rare bits.
-     */
-    counted: { bits: number; weight: number; rareBits: number; overlapsWith?: string; countedWith?: string };
+    /** The rare bits it counts toward the score among everything the script (or the page) read. */
+    rareBits: number;
 }
 
 /** A kind of detail a script read, e.g. "Graphics card", with what it learned: "name, rendered 3D image". */
@@ -225,8 +201,6 @@ export interface SentRequest {
     afterMs: number | null;
     /** The names of its URL's parameters, in their order; the values aren't shown, only what they are called. */
     params: string[];
-    /** On the page's own screen, which of its scripts sent it, named like their cards. */
-    by?: Pick<ScriptDetail, 'name' | 'path' | 'origin' | 'url'>[];
     /** The site the request really ends on (see realSite). */
     site: string;
     /** The host it went to if that is a CNAME alias for site, which it then went "through"; null otherwise. */
@@ -273,7 +247,6 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
     const traits = traitsOf(snapshot);
     const power = rarityPowerOf(snapshot);
     const rare = rareBitsOf(snapshot);
-    const pageSite = getEtld1(hostOf(pageUrl(snapshot)));
     const aliases = cloakedHosts(snapshot);
 
     return (snapshot.frames ?? [])
@@ -283,7 +256,6 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                 .filter((s) => (s.fpMetrics?.intensity ?? 0) > 0)
                 .map((script): ScriptDetail => {
                     const { name, path, origin, host, linkable, inline } = describeScript(script.name, frame.document.url);
-                    const site = realSite(host, aliases);
                     const score = script.fpMetrics?.score ?? 0;
                     // Sent right after reading: only after bursts that are possible fingerprinting on their own, as for what it stored (see storedDetails).
                     const correlations = script.fpSpikes
@@ -304,8 +276,6 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         originTitle: originTitle(host, aliases) || origin,
                         viewer: viewerSource ? { url: viewerSource, name, apis, inline } : null,
                         url: script.name,
-                        party: site === null ? null : site === pageSite ? 'first' : 'third',
-                        aliasOf: host ? (aliases.get(host) ?? null) : null,
                         via: host && aliases.has(host) ? host : null,
                         likelihood: fpLikelihood(score, cutoffs),
                         score,
@@ -336,10 +306,9 @@ export interface Signal {
      */
     count: number;
     rest: string;
-    /** The APIs it is about, and their kinds of detail, the most identifying first (see learnedKinds). */
-    apis: string[];
+    /** The kinds of detail of the APIs it is about, the most identifying first (see learnedKinds). */
     kinds: string[];
-    /** Why it is a sign of fingerprinting, in a sentence; not shown for now. */
+    /** Why it is a sign of fingerprinting, in a sentence, for the tip of its line. */
     explanation: string;
 }
 
@@ -373,7 +342,6 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
             id: 'generated-code',
             count: generated.length,
             rest: 'read from generated code',
-            apis: generated,
             kinds: kindsOf(generated),
             explanation:
                 'Code the script creates while the page runs (with eval or new Function) is not in its file, so reading the file doesn\u2019t show what it does: a way to hide fingerprinting. Shown when what it reads that way adds at least 1 rare bit.',
@@ -392,7 +360,6 @@ function scriptSignals(apiLocations: Record<string, CallLocation[]> | undefined,
             id: 'one-place',
             count: fromOnePlace.length,
             rest: 'read from one place in the code',
-            apis: fromOnePlace,
             kinds: kindsOf(fromOnePlace),
             explanation:
                 'Ordinary code reads each detail where it needs it, at most 2 in one place (e.g. the window\u2019s width and height). Collecting many through one loop is typical of fingerprinting. Shown from 5 different APIs read at one place, when they add at least 1 rare bit.',
@@ -475,21 +442,13 @@ function sentRequests(correlations: (HttpConsolidatedEvent & { burstEnd?: number
 }
 
 /**
- * What the page's scripts sent, one row per request with the scripts that sent it: one request
- * counts for every script on its stack (see storeHttpEvent), so several can have the same. Of each
- * script its `list`: what it sent right after reading, or all its requests with data. The most data
- * first.
+ * What the page's scripts sent right after reading, once per request: one request counts for every
+ * script on its stack (see storeHttpEvent), so several can have the same. The most data first.
  */
-function pageSent(scripts: ScriptDetail[], list: (script: ScriptDetail) => SentRequest[] = (script) => script.sent): SentRequest[] {
-    const byRequest = new Map<string, SentRequest & { by: NonNullable<SentRequest['by']> }>();
+function pageSent(scripts: ScriptDetail[]): SentRequest[] {
+    const byRequest = new Map<string, SentRequest>();
     for (const script of scripts) {
-        for (const request of list(script)) {
-            const key = `${request.method} ${request.url}`;
-            const writer = { name: script.name, path: script.path, origin: script.origin, url: script.url };
-            const known = byRequest.get(key);
-            if (known) known.by.push(writer);
-            else byRequest.set(key, { ...request, by: [writer] });
-        }
+        for (const request of script.sent) byRequest.set(`${request.method} ${request.url}`, request);
     }
     return [...byRequest.values()].sort((a, b) => b.bytes - a.bytes);
 }
@@ -597,8 +556,6 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         originTitle: url,
         url,
         viewer: null,
-        party: null,
-        aliasOf: null,
         via: null,
         likelihood: page.likelihood,
         score: page.score,
@@ -612,7 +569,8 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         signals,
         apis,
         sent: pageSent(scripts),
-        requests: pageSent(scripts, (script) => script.requests),
+        // The details page lists the requests by script.
+        requests: [],
         // All the page's requests, also those no recorded script made, such as images in its HTML.
         aliased: [...cloakedHosts(snapshot).keys()].map((host) => ({ host, site: realSite(host, cloakedHosts(snapshot)) ?? host })),
         stored: pageStored(scripts),
@@ -622,13 +580,11 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
 
 /** A script's APIs in detail (see ApiDetail), those counting most first, then the most called. */
 function apiDetails(script: ScriptSnapshot, startTime: number | undefined, traits: Record<string, ApiTraits>, power: number): ApiDetail[] {
-    const burst = new Set(strongestSpike(script.fpSpikes)?.distinctFpApis ?? []);
     const ids = new Set([...Object.keys(script.apiCounts ?? {}), ...(script.fpMetrics?.distinctFpApis ?? [])]);
     const since = (time: number | undefined) => (time === undefined || startTime === undefined ? null : Math.max(0, time - startTime));
     return sortApiDetails(
         [...ids].map((id): ApiDetail => {
             const api = FP_APIS_BY_ID[id];
-            const locations = script.apiLocations?.[id] ?? [];
             const times = script.apiTimes?.[id];
             return {
                 id,
@@ -639,39 +595,24 @@ function apiDetails(script: ScriptSnapshot, startTime: number | undefined, trait
                 rarity: traits[id]?.rarity ?? 0,
                 calls: script.apiCounts?.[id] ?? 0,
                 first: since(times?.first),
-                last: since(times?.last),
-                places: locations.length,
-                generated: locations.some((location) => location.generated),
-                inStrongestBurst: burst.has(id),
-                counted: { bits: 0, weight: 0, rareBits: 0 },
+                rareBits: 0,
             };
         }),
         power
     );
 }
 
-/**
- * The page's APIs in detail, all its scripts together: calls and places added up, the earliest
- * first call and latest last call; in the strongest burst means the page's, that of the other scripts beside the strongest one.
- */
+/** The page's APIs in detail, all its scripts together: calls added up, the earliest first call. */
 function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDetail[] {
-    const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
-    const pageBurst = documents
-        .flatMap((document) => document.spikes ?? [])
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
-    const burst = new Set(pageBurst?.distinctFpApis ?? []);
     const byId = new Map<string, ApiDetail>();
     for (const detail of scripts.flatMap((script) => script.apiDetails)) {
         const known = byId.get(detail.id);
         if (!known) {
-            byId.set(detail.id, { ...detail, inStrongestBurst: burst.has(detail.id) });
+            byId.set(detail.id, { ...detail });
             continue;
         }
         known.calls += detail.calls;
-        known.places += detail.places;
-        known.generated ||= detail.generated;
         known.first = minOf(known.first, detail.first);
-        known.last = known.last === null ? detail.last : detail.last === null ? known.last : Math.max(known.last, detail.last);
     }
     // What each counts among all the page's APIs, like the page's own bits.
     return sortApiDetails([...byId.values()], rarityPowerOf(snapshot));
@@ -694,27 +635,15 @@ function minOf(a: number | null, b: number | null): number | null {
     return a === null ? b : b === null ? a : Math.min(a, b);
 }
 
-/**
- * The APIs with what each counts among all of them (see ApiDetail.counted), those counting most
- * first, then those revealing most, then the most called.
- */
+/** The APIs with the rare bits each counts among all of them: those counting most first, then those revealing most, then the most called. */
 function sortApiDetails(details: ApiDetail[], power: number): ApiDetail[] {
     const amounts = rareAmounts(
         details.map((api) => api.id),
         Object.fromEntries(details.map((api) => [api.id, { bits: api.bits, adds: api.adds, rarity: api.rarity }])),
         power
     );
-    for (const api of details) {
-        const amount = amounts.get(api.id);
-        api.counted = {
-            bits: amount?.basis ?? 0,
-            weight: amount?.weight ?? 0,
-            rareBits: amount?.amount ?? 0,
-            ...(amount?.overlapsWith ? { overlapsWith: amount.overlapsWith } : {}),
-            ...(amount?.countedWith ? { countedWith: amount.countedWith } : {}),
-        };
-    }
-    return details.sort((a, b) => b.counted.rareBits - a.counted.rareBits || b.bits - a.bits || b.calls - a.calls || a.id.localeCompare(b.id));
+    for (const api of details) api.rareBits = amounts.get(api.id)?.amount ?? 0;
+    return details.sort((a, b) => b.rareBits - a.rareBits || b.bits - a.bits || b.calls - a.calls || a.id.localeCompare(b.id));
 }
 
 function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {

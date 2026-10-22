@@ -14,40 +14,22 @@
     import ScoreTree from './ScoreTree.svelte';
     import SignalLine from './SignalLine.svelte';
 
-    // With `onOpen`, the whole card opens a screen about it and nothing in it is clickable on its
-    // own: on the overview, the page's card leads to the fingerprinting screen. `onDetails` opens
-    // the details page at the table of a statement (by its key).
-    let { script, onOpen, onDetails }: { script: ScriptDetail; onOpen?: () => void; onDetails?: (statement: string) => void } = $props();
+    // `onDetails` opens the details page at the table of a statement (by its key).
+    let { script, onDetails }: { script: ScriptDetail; onDetails?: (statement: string) => void } = $props();
 
     // Whether the signals the score was combined from show.
     let breakdown = $state(false);
 
     // Only a script loaded from an address can be blocked; not the page as a whole, nor inline or
-    // generated code. Not on a card that opens a screen as a whole, where nothing is clickable on its own.
-    const blockable = $derived(!onOpen && script.path && blockKey(script.url) !== null);
-
+    // generated code.
+    const blockable = $derived(script.path && blockKey(script.url) !== null);
 </script>
 
-<svelte:element
-    this={onOpen ? 'div' : 'article'}
-    class="card sleek"
-    class:opens={onOpen}
-    role={onOpen ? 'button' : undefined}
-    tabindex={onOpen ? 0 : undefined}
-    onclick={onOpen}
-    onkeydown={(event: KeyboardEvent) => {
-        if (onOpen && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            onOpen();
-        }
-    }}
->
+<article class="card sleek">
     <!-- The name over who serves it, beside the score ring over the likelihood. -->
     <div class="head">
         <div class="who">
-            {#if onOpen}
-                <span class="name">{script.name}</span>
-            {:else if script.viewer}
+            {#if script.viewer}
                 <a class="name link" href={viewerUrl(script.viewer)} target="_blank" rel="noopener noreferrer" title="View {script.url} in the script viewer">
                     <MiddleTruncate text={script.name} path={script.path} />
                 </a>
@@ -58,14 +40,6 @@
             <!-- A host, when too long, is shortened in the middle, keeping its site at the end. -->
             <span class="origin" title={script.originTitle}>{#if script.path}<MiddleTruncate text={script.origin} />{:else}{script.origin}{/if}</span>
         </div>
-        {#if onOpen}
-            <div class="rating">
-                <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
-                <LikelihoodLabel likelihood={script.likelihood} />
-            </div>
-            <!-- Like the overview's other cards: the card leads on to a screen. -->
-            <span class="opens-chevron" aria-hidden="true"></span>
-        {:else}
         <!-- Also opens what the score was combined from, as the row below says it does. -->
         <button
             type="button"
@@ -75,14 +49,13 @@
             title={breakdown ? 'Hide how the score came about' : 'Show how the score came about'}
             onclick={() => (breakdown = !breakdown)}
         >
-            <ScoreRing value={script.score} color="var(--{script.likelihood})" scale={100} empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
+            <ScoreRing value={script.score} color="var(--{script.likelihood})" empty={script.likelihood === 'unknown'} title="Score {Math.round(script.score * 100)}" />
             <LikelihoodLabel likelihood={script.likelihood} />
         </button>
-        {/if}
     </div>
 
     <!-- What the score was combined from: a row that says so, as the ring alone wasn't seen to open it. -->
-    {#if !onOpen && script.tree.length > 0}
+    {#if script.tree.length > 0}
         <button type="button" class="breakdown squircle" aria-expanded={breakdown} onclick={() => (breakdown = !breakdown)}>
             <span>How the score came about</span>
             <span class="chevron-box" aria-hidden="true"><span class="chevron" class:open={breakdown}></span></span>
@@ -96,7 +69,7 @@
     <!-- Lines leading to the same table of the details page share one chevron, in their middle. -->
     <ul class="statements">
         {#each byTable(statements(script)) as lines (lines[0]!.key)}
-            {@const details = !onOpen && !!onDetails}
+            {@const details = !!onDetails}
             {@const open = onDetails ? () => onDetails(lines[0]!.key) : undefined}
             {#if lines.length === 1}
                 {@const statement = lines[0]!}
@@ -117,7 +90,7 @@
     {#if blockable}
         <BlockToggle url={script.url} label="Block this script" />
     {/if}
-</svelte:element>
+</article>
 
 <style>
     /* The parts of a card are separated by space only. */
@@ -232,26 +205,6 @@
 
     .link:hover {
         text-decoration: underline;
-    }
-
-    /* A card opening a screen as a whole. */
-    .opens {
-        cursor: pointer;
-    }
-
-    /* The head gets a column for the chevron, after the rating. */
-    .opens .head {
-        grid-template-columns: minmax(0, 1fr) auto auto;
-    }
-
-    /* The same chevron as the overview's other cards, and as the info lines'. */
-    .opens-chevron {
-        width: 6px;
-        height: 6px;
-        margin-left: -3px;
-        border-right: 1.5px solid var(--muted);
-        border-bottom: 1.5px solid var(--muted);
-        transform: rotate(-45deg);
     }
 
     /* The script's identity, next to its file name: in the text color, not toned down. */

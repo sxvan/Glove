@@ -19,9 +19,6 @@
     const scripts = $derived(snapshot ? fingerprintingDetails(snapshot) : []);
     const page = $derived(snapshot ? fingerprintingPageDetail(snapshot, scripts) : null);
 
-    // Which lists of scripts are unfolded (see FingerprintingDetail).
-    let open = $state({ scripts: true, unlikely: false });
-
     /**
      * Opens the details page (entrypoints/dashboard) in a tab: the tab's recording in full, at the
      * table the line leads to (see tableOf), narrowed to the script; from the page's card, to all scripts.
@@ -132,7 +129,7 @@
     {:else if status === 'unavailable'}
         <p class="state">No data for this tab yet. Reload the page to check it.</p>
     {:else if snapshot && page}
-        <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openDetails} bind:open />
+        <FingerprintingDetail {page} {scripts} blocked={blockedDetails(snapshot)} onDetails={openDetails} />
     {/if}
 </main>
 

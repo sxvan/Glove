@@ -59,7 +59,7 @@
                         <span class="detail" title={node.detail}>{node.detail}</span>
                     {/if}
                 </span>
-                <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} scale={100} text={node.ringText} title={ringTitle(node)} />
+                <ScoreRing value={node.value} points={node.points} color={nodeColor(node)} segments={segmentsOf(node)} text={node.ringText} title={ringTitle(node)} />
                 <!-- A factor multiplies into its parent: no share of its own, but its room. -->
                 {#if node.factor}
                     <span class="share"></span>

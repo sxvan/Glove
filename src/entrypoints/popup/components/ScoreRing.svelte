@@ -11,14 +11,13 @@
         points,
         color = 'var(--muted)',
         segments = [],
-        scale = 1,
         empty = false,
         text,
         title,
-    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; scale?: 1 | 100; empty?: boolean; text?: string; title: string } = $props();
+    }: { value: number; points?: { total: number; fullAt: number }; color?: string; segments?: Segment[]; empty?: boolean; text?: string; title: string } = $props();
 
-    // The number in the middle: 0.95 by default, or 95 on a 0–100 scale (a score, not a percentage).
-    const shownValue = (x: number) => (scale === 100 ? String(Math.round(x * 100)) : x.toFixed(2));
+    // The number in the middle: a score on 0–100 (not a percentage), 95 for 0.95.
+    const shownValue = (x: number) => String(Math.round(x * 100));
 
     const clamp = (x: number) => Math.min(1, Math.max(0, x));
 

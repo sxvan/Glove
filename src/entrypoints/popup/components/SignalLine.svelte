@@ -19,7 +19,6 @@
         lead = false,
         details = false,
         onDetails,
-        children,
     }: {
         text: string | TextPart[];
         tone?: 'info' | 'warning';
@@ -28,7 +27,6 @@
         lead?: boolean;
         details?: boolean;
         onDetails?: () => void;
-        children?: Snippet;
     } = $props();
 
     const parts = $derived(typeof text === 'string' ? [text] : text);
@@ -49,7 +47,6 @@
     <span class="text">
         {#each parts as part, i (i)}{#if typeof part === 'string'}{part}{:else}<span class="value">{part.value}</span>{/if}{/each}
         {#if detail}<span class="detail">{detail}</span>{/if}
-        {#if children}<span class="detail">{@render children()}</span>{/if}
     </span>
     {#if details}
         <DetailsButton onclick={onDetails} />

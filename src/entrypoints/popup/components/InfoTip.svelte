@@ -2,11 +2,10 @@
     // An "i" icon that shows an explanation on hover or keyboard focus. Explanations live in these
     // tips, so the screens show the findings, not how they came about. When shown, the tip places
     // itself inside the popup: shifted sideways as needed, and above the icon when there is no room
-    // below it; `above` puts it above always. With `children`, they are the icon instead of the
-    // grey "i", e.g. an info line's own icon.
+    // below it. `children` are the icon, e.g. an info line's own.
     import type { Snippet } from 'svelte';
 
-    let { label, text, above = false, children }: { label: string; text: string; above?: boolean; children?: Snippet } = $props();
+    let { label, text, children }: { label: string; text: string; children: Snippet } = $props();
 
     const id = $props.id();
 
@@ -32,14 +31,10 @@
 </script>
 
 <span class="info" bind:this={info}>
-    <button type="button" class:own={children} aria-label={label} aria-describedby={id} onpointerenter={place} onfocus={place}>
-        {#if children}{@render children()}{:else}<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4" />
-            <circle cx="8" cy="4.9" r="0.95" fill="currentColor" />
-            <path d="M8 7.2v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>{/if}
+    <button type="button" aria-label={label} aria-describedby={id} onpointerenter={place} onfocus={place}>
+        {@render children()}
     </button>
-    <span class="tip" class:above={above || flip} role="tooltip" {id} style:left="{left}px">{text}</span>
+    <span class="tip" class:above={flip} role="tooltip" {id} style:left="{left}px">{text}</span>
 </span>
 
 <style>
@@ -51,20 +46,15 @@
         vertical-align: middle;
     }
 
+    /* Around the given icon: no room of its own, so the icon stays where it was, in its own color. */
     button {
         display: inline-flex;
-        padding: 2px;
+        padding: 0;
         border: 0;
         border-radius: 50%;
         background: none;
-        color: var(--muted);
-        cursor: help;
-    }
-
-    /* Around a given icon: no room of its own, so the icon stays where it was, in its own color. */
-    button.own {
-        padding: 0;
         color: inherit;
+        cursor: help;
     }
 
     button:hover,
