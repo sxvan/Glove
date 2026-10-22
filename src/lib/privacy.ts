@@ -1,15 +1,18 @@
-// What the extension may send off the browser. Today only DNS lookups (see dns-lookup): the page's
-// own subdomains, asked at a resolver (Quad9) to find CNAME cloaking. Off, nothing is looked up, and
-// cloaking isn't detected.
+// What the extension may contact on the user's behalf: DNS lookups (see dns-lookup), the page's own
+// subdomains asked at a resolver (Quad9) to find CNAME cloaking, off by default; and the script
+// viewer's download of a script again from its server, asked about first by default.
 import { browser } from 'wxt/browser';
 
 export interface PrivacyOptions {
     dnsLookups: boolean;
+    /** Whether the script viewer asks before downloading a script again (see entrypoints/viewer). */
+    askBeforeDownload: boolean;
 }
 
-// Off: nothing leaves the browser unless the user chooses so. Cloaking then isn't detected, and its
-// signals in the scores stay at nothing (see cnameCloaked and sentThroughAlias).
-export const DEFAULT_PRIVACY: PrivacyOptions = { dnsLookups: false };
+// Nothing leaves the browser unless the user chooses so: no lookups, so cloaking isn't detected and
+// its signals in the scores stay at nothing (see cnameCloaked and sentThroughAlias); and the viewer
+// asks before contacting a script's server.
+export const DEFAULT_PRIVACY: PrivacyOptions = { dnsLookups: false, askBeforeDownload: true };
 
 const STORAGE_KEY = 'privacyOptions';
 

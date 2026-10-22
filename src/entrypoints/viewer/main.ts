@@ -3,7 +3,7 @@ import { applyStoredTheme } from '@/lib/theme';
 import App from './App.svelte';
 import '@fontsource-variable/inter';
 import '@/assets/theme.css';
-import 'highlight.js/styles/github-dark.css';
+import './code.css';
 
 // Before the page draws itself, so it doesn't show in the other palette first.
 applyStoredTheme();

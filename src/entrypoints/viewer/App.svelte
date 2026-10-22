@@ -3,6 +3,9 @@
     import { js_beautify } from 'js-beautify/js/lib/beautify.js';
     import { parseViewerQuery, type ViewerApi } from '@/lib/script-viewer';
     import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
+    import SignalLine from '../popup/components/SignalLine.svelte';
+    import { FP_APIS_BY_ID } from '@/lib/fp-apis';
+    import { loadPrivacy, savePrivacy } from '@/lib/privacy';
     import { plural } from '../popup/format';
     import { highlightWithLocations } from './highlight';
     import { inlineScripts } from './inline-scripts';
@@ -11,7 +14,9 @@
     // Larger sources are shown formatted but without highlighting, which would take too long.
     const MAX_HIGHLIGHT_CHARS = 3_000_000;
 
-    type Status = 'loading' | 'formatting' | 'ready' | 'error';
+    // 'asking' before downloading the code again (see download), unless the settings say not to
+    // (Privacy, askBeforeDownload).
+    type Status = 'starting' | 'asking' | 'loading' | 'formatting' | 'ready' | 'error';
 
     /** Code shown with its marks: the script, or each of a page's inline scripts. */
     interface CodeBlock {
@@ -26,7 +31,8 @@
 
     const params = parseViewerQuery(location.search);
 
-    let status = $state<Status>('loading');
+    let status = $state<Status>('starting');
+    let dontAskAgain = $state(false);
     let error = $state('');
     let blocks = $state<CodeBlock[]>([]);
     // False when recorded positions couldn't be matched to the downloaded code.
@@ -50,13 +56,41 @@
     const generated = $derived(locations.some((l) => l.generated));
     const unconfirmed = $derived(locations.filter((l) => l.exact && !l.confirmed).length);
     const hadPositions = $derived((params?.apis ?? []).some((api) => api.positions.length > 0));
+    // How tall the header is, which stays on top: the APIs' list stays in view below it.
+    let headerHeight = $state(0);
+    // The APIs of the place gone to, lit up in the list.
+    const currentApis = $derived(locations[current]?.apis ?? []);
+    const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+    // The server the code is downloaded from again, named when asking.
+    const server = params ? new URL(params.url).host : '';
 
     onMount(async () => {
         if (!params) {
             fail('This page needs the address of a script or page (http or https) to show.');
             return;
         }
+        const privacy = await loadPrivacy().catch(() => null);
+        if (privacy?.askBeforeDownload === false) load();
+        else status = 'asking';
+    });
 
+    /** Downloads the code after asking; "Don't ask again" turns the asking off in the settings, where it can be turned on again. */
+    async function download() {
+        if (dontAskAgain) {
+            const privacy = await loadPrivacy().catch(() => null);
+            if (privacy) savePrivacy({ ...privacy, askBeforeDownload: false }).catch(() => {});
+        }
+        load();
+    }
+
+    /**
+     * Downloads the script (or the page, for an inline script) again and marks the APIs' places in it:
+     * Chrome gives extensions no copy of the code a page ran, only debuggers.
+     */
+    async function load() {
+        if (!params) return;
+        status = 'loading';
         let source: string;
         try {
             // Without cookies or referrer, so viewing a script doesn't add to the tracking it shows.
@@ -88,7 +122,7 @@
             if (!matched) exactAvailable = false;
         }
         status = 'ready';
-    });
+    }
 
     /** Formats `source` and marks the APIs' calls in it, numbering the marks from `firstId` on. */
     function markCode(source: string, apis: ViewerApi[], title: string, detail: string, firstId: number): CodeBlock {
@@ -127,18 +161,20 @@
     }
 </script>
 
-<header>
+<header bind:clientHeight={headerHeight}>
     <div class="title">
+        <span class="brand">Glove</span>
         <h1 title={params?.name}><MiddleTruncate text={params?.name ?? 'Script viewer'} path={!!params && !params.inline} /></h1>
         {#if params}
-            <a class="original" href={params.url} title={params.url} target="_blank" rel="noopener noreferrer"
+            <a class="original" href={params.url} title="Open {params.url}" target="_blank" rel="noopener noreferrer"
                 ><MiddleTruncate text={params.url} path plain /><span class="arrow">&nbsp;↗</span></a
             >
         {/if}
     </div>
 
+    <!-- The places one after the other, in the segmented style of the details page's tables. -->
     {#if status === 'ready' && locations.length > 0}
-        <nav aria-label="Fingerprinting locations">
+        <nav class="steps" aria-label="Places of fingerprinting APIs">
             <button type="button" onclick={() => goTo(current - 1)}>Previous</button>
             <span class="position">{current === -1 ? '–' : current + 1} of {locations.length}</span>
             <button type="button" onclick={() => goTo(current + 1)}>Next</button>
@@ -146,109 +182,141 @@
     {/if}
 </header>
 
-{#if status === 'loading'}
-    <p class="state">Downloading the script…</p>
+{#if status === 'asking' && params}
+    <!-- Opening the viewer contacts the script's server: said before, and only done when asked to. -->
+    <section class="ask squircle">
+        <h2>Download the {params.inline ? 'page' : 'script'} again?</h2>
+        <p>
+            Glove doesn't keep the code a page runs: Chrome only gives that to debuggers. To show it, Glove downloads the {params.inline
+                ? 'page'
+                : 'script'} again from <strong>{server}</strong>, without your cookies or the page's address, but the server sees the request
+            coming from your IP address, as when the page loaded it.
+        </p>
+        <div class="ask-actions">
+            <button type="button" class="primary" onclick={download}>Download and show</button>
+            <label><input type="checkbox" bind:checked={dontAskAgain} /> Don't ask again</label>
+        </div>
+    </section>
+{:else if status === 'loading'}
+    <p class="state">Downloading the {params?.inline ? 'page' : 'script'}…</p>
 {:else if status === 'formatting'}
     <p class="state">Formatting the script…</p>
 {:else if status === 'error'}
     <p class="state error">{error}</p>
 {:else}
-    {#if params && params.apis.length > 0}
-        <section class="apis" aria-label="Fingerprinting APIs used by this script">
-            {#each params.apis as api (api.id)}
-                {@const { count, exact } = found.get(api.id) ?? { count: 0, exact: false }}
-                <button type="button" class="api" class:search={count > 0 && !exact} disabled={count === 0} onclick={() => goToApi(api.id)}>
-                    <span class="api-name">{api.id}</span>
-                    <span class="api-meta">
-                        {#if api.calls !== null}{plural(api.calls, 'call')}{' · '}{/if}{count === 0
-                            ? 'not found in the code'
-                            : exact
-                              ? plural(count, 'place')
-                              : `found ${count}× by name`}
-                    </span>
-                </button>
+    <main class:with-apis={params && params.apis.length > 0} style:--header-height="{headerHeight}px">
+        <!-- The APIs it read, one row each: a click goes to the next place of it. -->
+        {#if params && params.apis.length > 0}
+            <aside class="apis squircle" aria-label="Fingerprinting APIs read by this script">
+                <h2>Fingerprinting APIs <span class="count">{params.apis.length}</span></h2>
+                <ul>
+                    {#each params.apis as api (api.id)}
+                        {@const { count, exact } = found.get(api.id) ?? { count: 0, exact: false }}
+                        <li>
+                            <button
+                                type="button"
+                                class="api"
+                                class:current={currentApis.includes(api.id)}
+                                class:search={count > 0 && !exact}
+                                disabled={count === 0}
+                                title={count === 0 ? 'Not found in this copy of the code' : 'Go to its next place in the code'}
+                                onclick={() => goToApi(api.id)}
+                            >
+                                <span class="api-name">{api.id}</span>
+                                <span class="api-meta">
+                                    {capitalize(FP_APIS_BY_ID[api.id]?.reveals ?? '')}
+                                    <span class="places">
+                                        {#if api.calls !== null}{plural(api.calls, 'call')}{' · '}{/if}{count === 0 ? 'not found' : exact ? plural(count, 'place') : `${count}× by name`}
+                                    </span>
+                                </span>
+                            </button>
+                        </li>
+                    {/each}
+                </ul>
+
+                <!-- How the marks are made; how accurate the copy is says the note above the code. -->
+                {#if hasExact || hasSearch}
+                    <div class="notes">
+                        {#if hasExact}
+                            <p>Marked places are where the page called each API, recorded from its call stack.</p>
+                        {/if}
+                        {#if hasSearch}
+                            <p>APIs without recorded positions are found by their names (dashed), which misses calls hidden by obfuscation.</p>
+                        {/if}
+                    </div>
+                {/if}
+            </aside>
+        {/if}
+
+        <div class="blocks">
+            <!-- What is shown: a copy downloaded again, which can differ from what ran. -->
+            <ul class="copy squircle">
+                <SignalLine
+                    tone="info"
+                    lead
+                    text={[{ value: 'A copy, downloaded again' }, params?.inline
+                        ? ': the page can differ from the one that ran, as a page can change per visit or login.'
+                        : ': it can differ from the code the page ran, as servers can send another version per visit or browser.']}
+                    detail={generated ? 'Some calls come from code the script generated while running (eval, new Function), which isn’t in this file: they are marked where it was generated.' : ''}
+                />
+                {#if hadPositions && !exactAvailable}
+                    <SignalLine text="The recorded positions couldn't be matched to this copy, so the APIs are searched by their names instead." />
+                {/if}
+                {#if unconfirmed > 0}
+                    <SignalLine
+                        text="{plural(unconfirmed, 'recorded position')} {unconfirmed === 1 ? "doesn't" : "don't"} land on the expected API: the server probably sent another version than the one that ran."
+                    />
+                {/if}
+            </ul>
+            {#each blocks as block, i (i)}
+                <section class="code squircle">
+                    {#if block.title}
+                        <h2 class="block-title">{block.title} <span class="block-detail">{block.detail}</span></h2>
+                    {/if}
+                    {#if !block.html}
+                        <p class="large">This script is too large to highlight: it is shown formatted only.</p>
+                    {/if}
+                    <div class="lines">
+                        <pre class="gutter" aria-hidden="true">{lineNumbers(block.code)}</pre>
+                        {#if block.html}
+                            <pre class="source"><code>{@html block.html}</code></pre>
+                        {:else}
+                            <pre class="source"><code>{block.code}</code></pre>
+                        {/if}
+                    </div>
+                </section>
             {/each}
-        </section>
-        <div class="note">
-            {#if hasExact}
-                <p>Marked places are where the page called each API, recorded from its call stack.</p>
-            {/if}
-            {#if generated}
-                <p>
-                    Some calls come from code the script generates while it runs (with new Function or eval). They are marked where
-                    that code is generated.
-                </p>
-            {/if}
-            {#if hasSearch}
-                <p>
-                    APIs without recorded positions are found by searching for their names (dashed outline), which misses calls
-                    hidden by obfuscation.
-                </p>
-            {/if}
-            {#if hadPositions && !exactAvailable}
-                <p class="warning">The recorded positions couldn't be matched to this copy of the script, so names are searched instead.</p>
-            {/if}
-            {#if unconfirmed > 0}
-                <p class="warning">
-                    {plural(unconfirmed, 'recorded position')} {unconfirmed === 1 ? "doesn't" : "don't"} land on the expected API. The
-                    server probably sent a different version of the script than the one that ran.
-                </p>
-            {/if}
-            {#if params.inline}
-                <p>
-                    The page was downloaded again, without cookies, to show the inline scripts the calls came from. A page that
-                    changes per visit or login may not match the version that ran.
-                </p>
-            {:else}
-                <p>The script was downloaded again, without cookies, to show it here.</p>
-            {/if}
         </div>
-    {/if}
-
-    {#each blocks as block, i (i)}
-        {#if block.title}
-            <h2>{block.title}</h2>
-            <p class="block-detail">{block.detail}</p>
-        {/if}
-        {#if !block.html}
-            <p class="note">This script is too large to highlight; it is shown formatted only.</p>
-        {/if}
-
-        <div class="code">
-            <pre class="gutter" aria-hidden="true">{lineNumbers(block.code)}</pre>
-            {#if block.html}
-                <pre class="source hljs"><code>{@html block.html}</code></pre>
-            {:else}
-                <pre class="source hljs"><code>{block.code}</code></pre>
-            {/if}
-        </div>
-    {/each}
+    </main>
 {/if}
 
 <style>
+    /* The name over the script's address, and the way through its places; in view while the code
+       scrolls, on the page's background. */
     header {
         position: sticky;
         top: 0;
-        z-index: 1;
+        z-index: 2;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 16px;
-        padding: 12px 20px;
-        border-bottom: 1px solid var(--border);
+        gap: 24px;
+        padding: 16px 24px;
         background: var(--bg);
     }
 
     .title {
+        display: grid;
         min-width: 0;
     }
 
     h1 {
-        margin: 0;
-        font-size: 16px;
+        min-width: 0;
+        margin: 2px 0 0;
+        font-size: 20px;
     }
 
-    /* The script's URL, shortened in the middle keeping its file name (see MiddleTruncate), then ↗. */
+    /* The script's address, shortened in the middle keeping its file name (see MiddleTruncate), then ↗. */
     .original {
         display: flex;
         min-width: 0;
@@ -268,115 +336,271 @@
         text-decoration: underline;
     }
 
-    nav {
+    /* Previous, where it is, next: one track with the buttons on it, as the details page's tables. */
+    .steps {
         display: flex;
         flex-shrink: 0;
         align-items: center;
-        gap: 8px;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 9px;
+        background: var(--fill);
     }
 
-    nav button,
-    .api {
-        padding: 5px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
+    .steps button {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 7px;
         background: var(--surface);
+        box-shadow: 0 1px 3px var(--shadow);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
         cursor: pointer;
     }
 
-    nav button:hover,
-    .api:not(:disabled):hover {
-        border-color: var(--muted);
+    .steps button:hover {
+        color: var(--info);
     }
 
     .position {
-        min-width: 70px;
+        padding: 0 10px;
         color: var(--muted);
-        text-align: center;
+        font-size: 13px;
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
     }
 
-    .apis {
+    .state {
+        margin: 8px 24px;
+        color: var(--muted);
+    }
+
+    /* The question before downloading: a card, as wide as a paragraph reads well. */
+    .ask {
+        display: grid;
+        gap: 12px;
+        max-width: 40em;
+        margin: 8px 24px;
+        padding: 20px 24px;
+        border-radius: 14px;
+        background: var(--surface);
+    }
+
+    .ask h2 {
+        margin: 0;
+        font-size: 16px;
+    }
+
+    .ask p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+    }
+
+    .ask strong {
+        color: var(--text);
+    }
+
+    .ask-actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px;
-        padding: 14px 20px 0;
+        align-items: center;
+        gap: 16px;
     }
 
-    .api {
+    /* The one thing to do here: in the accent. */
+    .primary {
+        padding: 7px 14px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--info);
+        color: #fff;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+    }
+
+    .primary:hover {
+        background: color-mix(in srgb, var(--info) 85%, var(--text));
+    }
+
+    .ask label {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        text-align: left;
-    }
-
-    .api:disabled {
-        cursor: default;
-        opacity: 0.55;
-    }
-
-    /* Found by name rather than recorded, like their dashed marks in the code. */
-    .api.search {
-        border-style: dashed;
-    }
-
-    .note p {
-        margin: 0 0 2px;
-    }
-
-    .warning {
-        color: var(--possible);
-    }
-
-    .api-name {
-        font-family: var(--mono);
-        font-size: 12px;
-    }
-
-    .api-meta {
+        align-items: center;
+        gap: 6px;
         color: var(--muted);
-        font-size: 12px;
-    }
-
-    .note,
-    .state {
-        margin: 10px 20px 0;
-        color: var(--muted);
-        font-size: 12px;
-    }
-
-    .state {
-        margin-top: 20px;
         font-size: 13px;
+    }
+
+    /* The note on the copy, above the code: its lines as a card's info lines. */
+    .copy {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: var(--surface);
+        list-style: none;
     }
 
     .error {
         color: var(--likely);
     }
 
+    /* The APIs beside the code, as narrow as a list of them reads well; the code takes the rest. */
+    main {
+        display: grid;
+        gap: 20px;
+        align-items: start;
+        padding: 0 24px 48px;
+    }
+
+    main.with-apis {
+        grid-template-columns: minmax(16em, 22em) minmax(0, 1fr);
+    }
+
+    /* In view below the header while the code scrolls, scrolling on its own when longer than the
+       room left, with the page's padding at the bottom. */
+    .apis {
+        position: sticky;
+        top: var(--header-height);
+        display: grid;
+        gap: 12px;
+        max-height: calc(100vh - var(--header-height) - 24px);
+        overflow-y: auto;
+        padding: 14px 10px 16px;
+        border-radius: 14px;
+        background: var(--surface);
+    }
+
     h2 {
-        margin: 24px 20px 0;
+        margin: 0 8px;
         font-size: 14px;
     }
 
-    .block-detail {
-        margin: 2px 20px 0;
+    .count {
+        margin-left: 2px;
+        color: var(--muted);
+        font-weight: 400;
+    }
+
+    .apis ul {
+        display: grid;
+        gap: 2px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    /* A row: the API's name over what it reveals and how often it was called where; lit up on hover,
+       and while one of its places is shown. */
+    .api {
+        display: grid;
+        gap: 2px;
+        width: 100%;
+        padding: 7px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .api:not(:disabled):hover,
+    .api.current {
+        background: var(--fill);
+    }
+
+    .api.current .api-name {
+        color: var(--possible);
+    }
+
+    .api:disabled {
+        cursor: default;
+        opacity: 0.5;
+    }
+
+    .api-name {
+        font-family: var(--mono);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+    }
+
+    .api-meta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 0 8px;
         color: var(--muted);
         font-size: 12px;
     }
 
+    .places {
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Found by name rather than recorded, as their dashed marks in the code. */
+    .api.search .places {
+        text-decoration: underline dashed;
+        text-underline-offset: 3px;
+    }
+
+    .notes {
+        display: grid;
+        gap: 6px;
+        margin: 0 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .notes p {
+        margin: 0;
+    }
+
+    .blocks {
+        display: grid;
+        gap: 20px;
+        min-width: 0;
+    }
+
+    /* The code on a card, its line numbers in a column of their own. */
     .code {
-        display: flex;
-        margin: 14px 20px 20px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        background: var(--surface);
         overflow: hidden;
+        border-radius: 14px;
+        background: var(--surface);
+    }
+
+    .block-title {
+        margin: 0;
+        padding: 14px 16px 0;
+    }
+
+    .block-detail {
+        margin-left: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+    }
+
+    .large {
+        margin: 0;
+        padding: 14px 16px 0;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .lines {
+        display: flex;
     }
 
     pre {
         margin: 0;
-        padding: 12px 0;
+        padding: 14px 0;
         font-family: var(--mono);
         font-size: 12px;
         line-height: 18px;
@@ -385,8 +609,7 @@
     .gutter {
         flex-shrink: 0;
         padding-right: 12px;
-        padding-left: 12px;
-        border-right: 1px solid var(--border);
+        padding-left: 16px;
         color: var(--muted);
         opacity: 0.6;
         text-align: right;
@@ -396,28 +619,29 @@
     .source {
         flex: 1;
         min-width: 0;
+        padding-right: 16px;
         padding-left: 14px;
         overflow-x: auto;
-        background: none;
+        color: var(--text);
     }
 
-    /* Locations of fingerprinting APIs, and the one navigated to. */
-    /* Search results: dashed outline, as they are less certain than recorded positions. */
-    .source :global(mark.hit.search) {
-        background: rgb(242 138 60 / 0.12);
-        box-shadow: none;
-        outline: 1px dashed rgb(242 138 60 / 0.7);
-    }
-
+    /* The places of fingerprinting APIs, in the color of "possible": recorded ones outlined,
+       ones found by their name dashed, as less certain, and the one gone to stronger. */
     .source :global(mark.hit) {
         border-radius: 3px;
-        background: rgb(242 138 60 / 0.25);
+        background: color-mix(in srgb, var(--possible) 22%, transparent);
         color: inherit;
-        box-shadow: 0 0 0 1px rgb(242 138 60 / 0.6);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--possible) 60%, transparent);
+    }
+
+    .source :global(mark.hit.search) {
+        background: color-mix(in srgb, var(--possible) 10%, transparent);
+        box-shadow: none;
+        outline: 1px dashed color-mix(in srgb, var(--possible) 70%, transparent);
     }
 
     .source :global(mark.hit.current) {
-        background: rgb(242 138 60 / 0.55);
+        background: color-mix(in srgb, var(--possible) 45%, transparent);
         box-shadow: 0 0 0 2px var(--possible);
     }
 </style>

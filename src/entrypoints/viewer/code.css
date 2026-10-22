@@ -1,0 +1,69 @@
+/* Syntax colors of the script viewer's code, in both palettes (see assets/theme.css): GitHub's,
+   as highlight.js's github and github-dark styles have them, for the tokens of JavaScript. */
+
+:root {
+    --code-keyword: #d73a49;
+    --code-title: #6f42c1;
+    --code-constant: #005cc5;
+    --code-string: #032f62;
+    --code-built-in: #e36209;
+    --code-comment: #6a737d;
+}
+
+:root[data-theme='dark'] {
+    --code-keyword: #ff7b72;
+    --code-title: #d2a8ff;
+    --code-constant: #79c0ff;
+    --code-string: #a5d6ff;
+    --code-built-in: #ffa657;
+    --code-comment: #8b949e;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --code-keyword: #ff7b72;
+        --code-title: #d2a8ff;
+        --code-constant: #79c0ff;
+        --code-string: #a5d6ff;
+        --code-built-in: #ffa657;
+        --code-comment: #8b949e;
+    }
+}
+
+.hljs-keyword,
+.hljs-doctag,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+    color: var(--code-keyword);
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+    color: var(--code-title);
+}
+
+.hljs-attr,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable {
+    color: var(--code-constant);
+}
+
+.hljs-regexp,
+.hljs-string {
+    color: var(--code-string);
+}
+
+.hljs-built_in,
+.hljs-symbol {
+    color: var(--code-built-in);
+}
+
+.hljs-comment {
+    color: var(--code-comment);
+}
