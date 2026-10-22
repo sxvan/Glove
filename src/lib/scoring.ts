@@ -603,10 +603,8 @@ function nonNegative(value: number): number {
 
 const STORAGE_KEY = 'scoringSettings';
 
-/**
- * The version of the stored settings' units. 2: an API's identifying information in bits (see
- * ApiTraits), which version 1 (no version stored) kept as entropy from 0 to 1, bits divided by 8.
- */
+// The version of the stored settings' units (2: an API's identifying information in bits), to tell
+// them apart should the units change again.
 const SETTINGS_VERSION = 2;
 
 type StoredSettings = Partial<ScoringSettings> & { version?: number };
@@ -624,22 +622,6 @@ export async function loadScoringSettings(): Promise<ScoringSettings> {
 export function saveScoringSettings(settings: ScoringSettings): Promise<void> {
     const changed = (changedFrom(DEFAULT_SETTINGS, settings) ?? {}) as StoredSettings;
     return browser.storage.local.set({ [STORAGE_KEY]: { ...changed, version: SETTINGS_VERSION } });
-}
-
-/**
- * Settings stored in version 1's units, in version 2's: an API's entropy set as bits (×8). The
- * full-at values are left out, as they were for other signals than today's; the defaults apply.
- */
-function migrated(stored: StoredSettings | undefined): StoredSettings | undefined {
-    if (!stored || stored.version === SETTINGS_VERSION) return stored;
-    const apis = Object.fromEntries(
-        Object.entries(stored.apis ?? {}).map(([id, traits]) => {
-            const { entropy, ...rest } = traits as Partial<ApiTraits> & { entropy?: number };
-            return [id, entropy === undefined ? rest : { ...rest, bits: entropy * 8 }];
-        })
-    ) as ScoringSettings['apis'];
-    // Full-at values of version 1 were for other signals than today's; the defaults apply.
-    return { ...stored, apis, fullAt: undefined, version: SETTINGS_VERSION };
 }
 
 /** The parts of `value` that differ from `base`, as a nested object; undefined if none do. */
@@ -668,28 +650,11 @@ export function watchScoringSettings(onChange: (settings: ScoringSettings) => vo
     return () => browser.storage.onChanged.removeListener(listener);
 }
 
-/**
- * Strengths set for signals that have moved since, under their new level: the page's strongest
- * burst to the other scripts; the page's and the other scripts' API signals to the other scripts
- * outside their burst; a script's API signals to the script outside its burst.
- */
-function movedStrengths(stored: StoredSettings | undefined, level: ScoreLevel): Record<string, number> {
-    const strengths = (stored?.strengths ?? {}) as Partial<Record<string, Partial<Record<string, number>>>>;
-    const pick = (from: string, keys: readonly string[]) =>
-        Object.fromEntries(keys.filter((key) => strengths[from]?.[key] !== undefined).map((key) => [key, strengths[from]![key]!]));
-    const API_SIGNALS = ['onePlace', 'generatedCode'] as const;
-    if (level === 'otherScripts') return pick('page', ['strongestBurst']);
-    if (level === 'otherScriptsBeyondBurst') return { ...pick('page', API_SIGNALS), ...pick('otherScripts', API_SIGNALS) };
-    if (level === 'scriptBeyondBurst') return pick('script', API_SIGNALS);
-    return {};
-}
-
-function withDefaults(storedAsIs: StoredSettings | undefined): ScoringSettings {
-    const stored = migrated(storedAsIs);
+function withDefaults(stored: StoredSettings | undefined): ScoringSettings {
     const strengths = Object.fromEntries(
         (Object.keys(DEFAULT_SETTINGS.strengths) as ScoreLevel[]).map((level) => [
             level,
-            { ...DEFAULT_SETTINGS.strengths[level], ...movedStrengths(stored, level), ...stored?.strengths?.[level] },
+            { ...DEFAULT_SETTINGS.strengths[level], ...stored?.strengths?.[level] },
         ])
     ) as ScoringSettings['strengths'];
     return {

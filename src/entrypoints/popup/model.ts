@@ -4,8 +4,8 @@ import { blockKey } from '@/lib/blocking';
 import { placeKey } from '@/lib/call-stack';
 import { FP_APIS_BY_ID, fpCategoryName } from '@/lib/fp-apis';
 import { getEtld1 } from '@/lib/http-utils';
-import { DEFAULT_IDENTIFIER_RULES, findIdentifier, type IdentifierLevel, type StoredPlace } from '@/lib/identifiers';
-import { DEFAULT_SETTINGS, SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
+import { findIdentifier, type IdentifierLevel, type StoredPlace } from '@/lib/identifiers';
+import { SIGNALS, SIGNAL_SOURCES, identifyingBits as addedUpBits, rareAmounts, rareIdentifyingBits, type ApiAmount, type ApiTraits, type ApisSum, type ScoreLevel, type ScoringSettings, type SignalPart } from '@/lib/scoring';
 import type { ViewerApi, ViewerParams } from '@/lib/script-viewer';
 import type { HttpConsolidatedEvent } from '@/types/analysis';
 import type { CallLocation, DocumentSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, StoredItem, TabSnapshot } from '@/types/snapshot';
@@ -21,36 +21,17 @@ export const LIKELIHOOD_LABELS: Record<Likelihood, string> = {
     likely: 'Likely',
 };
 
-/** Where scores count as possible or likely: the user's settings, sent with the snapshot. */
-function cutoffsOf(snapshot: TabSnapshot): ScoringSettings['cutoffs'] {
-    return snapshot.cutoffs ?? DEFAULT_SETTINGS.cutoffs;
-}
-
-/**
- * Each API's bits and rarity as the scores were made with them: the user's settings, sent with
- * the snapshot, so the popup ranks and shows APIs as it scores them. An older background doesn't
- * send them; the defaults stand in then.
- */
-function traitsOf(snapshot: TabSnapshot): Record<string, ApiTraits> {
-    return snapshot.apis ?? DEFAULT_SETTINGS.apis;
-}
-
-/** The exponent rarity counts with, likewise. */
-function rarityPowerOf(snapshot: TabSnapshot): number {
-    return snapshot.rarityPower ?? DEFAULT_SETTINGS.rarityPower;
-}
-
 /**
  * Each API's rare bits read alone: its bits times its rarity to the exponent, what it counts toward
  * the score. For listing kinds of detail by what makes a script suspicious, not by what reveals most.
  */
 function rareBitsOf(snapshot: TabSnapshot): Record<string, number> {
-    const power = Math.max(0, rarityPowerOf(snapshot));
-    return Object.fromEntries(Object.entries(traitsOf(snapshot)).map(([id, traits]) => [id, Math.max(0, traits.bits) * Math.min(1, Math.max(0, traits.rarity)) ** power]));
+    const power = Math.max(0, snapshot.rarityPower);
+    return Object.fromEntries(Object.entries(snapshot.apis).map(([id, traits]) => [id, Math.max(0, traits.bits) * Math.min(1, Math.max(0, traits.rarity)) ** power]));
 }
 
 export function pageUrl(snapshot: TabSnapshot): string | null {
-    const frames = (snapshot.frames ?? []).filter((f) => f !== null);
+    const frames = snapshot.frames.filter((f) => f !== null);
     return (frames.find((f) => f.frameId === '0') ?? frames[0])?.document.url ?? null;
 }
 
@@ -135,16 +116,16 @@ function byIdentifier(a: StoredDetail, b: StoredDetail): number {
  * together, as analytics and players do, don't make what is stored after them suspicious.
  */
 function storedDetails(snapshot: TabSnapshot, script: ScriptSnapshot): StoredDetail[] {
-    const page: StoredPlace[] = (snapshot.frames ?? []).flatMap((frame) => frame?.document.scripts.flatMap((other) => other.stored ?? []) ?? []);
-    const possible = cutoffsOf(snapshot).fingerprinting.possible;
+    const page: StoredPlace[] = snapshot.frames.flatMap((frame) => frame?.document.scripts.flatMap((other) => other.stored) ?? []);
+    const possible = snapshot.cutoffs.fingerprinting.possible;
     const bursts = script.fpSpikes
-        .filter((spike) => (spike?.fpMetrics?.score ?? 0) >= possible)
-        .map((spike) => spike?.events.map((event) => event.timeStamp) ?? [])
+        .filter((spike) => (spike.fpMetrics?.score ?? 0) >= possible)
+        .map((spike) => spike.events.map((event) => event.timeStamp))
         .filter((times) => times.length > 0)
         .map((times) => ({ start: Math.min(...times), end: Math.max(...times) }));
-    const rules = snapshot.identifiers ?? DEFAULT_IDENTIFIER_RULES;
-    const afterMs = snapshot.rightAfterMs ?? DEFAULT_SETTINGS.bursts.requestWindowMs;
-    return (script.stored ?? [])
+    const rules = snapshot.identifiers;
+    const afterMs = snapshot.rightAfterMs;
+    return script.stored
         .map((item): StoredDetail => {
             return { ...item, identifier: findIdentifier(item, page, bursts, afterMs, rules).level };
         })
@@ -230,7 +211,7 @@ export interface BlockedDetail {
 /** The blocked scripts that tried to load on the page, the most attempts first. */
 export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
     const byKey = new Map<string, BlockedDetail>();
-    for (const frame of snapshot.frames ?? []) {
+    for (const frame of snapshot.frames) {
         for (const attempt of frame?.document.blockedScripts ?? []) {
             const key = blockKey(attempt.url);
             if (!key) continue;
@@ -243,13 +224,13 @@ export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
 }
 
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
-    const cutoffs = cutoffsOf(snapshot);
-    const traits = traitsOf(snapshot);
-    const power = rarityPowerOf(snapshot);
+    const cutoffs = snapshot.cutoffs;
+    const traits = snapshot.apis;
+    const power = snapshot.rarityPower;
     const rare = rareBitsOf(snapshot);
     const aliases = cloakedHosts(snapshot);
 
-    return (snapshot.frames ?? [])
+    return snapshot.frames
         .filter((f) => f !== null)
         .flatMap((frame) =>
             frame.document.scripts
@@ -259,10 +240,10 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                     const score = script.fpMetrics?.score ?? 0;
                     // Sent right after reading: only after bursts that are possible fingerprinting on their own, as for what it stored (see storedDetails).
                     const correlations = script.fpSpikes
-                        .filter((spike) => spike !== null && (spike.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
+                        .filter((spike) => (spike.fpMetrics?.score ?? 0) >= cutoffs.fingerprinting.possible)
                         .flatMap((spike) => {
-                            const burstEnd = Math.max(...spike!.events.map((event) => event.timeStamp));
-                            return (spike!.httpCorrelations ?? []).map((correlation) => ({ ...correlation, burstEnd }));
+                            const burstEnd = Math.max(...spike.events.map((event) => event.timeStamp));
+                            return (spike.httpCorrelations ?? []).map((correlation) => ({ ...correlation, burstEnd }));
                         });
                     const apis = apiList(script.apiCounts, script.apiLocations, script.fpMetrics?.distinctFpApis ?? []);
                     // An inline script is shown from its page, which is the script's URL in stack traces.
@@ -287,7 +268,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         apis,
                         sent: sentRequests(correlations, aliases),
                         requests: allRequests(script.requests, correlations, aliases),
-                        aliased: (script.cloakedHosts ?? []).map((host) => ({ host, site: realSite(host, aliases) ?? host })),
+                        aliased: script.cloakedHosts.map((host) => ({ host, site: realSite(host, aliases) ?? host })),
                         stored: storedDetails(snapshot, script),
                         apiDetails: apiDetails(script, frame.document.startTime, traits, power),
                     };
@@ -397,14 +378,13 @@ function capitalize(text: string): string {
 
 /**
  * All requests with data a script made (`requests`), one per URL: those it made right after
- * fingerprinting (`correlations`) with how long after. Without them from an older background, those
- * right after fingerprinting only.
+ * fingerprinting (`correlations`) with how long after.
  */
-function allRequests(requests: HttpConsolidatedEvent[] | undefined, correlations: (HttpConsolidatedEvent & { burstEnd: number })[], aliases: Map<string, string>): SentRequest[] {
+function allRequests(requests: HttpConsolidatedEvent[], correlations: (HttpConsolidatedEvent & { burstEnd: number })[], aliases: Map<string, string>): SentRequest[] {
     // A request, by when it was made and where to: the snapshot copies requests, so not by identity.
     const id = ({ httpEvent, httpRequest }: HttpConsolidatedEvent) => `${httpEvent?.timeStamp}|${httpEvent?.requestUrl ?? httpRequest?.url}`;
     const burstEnds = new Map(correlations.map((correlation) => [id(correlation), correlation.burstEnd]));
-    return sentRequests((requests ?? correlations).map((request) => ({ ...request, burstEnd: burstEnds.get(id(request)) })), aliases);
+    return sentRequests(requests.map((request) => ({ ...request, burstEnd: burstEnds.get(id(request)) })), aliases);
 }
 
 /** The requests with data a script made right after fingerprinting, the most data first; one per URL. */
@@ -454,10 +434,10 @@ function pageSent(scripts: ScriptDetail[]): SentRequest[] {
 }
 
 /** The metrics of the spike with the highest score. */
-function strongestSpike(spikes: (SpikeSnapshot | null)[]): MetricsSnapshot | null {
+function strongestSpike(spikes: SpikeSnapshot[]): MetricsSnapshot | null {
     return (
         spikes
-            .map((spike) => spike?.fpMetrics)
+            .map((spike) => spike.fpMetrics)
             .filter((metrics) => metrics != null)
             .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0] ?? null
     );
@@ -513,10 +493,10 @@ interface PageScore {
 
 /** The fingerprinting score of the page's most suspicious document (a frame), and its tree. */
 function fingerprintingPage(snapshot: TabSnapshot): PageScore {
-    const documents = (snapshot.frames ?? []).filter((f) => f !== null).map((f) => f.document);
+    const documents = snapshot.frames.filter((f) => f !== null).map((f) => f.document);
     const document = documents.sort((a, b) => (b.fpMetrics?.score ?? 0) - (a.fpMetrics?.score ?? 0))[0];
     const score = document?.fpMetrics?.score ?? 0;
-    return { score, likelihood: fpLikelihood(score, cutoffsOf(snapshot)), tree: document ? pageTree(document, score) : [] };
+    return { score, likelihood: fpLikelihood(score, snapshot.cutoffs), tree: document ? pageTree(document, score) : [] };
 }
 
 /**
@@ -580,12 +560,12 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
 
 /** A script's APIs in detail (see ApiDetail), those counting most first, then the most called. */
 function apiDetails(script: ScriptSnapshot, startTime: number | undefined, traits: Record<string, ApiTraits>, power: number): ApiDetail[] {
-    const ids = new Set([...Object.keys(script.apiCounts ?? {}), ...(script.fpMetrics?.distinctFpApis ?? [])]);
+    const ids = new Set([...Object.keys(script.apiCounts), ...(script.fpMetrics?.distinctFpApis ?? [])]);
     const since = (time: number | undefined) => (time === undefined || startTime === undefined ? null : Math.max(0, time - startTime));
     return sortApiDetails(
         [...ids].map((id): ApiDetail => {
             const api = FP_APIS_BY_ID[id];
-            const times = script.apiTimes?.[id];
+            const times = script.apiTimes[id];
             return {
                 id,
                 kind: api ? capitalize(fpCategoryName(api.category)) : 'Other',
@@ -615,7 +595,7 @@ function pageApiDetails(snapshot: TabSnapshot, scripts: ScriptDetail[]): ApiDeta
         known.first = minOf(known.first, detail.first);
     }
     // What each counts among all the page's APIs, like the page's own bits.
-    return sortApiDetails([...byId.values()], rarityPowerOf(snapshot));
+    return sortApiDetails([...byId.values()], snapshot.rarityPower);
 }
 
 /**
@@ -664,8 +644,7 @@ function pageTree(document: DocumentSnapshot, total: number): ScoreNode[] {
                 detail: scripts > 0 ? `${plural(scripts, 'script')}, on top of the strongest` : '',
                 children: scoreTree('otherScripts', metrics, other.value, (inner) => {
                     if (inner !== 'strongestBurst') return null;
-                    // An older background may not send the page's bursts.
-                    const burst = [...(document.spikes ?? [])].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
+                    const burst = [...document.spikes].sort((x, y) => (y.score ?? 0) - (x.score ?? 0))[0];
                     if (!burst) return null;
                     const detail = `${plural(burst.distinctFpApis.length, 'API')} within ${duration(burst.durationMs)}`;
                     return { detail, children: scoreTree('burst', burst, burst.score ?? 0) };
@@ -1013,7 +992,7 @@ function pathSegments(url: string): string[] {
 /** Hosts on the page that are CNAME-cloaked, each with the host it is really an alias for. */
 function cloakedHosts(snapshot: TabSnapshot): Map<string, string> {
     const aliases = new Map<string, string>();
-    for (const req of snapshot.cNameRequests ?? []) {
+    for (const req of snapshot.cNameRequests) {
         const host = req.hostname ?? hostOf(req.url);
         const target = req.cRecords?.[req.cRecords.length - 1]?.target;
         if (host && target && !aliases.has(host)) aliases.set(host, target);

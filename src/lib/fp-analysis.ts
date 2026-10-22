@@ -98,19 +98,10 @@ function getFpMetrics(fpEvents: FpMonkeyEvent[]): FpMetrics | null {
         return null;
     }
 
-    const startTime = fpEvents[0]!.timeStamp;
-    const endTime = fpEvents[fpEvents.length - 1]!.timeStamp;
-    const durationMs = Math.max(1, endTime - startTime);
-    const intensity = fpEvents.length;
-    const density = durationMs > 0 ? intensity / durationMs : 0;
-
     return {
         distinctFpApis: getDistinctFpApis(fpEvents),
-        intensity: intensity,
-        startTime: startTime,
-        endTime: endTime,
-        durationMs: durationMs,
-        density: density,
+        intensity: fpEvents.length,
+        durationMs: Math.max(1, fpEvents[fpEvents.length - 1]!.timeStamp - fpEvents[0]!.timeStamp),
     };
 }
 

@@ -70,11 +70,10 @@ function readMessage(message: Uint8Array): { rcode: number; answers: DnsAnswer[]
     for (let i = 0; i < answerCount; i++) {
         const { name, next } = readName(message, at);
         const type = view.getUint16(next);
-        const ttl = view.getUint32(next + 4);
         const length = view.getUint16(next + 8);
         const data = next + 10;
-        if (type === TYPE_CNAME) answers.push({ name, type, TTL: ttl, data: readName(message, data).name });
-        else if (type === TYPE_A && length === 4) answers.push({ name, type, TTL: ttl, data: [...message.subarray(data, data + 4)].join('.') });
+        if (type === TYPE_CNAME) answers.push({ name, type, data: readName(message, data).name });
+        else if (type === TYPE_A && length === 4) answers.push({ name, type, data: [...message.subarray(data, data + 4)].join('.') });
         at = data + length;
     }
     return { rcode, answers };

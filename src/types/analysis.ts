@@ -6,7 +6,6 @@ import type { SignalPart } from '@/lib/scoring';
 export interface DnsAnswer {
     name: string;
     type: number;
-    TTL: number;
     data: string;
 }
 
@@ -34,10 +33,7 @@ export interface HttpRequest extends Browser.webRequest.OnBeforeRequestDetails {
     pageUrl: string | null;
     /** The size of the request's body in bytes; 0 without one. */
     bodyBytes: number;
-    looksFirstParty?: boolean;
-    endsThirdParty?: boolean;
     isCnameCloaked?: boolean;
-    isCrossHost?: boolean;
     cRecords?: CnameRecord[];
     cNameDepth?: number;
 }
@@ -46,9 +42,6 @@ export interface FpMetrics {
     distinctFpApis: Set<string>;
     intensity: number;
     durationMs: number;
-    density: number;
-    startTime: number;
-    endTime: number;
     score?: number;
     /** The signals the score was combined from, by signal key (see scoring). */
     signals?: Record<string, SignalPart>;
@@ -57,7 +50,6 @@ export interface FpMetrics {
 export interface HttpConsolidatedEvent {
     httpEvent: HttpMonkeyEvent;
     httpRequest: HttpRequest;
-    timeDeltaMs: number;
 }
 
 export interface FpSpike {

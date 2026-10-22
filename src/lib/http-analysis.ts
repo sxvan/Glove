@@ -3,39 +3,25 @@ import type { HttpMonkeyEvent } from '@/types/events';
 import type { DocumentState } from '@/types/session';
 import { getEtld1, getHostname } from './http-utils';
 
-function isCnameCloaked(httpRequest: HttpRequest): boolean {
-    return !!(httpRequest.isCrossHost && httpRequest.looksFirstParty && httpRequest.endsThirdParty && httpRequest.cNameDepth! > 0);
-}
-
 /**
  * Adds DNS-based fields to the document's requests whose lookup has finished. Requests still
  * waiting for (or without) a DNS result are kept unchanged and enriched by a later analysis; those
  * already enriched are skipped, as their DNS result doesn't change.
  */
 export function enrichHttpRequestsWithDns(document: DocumentState, dnsResults: Map<string, DnsResult>) {
-    for (const httpRequest of document.httpRequests) {
-        const enrichedHttpRequest = httpRequest;
-        if (enrichedHttpRequest.cNameDepth !== undefined) continue;
-        const dnsEntry = enrichedHttpRequest.hostname ? dnsResults.get(enrichedHttpRequest.hostname) : undefined;
-        if (!dnsEntry) {
-            continue;
-        }
+    for (const request of document.httpRequests) {
+        if (request.cNameDepth !== undefined) continue;
+        const dnsEntry = request.hostname ? dnsResults.get(request.hostname) : undefined;
+        if (!dnsEntry) continue;
 
         // Cloaking is judged against the tab's page: a host of an ad frame's own domain isn't hiding
-        // behind the site the user visits. Older requests without pageUrl use their document.
-        const pageHost = getHostname(enrichedHttpRequest.pageUrl ?? enrichedHttpRequest.documentUrl);
-
-        const pageHostEtld1 = getEtld1(pageHost);
-        const requestHostEtld1 = getEtld1(enrichedHttpRequest.hostname);
-
-        enrichedHttpRequest.looksFirstParty = pageHostEtld1 === requestHostEtld1;
-        enrichedHttpRequest.endsThirdParty = pageHostEtld1 !== dnsEntry.finalEtld1;
-
-        enrichedHttpRequest.cNameDepth = dnsEntry.cNameDepth;
-        enrichedHttpRequest.cRecords = dnsEntry.cRecords;
-        enrichedHttpRequest.isCrossHost = pageHost !== enrichedHttpRequest.hostname;
-
-        enrichedHttpRequest.isCnameCloaked = isCnameCloaked(enrichedHttpRequest);
+        // behind the site the user visits. A host of the page's site, other than the page's, whose
+        // aliases end at another site.
+        const pageHost = getHostname(request.pageUrl);
+        const pageSite = getEtld1(pageHost);
+        request.cNameDepth = dnsEntry.cNameDepth;
+        request.cRecords = dnsEntry.cRecords;
+        request.isCnameCloaked = pageHost !== request.hostname && getEtld1(request.hostname) === pageSite && dnsEntry.finalEtld1 !== pageSite && dnsEntry.cNameDepth > 0;
     }
 }
 
@@ -109,11 +95,7 @@ export function consolidateHttpEvents(httpEvents: HttpMonkeyEvent[], httpRequest
 
         if (bestIndex !== -1) {
             used.add(bestIndex);
-            correlations.push({
-                httpEvent,
-                httpRequest: httpRequests[bestIndex]!,
-                timeDeltaMs: bestDelta,
-            });
+            correlations.push({ httpEvent, httpRequest: httpRequests[bestIndex]! });
         }
     }
 

@@ -13,9 +13,9 @@ export interface FpMonkeyEvent {
      * `column` are then where the script generated it.
      */
     generated: boolean;
-    /** For generated code, the position of the call inside it; missing from an older recorder. */
-    innerLine?: number | null;
-    innerColumn?: number | null;
+    /** For generated code, the position of the call inside it. */
+    innerLine: number | null;
+    innerColumn: number | null;
 }
 
 /** A request a script made (fetch, XHR, beacon, image pixel), recorded by the http-recorder content script. */

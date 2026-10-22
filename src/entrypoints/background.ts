@@ -30,9 +30,6 @@ import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage,
 import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
 import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, SpikeSnapshot, TabSnapshot } from '@/types/snapshot';
 
-const DEBOUNCE_MS = 500;
-const MAX_INTERVAL_MS = 5000;
-
 // The user's scoring settings (see lib/scoring); the defaults until they are loaded.
 let settings: ScoringSettings = DEFAULT_SETTINGS;
 // How many calls are kept (see lib/limits); the defaults until they are loaded.
@@ -43,13 +40,13 @@ let privacy = DEFAULT_PRIVACY;
 export default defineBackground(() => {
     watchPopups();
     const session = createSession();
-    const fpScheduler = createScheduler({ debounceMs: DEBOUNCE_MS, maxIntervalMs: MAX_INTERVAL_MS });
+    const fpScheduler = createScheduler();
 
     // In-flight DNS lookups by hostname, shared by all requests to that host.
     const pendingLookups = new Map<string, Promise<void>>();
 
     function scheduleAnalysis(document: DocumentState, tabId: number) {
-        fpScheduler.notify(document.documentId, () => {
+        fpScheduler.notify(document, () => {
             analyzeDocumentFp(document, session.dnsResults, settings);
             broadcastTabSnapshot(session, tabId);
             blockAutomatically(tabId);
@@ -599,7 +596,7 @@ function buildEventLog(session: Session, tabId: number): EventLog | undefined {
             for (const event of state.httpEvents) {
                 if (requests.has(event)) continue;
                 requests.add(event);
-                entries.push({ kind: 'request', frameId, script: String(event.scriptUrls?.[0] ?? event.scriptUrl), time: event.timeStamp, how: event.id, method: event.method, url: event.requestUrl });
+                entries.push({ kind: 'request', frameId, script: String(event.scriptUrls[0] ?? event.scriptUrl), time: event.timeStamp, how: event.id, method: event.method, url: event.requestUrl });
             }
             for (const item of Object.values(state.stored)) {
                 entries.push({ kind: 'stored', frameId, script, time: item.first, storage: item.kind, name: item.name, writes: item.writes });
@@ -661,7 +658,7 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
                     .map(({ httpRequest }) => httpRequest.hostname!)
             ),
         ],
-        stored: Object.values(script.stored ?? {})
+        stored: Object.values(script.stored)
             .map((item) => ({ ...item }))
             .sort((a, b) => a.first - b.first),
     };
@@ -699,18 +696,12 @@ function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): Metr
         distinctFpApis: Array.from(fpMetrics.distinctFpApis),
         intensity: fpMetrics.intensity,
         durationMs: fpMetrics.durationMs,
-        density: fpMetrics.density,
-        startTime: fpMetrics.startTime,
-        endTime: fpMetrics.endTime,
         score: fpMetrics.score,
         signals: fpMetrics.signals,
     };
 }
 
-function convertToSpikeSnapshot(fpSpike: FpSpike): SpikeSnapshot | null {
-    if (!fpSpike) {
-        return null;
-    }
+function convertToSpikeSnapshot(fpSpike: FpSpike): SpikeSnapshot {
     return {
         events: fpSpike.events,
         fpMetrics: convertToMetricsSnapshot(fpSpike.fpMetrics),

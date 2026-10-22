@@ -101,12 +101,7 @@ function ensureScript(
 }
 
 export function updateDocumentRoute(session: Session, tabId: number, frameId: number, documentId: string, url: string) {
-    const { document } = ensureDocument(session, tabId, frameId, documentId, url);
-    if (document.currentUrl === url) {
-        return;
-    }
-
-    document.currentUrl = url;
+    ensureDocument(session, tabId, frameId, documentId, url).document.currentUrl = url;
 }
 
 export function updateCurrentDocument(session: Session, tabId: number, frameId: number, documentId: string, url: string) {
@@ -205,7 +200,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
     calls.count += 1;
     calls.first = Math.min(calls.first, event.timeStamp);
     calls.last = Math.max(calls.last, event.timeStamp);
-    // == null also skips events from an older recorder, which don't have the fields at all.
+    // Without a position (e.g. a call from the console), it is counted, but not placed.
     if (event.line != null && event.column != null) {
         const location = (calls.locations[placeKey(event)] ??= { line: event.line, column: event.column, generated: false, calls: 0 });
         if (event.generated && event.innerLine != null && event.innerColumn != null) location.inner = { line: event.innerLine, column: event.innerColumn };
@@ -220,8 +215,7 @@ export function storeFpEvent(session: Session, tabId: number, frameId: number, d
  * bot protection) sits above the one that made the request, and both should see it.
  */
 export function storeHttpEvent(session: Session, tabId: number, frameId: number, documentId: string, url: string | null | undefined, event: HttpMonkeyEvent) {
-    // An older recorder only sends scriptUrl.
-    const scriptUrls = event.scriptUrls?.length ? event.scriptUrls : [event.scriptUrl];
+    const scriptUrls = event.scriptUrls.length > 0 ? event.scriptUrls : [event.scriptUrl];
     for (const scriptUrl of scriptUrls) {
         const { script } = ensureScript(session, tabId, frameId, documentId, url, scriptUrl);
         script.httpEvents.push(event);

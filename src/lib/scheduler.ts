@@ -6,89 +6,39 @@ interface ScheduleState {
     timerId: ReturnType<typeof setTimeout> | null;
 }
 
-interface Scheduler {
-    notify(key: string, taskFn: Task): void;
-    cancel(key: string): void;
-    clearAll(): void;
-}
+/**
+ * Runs a key's task once the key has been quiet for `debounceMs`, and at least every
+ * `maxIntervalMs` while it isn't, so a page calling APIs nonstop is still analyzed. Keyed by an
+ * object, e.g. a document, so a key's state goes with it.
+ */
+export function createScheduler({ debounceMs = 500, maxIntervalMs = 5000 } = {}) {
+    const states = new WeakMap<object, ScheduleState>();
 
-export function createScheduler({ debounceMs = 500, maxIntervalMs = 5000 } = {}): Scheduler {
-    const states = new Map<string, ScheduleState>();
-
-    function notify(key: string, taskFn: Task) {
-        const now = Date.now();
-        let state = states.get(key);
-        if (!state) {
-            state = { lastNotify: 0, lastRun: 0, timerId: null };
-            states.set(key, state);
-        }
-
-        state.lastNotify = now;
-        schedule(key, taskFn, state);
+    function notify(key: object, task: Task) {
+        const state = states.get(key) ?? { lastNotify: 0, lastRun: 0, timerId: null };
+        states.set(key, state);
+        state.lastNotify = Date.now();
+        schedule(state, task);
     }
 
-    function schedule(key: string, taskFn: Task, state: ScheduleState) {
-        const now = Date.now();
-
-        if (state.timerId) {
-            return; // already scheduled
-        }
-
-        // first time: simple debounce
-        if (!state.lastRun) {
-            plan(key, taskFn, state, debounceMs);
-            return;
-        }
-
-        const sinceLastRun = now - state.lastRun;
-        const sinceLastNotify = now - state.lastNotify;
-
-        const debounceDelay = Math.max(debounceMs, debounceMs - sinceLastNotify);
-        const remainingUntilMax = maxIntervalMs - sinceLastRun;
-        const finalDelay = Math.min(debounceDelay, remainingUntilMax);
-
-        plan(key, taskFn, state, finalDelay);
-    }
-
-    function plan(key: string, analyzeFn: Task, state: ScheduleState, delay: number) {
+    function schedule(state: ScheduleState, task: Task) {
+        if (state.timerId) return;
+        const delay = state.lastRun ? Math.min(debounceMs, maxIntervalMs - (Date.now() - state.lastRun)) : debounceMs;
         state.timerId = setTimeout(() => {
             state.timerId = null;
-            maybeRun(key, analyzeFn, state);
+            run(state, task);
         }, delay);
     }
 
-    function maybeRun(key: string, analyzeFn: Task, state: ScheduleState) {
+    function run(state: ScheduleState, task: Task) {
         const now = Date.now();
-        const idleLongEnough = now - state.lastNotify >= debounceMs;
-        const maxIntervalExceeded = now - state.lastRun >= maxIntervalMs;
-
-        if (!idleLongEnough && !maxIntervalExceeded) {
-            // still active, reschedule
-            schedule(key, analyzeFn, state);
+        if (now - state.lastNotify < debounceMs && now - state.lastRun < maxIntervalMs) {
+            schedule(state, task);
             return;
         }
-
         state.lastRun = now;
-        analyzeFn();
+        task();
     }
 
-    function cancel(key: string) {
-        const state = states.get(key);
-        if (!state) return;
-        if (state.timerId) {
-            clearTimeout(state.timerId);
-        }
-        states.delete(key);
-    }
-
-    function clearAll() {
-        for (const state of states.values()) {
-            if (state.timerId) {
-                clearTimeout(state.timerId);
-            }
-        }
-        states.clear();
-    }
-
-    return { notify, cancel, clearAll };
+    return { notify };
 }
