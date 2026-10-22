@@ -20,6 +20,7 @@ import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
+import { carriesData } from '@/lib/http-analysis';
 import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
@@ -607,10 +608,12 @@ function scriptSnapshotFromScript(script: ScriptState, scriptName: string): Scri
         apiLocations,
         apiTimes,
         capped: script.capped === true,
+        requests: script.httpConsolidatedEvents.filter(carriesData),
+        // Those of its requests with data: "sent data through an alias", as the score counts them.
         cloakedHosts: [
             ...new Set(
                 script.httpConsolidatedEvents
-                    .filter(({ httpRequest }) => httpRequest?.isCnameCloaked && httpRequest.hostname)
+                    .filter((request) => request.httpRequest?.isCnameCloaked && request.httpRequest.hostname && carriesData(request))
                     .map(({ httpRequest }) => httpRequest.hostname!)
             ),
         ],

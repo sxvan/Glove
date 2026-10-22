@@ -110,6 +110,8 @@ export interface ScriptDetail {
     apiDetails: ApiDetail[];
     /** Requests carrying data that the script made right after fingerprinting, the most data first. */
     sent: SentRequest[];
+    /** All requests carrying data it made, at any time, for the details page: those right after reading with how long after. */
+    requests: SentRequest[];
     /**
      * The site's own addresses that are CNAME aliases for another site, which it made requests to at
      * any time, with the site each leads to; for the page, those of all its requests.
@@ -219,7 +221,7 @@ export interface SentRequest {
     method: string;
     /** How the script sent it; null if the page's recorder didn't see it, only the browser. */
     how: 'fetch' | 'xhr' | 'beacon' | 'image' | null;
-    /** How long after the burst before it it was sent, in ms: 0 for during it; null if unknown. */
+    /** How long after the burst before it it was sent, in ms: 0 for during it; null if unknown, or not sent right after one. */
     afterMs: number | null;
     /** The names of its URL's parameters, in their order; the values aren't shown, only what they are called. */
     params: string[];
@@ -314,6 +316,7 @@ export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {
                         signals: scriptSignals(script.apiLocations, traits, power, rare),
                         apis,
                         sent: sentRequests(correlations, aliases),
+                        requests: allRequests(script.requests, correlations, aliases),
                         aliased: (script.cloakedHosts ?? []).map((host) => ({ host, site: realSite(host, aliases) ?? host })),
                         stored: storedDetails(snapshot, script),
                         apiDetails: apiDetails(script, frame.document.startTime, traits, power),
@@ -425,8 +428,20 @@ function capitalize(text: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * All requests with data a script made (`requests`), one per URL: those it made right after
+ * fingerprinting (`correlations`) with how long after. Without them from an older background, those
+ * right after fingerprinting only.
+ */
+function allRequests(requests: HttpConsolidatedEvent[] | undefined, correlations: (HttpConsolidatedEvent & { burstEnd: number })[], aliases: Map<string, string>): SentRequest[] {
+    // A request, by when it was made and where to: the snapshot copies requests, so not by identity.
+    const id = ({ httpEvent, httpRequest }: HttpConsolidatedEvent) => `${httpEvent?.timeStamp}|${httpEvent?.requestUrl ?? httpRequest?.url}`;
+    const burstEnds = new Map(correlations.map((correlation) => [id(correlation), correlation.burstEnd]));
+    return sentRequests((requests ?? correlations).map((request) => ({ ...request, burstEnd: burstEnds.get(id(request)) })), aliases);
+}
+
 /** The requests with data a script made right after fingerprinting, the most data first; one per URL. */
-function sentRequests(correlations: (HttpConsolidatedEvent & { burstEnd: number })[], aliases: Map<string, string>): SentRequest[] {
+function sentRequests(correlations: (HttpConsolidatedEvent & { burstEnd?: number })[], aliases: Map<string, string>): SentRequest[] {
     const byUrl = new Map<string, SentRequest>();
     for (const { httpRequest, httpEvent, burstEnd } of correlations) {
         const url = httpRequest?.url ?? httpEvent?.requestUrl;
@@ -443,28 +458,32 @@ function sentRequests(correlations: (HttpConsolidatedEvent & { burstEnd: number 
             url,
             method,
             how: httpEvent?.id ?? null,
-            afterMs: httpEvent ? Math.max(0, httpEvent.timeStamp - burstEnd) : null,
+            afterMs: httpEvent && burstEnd !== undefined ? Math.max(0, httpEvent.timeStamp - burstEnd) : null,
             params,
             site: realSite(hostOf(url), aliases) ?? hostOf(url),
             via: aliases.has(hostOf(url)) ? hostOf(url) : null,
             path: urlPath(url),
             bytes: (httpRequest?.bodyBytes ?? 0) + new TextEncoder().encode(query).length,
         };
+        // Of the same URL sent more than once: the one right after reading, which the score counts,
+        // then the one with the most data.
         const key = `${method} ${url}`;
-        if ((byUrl.get(key)?.bytes ?? -1) < request.bytes) byUrl.set(key, request);
+        const known = byUrl.get(key);
+        if (!known || (known.afterMs === null && request.afterMs !== null) || ((known.afterMs === null) === (request.afterMs === null) && known.bytes < request.bytes)) byUrl.set(key, request);
     }
     return [...byUrl.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
 /**
  * What the page's scripts sent, one row per request with the scripts that sent it: one request
- * counts for every script on its stack (see storeHttpEvent), so several can have the same. The most
- * data first.
+ * counts for every script on its stack (see storeHttpEvent), so several can have the same. Of each
+ * script its `list`: what it sent right after reading, or all its requests with data. The most data
+ * first.
  */
-function pageSent(scripts: ScriptDetail[]): SentRequest[] {
+function pageSent(scripts: ScriptDetail[], list: (script: ScriptDetail) => SentRequest[] = (script) => script.sent): SentRequest[] {
     const byRequest = new Map<string, SentRequest & { by: NonNullable<SentRequest['by']> }>();
     for (const script of scripts) {
-        for (const request of script.sent) {
+        for (const request of list(script)) {
             const key = `${request.method} ${request.url}`;
             const writer = { name: script.name, path: script.path, origin: script.origin, url: script.url };
             const known = byRequest.get(key);
@@ -593,6 +612,7 @@ export function fingerprintingPageDetail(snapshot: TabSnapshot, scripts: ScriptD
         signals,
         apis,
         sent: pageSent(scripts),
+        requests: pageSent(scripts, (script) => script.requests),
         // All the page's requests, also those no recorded script made, such as images in its HTML.
         aliased: [...cloakedHosts(snapshot).keys()].map((host) => ({ host, site: realSite(host, cloakedHosts(snapshot)) ?? host })),
         stored: pageStored(scripts),

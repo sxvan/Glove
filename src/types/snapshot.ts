@@ -35,7 +35,9 @@ export interface ScriptSnapshot {
     apiTimes?: Record<string, { first: number; last: number }>;
     /** What it stored in the browser, in the order first stored; missing from an older background. */
     stored?: StoredItem[];
-    /** The CNAME-cloaked hosts of the site it made requests to, at any time (see isCnameCloaked); missing from an older background. */
+    /** Its requests carrying data, at any time (see carriesData), for the details page; missing from an older background. */
+    requests?: HttpConsolidatedEvent[];
+    /** The CNAME-cloaked hosts of the site it sent data to, at any time (see isCnameCloaked); missing from an older background. */
     cloakedHosts?: string[];
     /** Whether it reached the limit of calls kept per script (see lib/limits). */
     capped?: boolean;
