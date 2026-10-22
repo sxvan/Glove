@@ -213,7 +213,7 @@
 </div>
 {#if blockedOpen}
     {#each blockedGroups as group (group.id)}
-        <div class="group">
+        <div class="group-head">
             <h3>{group.title} <span class="count">{group.scripts.length}</span></h3>
             <button type="button" onclick={() => actOnAll(group)}>{group.action} all</button>
         </div>
@@ -290,7 +290,7 @@
     }
 
     /* A group's heading, with its button at the end. */
-    .group {
+    .group-head {
         display: flex;
         align-items: center;
         justify-content: space-between;

@@ -267,21 +267,19 @@
                 <section class="squircle">
                     <SectionHead title="Likelihood" changed={differs(settings.cutoffs, DEFAULT_SETTINGS.cutoffs)} onreset={() => resetPart('cutoffs')} />
                     <p class="section-note">Where a score counts as possible or likely tracking.</p>
-                    {#each [['fingerprinting', 'Fingerprinting (pages and scripts)']] as const as [kind, label] (kind)}
-                        <div class="row cutoffs">
-                            <div class="name">{label}</div>
-                            <label class="field">
-                                Possible from
-                                <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].possible)} oninput={(e) => setCutoff(kind, 'possible', e)} />
-                                %
-                            </label>
-                            <label class="field">
-                                Likely from
-                                <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs[kind].likely)} oninput={(e) => setCutoff(kind, 'likely', e)} />
-                                %
-                            </label>
-                        </div>
-                    {/each}
+                    <div class="row cutoffs">
+                        <div class="name">Fingerprinting (pages and scripts)</div>
+                        <label class="field">
+                            Possible from
+                            <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs.fingerprinting.possible)} oninput={(e) => setCutoff('fingerprinting', 'possible', e)} />
+                            %
+                        </label>
+                        <label class="field">
+                            Likely from
+                            <input type="number" min="0" max="100" step="1" value={percent(settings.cutoffs.fingerprinting.likely)} oninput={(e) => setCutoff('fingerprinting', 'likely', e)} />
+                            %
+                        </label>
+                    </div>
                     {#if invalidCutoffs}
                         <p class="warning">"Likely" should be above "possible".</p>
                     {/if}
@@ -302,7 +300,7 @@
                             </div>
                             <label class="field" class:changed>
                                 <input type="number" min="0" step="1" value={settings.bursts[field.key]} oninput={(e) => setBurstDetection(field.key, e)} />
-                                <span class="unit">{field.unit}</span>
+                                {field.unit}
                             </label>
                             <span class="default" class:changed>default {DEFAULT_SETTINGS.bursts[field.key]} {field.unit}</span>
                         </div>
@@ -330,7 +328,7 @@
                             </div>
                             <label class="field" class:changed>
                                 <input type="number" min="0" step="1" value={settings.identifiers[field.key]} oninput={(e) => setIdentifierRule(field.key, e)} />
-                                <span class="unit">{field.unit}</span>
+                                {field.unit}
                             </label>
                             <span class="default" class:changed>default {DEFAULT_SETTINGS.identifiers[field.key]} {field.unit}</span>
                         </div>
@@ -571,20 +569,12 @@
         font-size: 12px;
     }
 
-    /* Sections are cards: no border, room inside, squircle corners (the .squircle class). */
+    /* Sections are cards: no border, room inside, squircle corners (the .squircle class). Room
+       above one a link jumped to, so it doesn't stick to the window's edge. */
     section {
         padding: 20px 24px;
         border-radius: 18px;
         background: var(--surface);
-    }
-
-    /* The section a "made from" link jumped to. */
-    section:target {
-        border-color: var(--muted);
-    }
-
-    /* Room above a section a link jumped to, so it doesn't stick to the window's edge. */
-    section {
         scroll-margin-top: 16px;
     }
 
