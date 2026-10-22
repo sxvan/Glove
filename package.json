@@ -2,7 +2,7 @@
   "name": "glove",
   "description": "See which scripts on a page fingerprint your browser and how, so you can avoid them or block them.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
