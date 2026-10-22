@@ -71,11 +71,33 @@
     box-sizing: border-box;
 }
 
+/* Colors that change, as on hover, fade briefly instead of switching: enough to take the edge off,
+   short enough that nothing feels slow. Colors only: nothing moves or changes size. Components with
+   a transition of their own (a switch's knob, a tip fading in) keep it; none for anyone whose system
+   asks for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+    *,
+    *::before,
+    *::after {
+        transition:
+            color 0.15s ease,
+            background-color 0.15s ease,
+            border-color 0.15s ease;
+    }
+}
+
 body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
     font: 14px/1.45 var(--font);
+}
+
+/* The extension's name, small and muted above a page's title (the popup's site, the details page's). */
+.brand {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
 }
 
 button {
