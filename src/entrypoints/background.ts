@@ -14,23 +14,21 @@ import {
     type BlockedScript,
 } from '@/lib/blocking';
 import { DEFAULT_LIMITS, loadLimits, watchLimits } from '@/lib/limits';
+import { buildEventLog, buildTabSnapshot, callsOnPage } from '@/lib/snapshot';
 import { DEFAULT_PRIVACY, loadPrivacy, watchPrivacy } from '@/lib/privacy';
 import { registerRecorders } from '@/lib/recorders';
 import { createScheduler } from '@/lib/scheduler';
 import { loadOffSites, offEntryFor, setSiteOff, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
 import { analyzeDocumentFp } from '@/lib/fp-analysis';
 import { dnsLookup } from '@/lib/dns-lookup';
-import { carriesData } from '@/lib/http-analysis';
 import { getEtld1, getHostname } from '@/lib/http-utils';
 import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type ScoringSettings } from '@/lib/scoring';
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, currentDocument, currentDocuments, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
-import type { FpMetrics, FpBurst, HttpRequest } from '@/types/analysis';
+import type { HttpRequest } from '@/types/analysis';
 import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
-import type { DocumentState, FrameState, ScriptState, Session } from '@/types/session';
-import type { CallLocation, EventLog, EventLogEntry, DocumentSnapshot, FrameSnapshot, MetricsSnapshot, ScriptSnapshot, BurstSnapshot, TabSnapshot } from '@/types/snapshot';
+import type { DocumentState, Session } from '@/types/session';
 
-// The user's settings; the defaults until they are loaded.
 let settings: ScoringSettings = DEFAULT_SETTINGS;
 let limits = DEFAULT_LIMITS;
 let privacy = DEFAULT_PRIVACY;
@@ -40,7 +38,6 @@ export default defineBackground(() => {
     const session = createSession();
     const fpScheduler = createScheduler();
 
-    // In-flight DNS lookups by hostname, shared by all requests to that host.
     const pendingLookups = new Map<string, Promise<void>>();
 
     function scheduleAnalysis(document: DocumentState, tabId: number) {
@@ -65,12 +62,10 @@ export default defineBackground(() => {
     follow('privacy options', loadPrivacy, watchPrivacy, (loaded) => (privacy = loaded));
     follow('performance limits', loadLimits, watchLimits, (loaded) => (limits = loaded));
 
-    // The browser's blocking rules and the registered recorders follow these lists.
     let blockedList: BlockedScript[] = [];
     let blocked = new Set<string>();
     let offSites: OffSite[] = [];
-    // One update of the rules at a time, each with the lists as they are then: an update replaces
-    // all rules by their ids, so two at once collide when the number of blocked scripts changed.
+    // One update at a time: an update replaces all rules by their ids, so two at once collide.
     let rulesSynced: Promise<void> = Promise.resolve();
     function syncRules() {
         rulesSynced = rulesSynced
@@ -90,7 +85,6 @@ export default defineBackground(() => {
     follow('blocked scripts', loadBlocked, watchBlocked, applyBlocked);
     follow('sites turned off', loadOffSites, watchOffSites, applyOffSites);
 
-    /** How many different blocked scripts tried to load on the tab's page, in all its frames. */
     function blockedOnPage(tabId: number): number {
         const keys = new Set<string>();
         for (const document of currentDocuments(session, tabId)) {
@@ -100,15 +94,11 @@ export default defineBackground(() => {
     }
 
     const isOff = (url: string | null | undefined) => offEntryFor(switchableHost(url), offSites) !== undefined;
-    /** By the tab's top document. */
     function tabIsOff(tabId: number): boolean {
         return isOff(currentDocument(session.tabs[tabId]?.frames[0])?.currentUrl);
     }
 
-    /**
-     * Turns the extension off on a tab's site or on again, with the recorders and rules in step
-     * before the page loads again, which it does at once: off, the recording made so far goes.
-     */
+    // The page reloads at once, with the recorders and rules already in step.
     browser.runtime.onMessage.addListener((msg: SetSiteOffMessage, _sender, sendResponse) => {
         if (msg?.type !== 'SET_SITE_OFF') return;
         (async () => {
@@ -126,24 +116,19 @@ export default defineBackground(() => {
                 sendResponse(false);
             }
         );
-        // Keeps the channel open: answered once done.
+        // Keeps the channel open until answered.
         return true;
     });
 
-    // What to do after blocking, and the scripts never to block automatically (see lib/blocking).
     let blockingOptions = DEFAULT_BLOCKING_OPTIONS;
     let exempt = new Set<string>();
     follow('blocking options', loadBlockingOptions, watchBlockingOptions, (loaded) => (blockingOptions = loaded));
     follow('exempt scripts', loadExempt, watchExempt, (keys) => (exempt = new Set(keys)));
 
-    // Scripts being blocked automatically: analyses meanwhile don't block them again.
+    // Being blocked now, so analyses meanwhile don't block them again.
     const autoBlocking = new Set<string>();
 
-    /**
-     * If the user chose so, blocks every script of the tab that reached the score set, as the switch
-     * would, all of them at once: one reload, one clearing. Not those that can't be blocked by address,
-     * are blocked already, or that the user let run again.
-     */
+    // All at once, for one reload and one clearing.
     function blockAutomatically(tabId: number) {
         if (!blockingOptions.autoBlock || tabIsOff(tabId)) return;
         const found = new Map<string, number>();
@@ -169,15 +154,10 @@ export default defineBackground(() => {
             console.warn('Could not block or unblock the script', error);
             sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
         });
-        // Keeps the channel open: answered once done.
         return true;
     });
 
-    /**
-     * Blocks scripts or lets them run again, with the rules in place before the page loads again;
-     * then, as the user chose, loads the tab's page again, after blocking with the site's data
-     * cleared first (see reloadCleared). `auto`: the scores of scripts blocked automatically, by URL.
-     */
+    /** `auto`: the scores of scripts blocked automatically, by URL. */
     async function changeBlocked(urls: string[], block: boolean, tabId: number | null, auto?: Map<string, number>): Promise<SetBlockedResult> {
         await setBlocked(urls, block, auto);
         await applyBlocked(await loadBlocked());
@@ -191,12 +171,8 @@ export default defineBackground(() => {
         return { reloaded: true, cleared: false };
     }
 
-    /**
-     * Loads the tab's page again with its site's data cleared: the cookies of the whole site, storage,
-     * IndexedDB and caches, of the page's site and of each frame's a blocked script ran in. The old
-     * page is left for an empty one first: while it runs, its scripts (the blocked one too, already
-     * loaded) could store again between clearing and loading.
-     */
+    // The page's origin and those of the frames a blocked script ran in. The page is left for an empty
+    // one first, or its scripts (the blocked one too) could store again between clearing and loading.
     async function reloadCleared(tabId: number, scriptUrls: string[]) {
         const tab = await browser.tabs.get(tabId);
         const pageUrl = tab.url;
@@ -209,14 +185,12 @@ export default defineBackground(() => {
         }
         await navigateAndWait(tabId, 'about:blank');
         await browser.browsingData.remove(
-            // Never empty: the page's own origin is in it.
             { origins: [...origins] as [string, ...string[]] },
             { cookies: true, localStorage: true, indexedDB: true, cacheStorage: true, serviceWorkers: true, fileSystems: true }
         );
         await browser.tabs.update(tabId, { url: pageUrl });
     }
 
-    /** Resolves once a DNS result for the host is cached; rejects if the lookup failed (it is retried later). */
     function lookUpHost(hostname: string): Promise<void> {
         if (session.dnsResults.has(hostname)) {
             return Promise.resolve();
@@ -239,7 +213,6 @@ export default defineBackground(() => {
             return;
         }
 
-        // A request of a frame the page made is recorded with the document that made it, as its calls are.
         const { frameId, documentId } = recordingTarget(session, tabId, requestFrameId, requestDocumentId);
 
         if (!documentExists(session, tabId, frameId, documentId)) {
@@ -252,19 +225,17 @@ export default defineBackground(() => {
         const hostname = getHostname(details.url);
         const page = currentDocument(session.tabs[tabId]?.frames[0]);
         const pageUrl = page?.currentUrl ?? document.currentUrl;
-        // Nothing is recorded on a site the extension is off for: a page loading counts by its own address.
+        // A page loading counts by its own address.
         if (isOff(details.type === 'main_frame' ? details.url : pageUrl)) return;
-        // Its body only for its size: kept, the raw bytes of every request would add up.
+        // Only the body's size: the raw bytes of every request would add up.
         const { requestBody, ...request } = details;
         const httpEvent: HttpRequest = { ...request, documentUrl: document.currentUrl, pageUrl, hostname, bodyBytes: bodySize(requestBody) };
         document.httpRequests.push(httpEvent);
 
         scheduleAnalysis(document, tabId);
 
-        // Analyze again once the host's DNS result arrives, so the request gets its CNAME details. Only
-        // a host of the page's own site, other than the page's, can hide another company behind an
-        // alias (see isCnameCloaked), so only those are looked up: the resolver learns no more than
-        // the site visited, not every tracker it loads.
+        // Only a host of the page's own site can be cloaked (see isCnameCloaked), so only those are
+        // looked up: the resolver learns the site visited, not every tracker it loads.
         const pageHost = getHostname(pageUrl);
         const cloakable = hostname !== null && hostname !== pageHost && getEtld1(hostname) === getEtld1(pageHost);
         if (privacy.dnsLookups && hostname && cloakable && details.type !== 'main_frame' && !session.dnsResults.has(hostname)) {
@@ -284,18 +255,15 @@ export default defineBackground(() => {
             return;
         }
 
-        // Nothing is recorded on a site the extension is off for, also from frames of other sites in it.
+        // By the tab's page, so frames of other sites in it are off too.
         if (isOff(sender.tab.url)) return;
 
         const tabId = sender.tab.id!;
-        // A frame the page made is recorded with the document that made it (see recordingTarget),
-        // which keeps its own address.
         const { frameId, documentId } = recordingTarget(session, tabId, sender.frameId!, sender.documentId);
         const url = documentId === sender.documentId ? sender.url : null;
         const { document } = ensureDocument(session, tabId, frameId, documentId, url);
 
         if (msg.type === 'fp-batch') {
-            // Up to the limits (see lib/limits): what wasn't kept isn't scored again either.
             let pageCalls = callsOnPage(session, tabId);
             let kept = 0;
             for (const fpEvent of msg.payload) {
@@ -307,7 +275,6 @@ export default defineBackground(() => {
             }
 
             if (kept > 0) scheduleAnalysis(document, tabId);
-            // Past the page's limit, the bridge stops sending its calls.
             if (pageCalls >= limits.callsPerPage) {
                 sendResponse({ stop: true });
                 publishAnalysis(session, tabId);
@@ -335,7 +302,7 @@ export default defineBackground(() => {
     browser.runtime.onMessage.addListener((msg: GetTabSnapshotMessage | GetEventLogMessage, sender, sendResponse) => {
         if (msg.type === 'GET_TAB_SNAPSHOT') {
             const tabId = Number(msg.tabId);
-            const snapshot = buildTabSnapshot(session, tabId);
+            const snapshot = buildTabSnapshot(session, tabId, settings, limits);
             sendResponse(snapshot);
             return;
         }
@@ -361,8 +328,6 @@ export default defineBackground(() => {
         ['requestBody']
     );
 
-    // A blocked script that tried to load: the browser refused it (see lib/blocking), so the page's
-    // list of scripts can show it, to unblock it there.
     browser.webRequest.onErrorOccurred.addListener(
         (details) => {
             const { tabId } = details;
@@ -402,7 +367,6 @@ export default defineBackground(() => {
         notePageMade(session, tabId, frameId, documentId, url, parent);
         if (frameId === 0) {
             dropPreviousPageFrames(session, tabId, details.timeStamp);
-            // A new page has blocked nothing yet.
             showBlockedCount(tabId, 0);
         }
     });
@@ -413,10 +377,7 @@ export default defineBackground(() => {
     });
 });
 
-/**
- * Calls `apply` with what `load` reads, then with every change `watch` sees. A change seen while
- * loading is newer than what the load read, so the load doesn't overwrite it.
- */
+// A change seen while loading is newer than what the load read, so the load doesn't overwrite it.
 function follow<T>(name: string, load: () => Promise<T>, watch: (onChange: (value: T) => void) => unknown, apply: (value: T) => unknown) {
     let changed = false;
     load().then(
@@ -431,16 +392,6 @@ function follow<T>(name: string, load: () => Promise<T>, watch: (onChange: (valu
     });
 }
 
-/** How many calls the tab's page made, all its frames together, as kept (see lib/limits). */
-function callsOnPage(session: Session, tabId: number): number {
-    let calls = 0;
-    for (const document of currentDocuments(session, tabId)) {
-        for (const script of Object.values(document.scripts)) calls += script.callCount;
-    }
-    return calls;
-}
-
-/** Loads `url` in the tab and waits until it has loaded, at most a few seconds. */
 function navigateAndWait(tabId: number, url: string): Promise<void> {
     return new Promise((resolve) => {
         const done = () => {
@@ -457,7 +408,6 @@ function navigateAndWait(tabId: number, url: string): Promise<void> {
     });
 }
 
-/** The size of a request's body in bytes: raw data, or form fields as sent. */
 function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']): number {
     if (!body) return 0;
     let bytes = 0;
@@ -468,7 +418,7 @@ function bodySize(body: Browser.webRequest.OnBeforeRequestDetails['requestBody']
     return bytes;
 }
 
-// Open popups and dashboards, each connected by a port named 'view' while it is open.
+// Popups and dashboards, connected by a port named 'view' while open.
 const openViews = new Set<Browser.runtime.Port>();
 
 function watchViews() {
@@ -479,165 +429,21 @@ function watchViews() {
     });
 }
 
-/**
- * After an analysis: updates the tab's toolbar ring, and sends open popups and dashboards the tab's
- * snapshot. The snapshot copies all the tab has recorded, so it is only built while one is open.
- */
+// A snapshot copies all the tab recorded, so it is only built while a view is open.
 function publishAnalysis(session: Session, tabId: number) {
     showPageScore(session, tabId);
     if (openViews.size === 0) return;
-    const snapshot = buildTabSnapshot(session, tabId);
+    const snapshot = buildTabSnapshot(session, tabId, settings, limits);
     if (!snapshot) return;
     const message: AnalysisUpdatedMessage = { type: 'ANALYSIS_UPDATED', tabId, data: snapshot };
-    // Rejects when no open page listens for it.
+    // Rejects when no view listens.
     browser.runtime.sendMessage(message).catch(() => {});
 }
 
-/** The page's score on the tab's toolbar ring, as the popup shows it: its most suspicious document's. */
 function showPageScore(session: Session, tabId: number) {
     const documents = currentDocuments(session, tabId);
     const page = currentDocument(session.tabs[tabId]?.frames[0]) ?? documents[0];
     if (!page) return;
     const score = Math.max(0, ...documents.map((document) => document.fpMetrics?.score ?? 0));
     showScoreIcon(tabId, page.documentId, score, settings.cutoffs.fingerprinting);
-}
-
-/**
- * What the popup and the dashboard show for a tab; undefined for a tab without recorded data, e.g.
- * one opened before the extension was (re)loaded, which the popup asks to reload.
- */
-function buildTabSnapshot(session: Session, tabId: number): TabSnapshot | undefined {
-    const tabState = session.tabs[tabId];
-    if (!tabState) return undefined;
-
-    const tabSnapshot: TabSnapshot = {
-        cNameRequests: collectCnameCloakedRequestsForTab(session, tabId),
-        frames: Object.entries(tabState.frames).map(([frameId, frameState]) => frameSnapshotFromFrame(frameState, frameId)),
-        cutoffs: settings.cutoffs,
-        apis: settings.apis,
-        rarityPower: settings.rarityPower,
-        callsCapped: callsOnPage(session, tabId) >= limits.callsPerPage,
-        identifiers: settings.identifiers,
-        rightAfterMs: settings.bursts.requestWindowMs,
-    };
-
-    return tabSnapshot;
-}
-
-/**
- * The tab's recorded events, of the documents its snapshot shows (each frame's current one), in
- * time order. A request counts for every script on its stack (see storeHttpEvent), so it is in each
- * of their lists: here it is once, for the script that made the call.
- */
-function buildEventLog(session: Session, tabId: number): EventLog | undefined {
-    const frames = session.tabs[tabId]?.frames;
-    if (!frames) return undefined;
-    const entries: EventLogEntry[] = [];
-    const requests = new Set<object>();
-    let startTime: number | null = null;
-    for (const [frameId, frame] of Object.entries(frames)) {
-        const document = currentDocument(frame);
-        if (!document) continue;
-        if (frameId === '0') startTime = document.startTime;
-        for (const [script, state] of Object.entries(document.scripts)) {
-            // Bursts are runs of the script's own calls (see detectBursts), in time order.
-            const burstOf = new Map<object, number>();
-            state.bursts.forEach((burst, i) => burst.events.forEach((event) => burstOf.set(event, i + 1)));
-            for (const event of state.fpEvents) {
-                entries.push({ kind: 'api', frameId, script, time: event.timeStamp, api: event.id, line: event.line, column: event.column, generated: event.generated, burst: burstOf.get(event) ?? null });
-            }
-            for (const event of state.httpEvents) {
-                if (requests.has(event)) continue;
-                requests.add(event);
-                entries.push({ kind: 'request', frameId, script: String(event.scriptUrls[0] ?? event.scriptUrl), time: event.timeStamp, how: event.id, method: event.method, url: event.requestUrl });
-            }
-            for (const item of Object.values(state.stored)) {
-                entries.push({ kind: 'stored', frameId, script, time: item.first, storage: item.kind, name: item.name, writes: item.writes });
-            }
-        }
-    }
-    return { startTime, entries: entries.sort((a, b) => a.time - b.time) };
-}
-
-function frameSnapshotFromFrame(frame: FrameState, frameId: string): FrameSnapshot | null {
-    const document = currentDocument(frame);
-    if (!document) return null;
-
-    return {
-        frameId: frameId,
-        document: documentSnapshotFromDocument(document),
-    };
-}
-
-function documentSnapshotFromDocument(document: DocumentState): DocumentSnapshot {
-    return {
-        documentId: document.documentId,
-        url: document.currentUrl,
-        startTime: document.startTime,
-        fpMetrics: convertToMetricsSnapshot(document.fpMetrics),
-        bursts: document.bursts.map((burst) => convertToMetricsSnapshot(burst.fpMetrics)).filter((metrics) => metrics !== null),
-        scripts: Object.entries(document.scripts).map(([scriptName, script]) => scriptSnapshotFromScript(script, scriptName)),
-        blockedScripts: Object.values(document.blockedScripts).map((attempt) => ({ ...attempt })),
-    };
-}
-
-function scriptSnapshotFromScript(script: ScriptState, scriptName: string): ScriptSnapshot {
-    // Counted as the calls arrived (see storeFpEvent).
-    const apiCounts: Record<string, number> = {};
-    const apiLocations: Record<string, CallLocation[]> = {};
-    const apiTimes: Record<string, { first: number; last: number }> = {};
-    for (const [api, calls] of Object.entries(script.calls)) {
-        apiCounts[api] = calls.count;
-        apiTimes[api] = { first: calls.first, last: calls.last };
-        const locations = Object.values(calls.locations);
-        if (locations.length > 0) apiLocations[api] = locations.map((location) => ({ ...location })).sort((a, b) => b.calls - a.calls);
-    }
-
-    return {
-        name: scriptName,
-        fpMetrics: convertToMetricsSnapshot(script.fpMetrics),
-        bursts: script.bursts.map(convertToBurstSnapshot),
-        apiCounts,
-        apiLocations,
-        apiTimes,
-        capped: script.capped === true,
-        requests: script.httpConsolidatedEvents.filter(carriesData),
-        // Those of its requests with data: "sent data through an alias", as the score counts them.
-        cloakedHosts: [
-            ...new Set(
-                script.httpConsolidatedEvents
-                    .filter((request) => request.httpRequest?.isCnameCloaked && request.httpRequest.hostname && carriesData(request))
-                    .map(({ httpRequest }) => httpRequest.hostname!)
-            ),
-        ],
-        stored: Object.values(script.stored)
-            .map((item) => ({ ...item }))
-            .sort((a, b) => a.first - b.first),
-    };
-}
-
-function collectCnameCloakedRequestsForTab(session: Session, tabId: number): HttpRequest[] {
-    return currentDocuments(session, tabId).flatMap((document) => document.httpRequests.filter((request) => request.isCnameCloaked));
-}
-
-function convertToMetricsSnapshot(fpMetrics: FpMetrics | null | undefined): MetricsSnapshot | null {
-    if (!fpMetrics) {
-        return null;
-    }
-
-    return {
-        distinctFpApis: Array.from(fpMetrics.distinctFpApis),
-        intensity: fpMetrics.intensity,
-        durationMs: fpMetrics.durationMs,
-        score: fpMetrics.score,
-        signals: fpMetrics.signals,
-    };
-}
-
-function convertToBurstSnapshot(burst: FpBurst): BurstSnapshot {
-    return {
-        events: burst.events,
-        fpMetrics: convertToMetricsSnapshot(burst.fpMetrics),
-        httpCorrelations: burst.httpCorrelations,
-    };
 }
