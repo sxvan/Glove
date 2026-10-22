@@ -2,15 +2,15 @@
     // A card for a script, or for the page as a whole (all its scripts together).
     import { blockKey } from '@/lib/blocking';
     import { viewerUrl } from '@/lib/script-viewer';
-    import type { ScriptDetail } from '../model';
+    import type { ScriptDetail } from '@/ui/model';
     import { byTable, statements } from '../statements';
-    import DetailsButton from './DetailsButton.svelte';
+    import DetailsButton from '@/ui/components/DetailsButton.svelte';
     import BlockToggle from './BlockToggle.svelte';
-    import LikelihoodLabel from './LikelihoodLabel.svelte';
-    import MiddleTruncate from './MiddleTruncate.svelte';
-    import ScoreRing from './ScoreRing.svelte';
+    import LikelihoodLabel from '@/ui/components/LikelihoodLabel.svelte';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import ScoreRing from '@/ui/components/ScoreRing.svelte';
     import ScoreTree from './ScoreTree.svelte';
-    import SignalLine from './SignalLine.svelte';
+    import SignalLine from '@/ui/components/SignalLine.svelte';
 
     let { script, onDetails }: { script: ScriptDetail; onDetails?: (statement: string) => void } = $props();
 

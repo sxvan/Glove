@@ -1,10 +1,10 @@
 <script lang="ts">
     import { untrack } from 'svelte';
-    import { amount } from '../format';
-    import type { ScoreNode } from '../model';
-    import { nodeColor, shareSegments } from '../signal-colors';
-    import MiddleTruncate from './MiddleTruncate.svelte';
-    import ScoreRing from './ScoreRing.svelte';
+    import { amount } from '@/ui/format';
+    import type { ScoreNode } from '@/ui/model';
+    import { nodeColor, shareSegments } from '@/ui/signal-colors';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import ScoreRing from '@/ui/components/ScoreRing.svelte';
     import ScoreTree from './ScoreTree.svelte';
 
     // The signals a score was combined from, each with how strongly it was observed (its ring) and its

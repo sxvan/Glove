@@ -2,10 +2,10 @@
     import { browser } from 'wxt/browser';
     import type { AnalysisUpdatedMessage, GetTabSnapshotMessage, SetSiteOffMessage } from '@/types/messages';
     import type { TabSnapshot } from '@/types/snapshot';
-    import MiddleTruncate from './components/MiddleTruncate.svelte';
-    import Switch from './components/Switch.svelte';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import Switch from '@/ui/components/Switch.svelte';
     import { loadOffSites, offEntryFor, switchableHost, watchOffSites, type OffSite } from '@/lib/sites';
-    import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from './model';
+    import { blockedDetails, fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl } from '@/ui/model';
     import { tableOf } from './statements';
     import FingerprintingDetail from './screens/FingerprintingDetail.svelte';
     import { onMount } from 'svelte';

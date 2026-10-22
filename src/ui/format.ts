@@ -1,3 +1,5 @@
+import type { StorageKind } from '@/types/snapshot';
+
 /**
  * Items as words, the last after "and": "a, b and c". Past `shown` items, the rest are counted:
  * "a, b, c and 5 more". A single item left over is named instead of "and 1 more".
@@ -52,3 +54,11 @@ export function roughCount(count: number): string {
 export function bytes(count: number): string {
     return count < 1024 ? `${count} B` : `${(count / 1024).toFixed(1)} KB`;
 }
+
+/** Where values are stored, as named under "Stored …": cookies by count, other storage by place. */
+export const STORAGE_WORDS: Record<StorageKind, string> = {
+    cookie: 'cookie',
+    localStorage: 'local storage',
+    sessionStorage: 'session storage',
+    indexedDB: 'IndexedDB',
+};

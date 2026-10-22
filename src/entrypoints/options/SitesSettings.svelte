@@ -3,7 +3,7 @@
     // of the Blocking section.
     import { onMount } from 'svelte';
     import { loadOffSites, removeOffSites, watchOffSites, type OffSite } from '@/lib/sites';
-    import { day } from '../popup/format';
+    import { day } from '@/ui/format';
     import SectionHead from './SectionHead.svelte';
 
     let sites = $state<OffSite[]>([]);

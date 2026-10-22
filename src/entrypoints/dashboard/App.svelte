@@ -9,12 +9,11 @@
     import { FP_APIS_BY_ID } from '@/lib/fp-apis';
     import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage } from '@/types/messages';
     import type { EventLog, EventLogEntry, StoredItem, TabSnapshot } from '@/types/snapshot';
-    import { amount, bytes, capitalize, elapsed, plural } from '../popup/format';
-    import { fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type ApiDetail, type ScriptDetail, type SentRequest, type StoredDetail } from '../popup/model';
-    import { STORAGE_WORDS } from '../popup/statements';
-    import LikelihoodLabel from '../popup/components/LikelihoodLabel.svelte';
-    import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
-    import ScoreRing from '../popup/components/ScoreRing.svelte';
+    import { amount, bytes, capitalize, elapsed, plural, STORAGE_WORDS } from '@/ui/format';
+    import { fingerprintingDetails, fingerprintingPageDetail, pageHost, pageUrl, type ApiDetail, type ScriptDetail, type SentRequest, type StoredDetail } from '@/ui/model';
+    import LikelihoodLabel from '@/ui/components/LikelihoodLabel.svelte';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import ScoreRing from '@/ui/components/ScoreRing.svelte';
     import DataTable from './DataTable.svelte';
     import type { Column, Sorting } from './columns';
 

@@ -16,10 +16,10 @@
         type BlockedScript,
         type BlockingOptions,
     } from '@/lib/blocking';
-    import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
-    import { day, plural } from '../popup/format';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import { day, plural } from '@/ui/format';
     import { percent, percentFromInput } from './inputs';
-    import Switch from '../popup/components/Switch.svelte';
+    import Switch from '@/ui/components/Switch.svelte';
     import SectionHead from './SectionHead.svelte';
 
     type SwitchKey = 'reload' | 'clearData' | 'autoBlock';

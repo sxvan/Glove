@@ -1,9 +1,9 @@
 // What the popup says about a script, as statements: the info lines of its card, each leading to
 // a table of the details page (see tableOf).
 import { EVERYONE_BITS } from '@/lib/scoring';
-import { bytes, listWords, plural, roughCount } from './format';
-import { identifyingBits, type ScriptDetail } from './model';
-import type { TextPart } from './text-parts';
+import { bytes, listWords, plural, roughCount, STORAGE_WORDS } from '@/ui/format';
+import { identifyingBits, type ScriptDetail } from '@/ui/model';
+import type { TextPart } from '@/ui/text-parts';
 import type { StorageKind } from '@/types/snapshot';
 
 /** A statement about a script, shown as an info line: the card's rating is its only judgment, in color. */
@@ -72,14 +72,6 @@ export function statements(script: ScriptDetail): Statement[] {
     if (stored) list.push(stored);
     return list;
 }
-
-/** Where values are stored, as named under "Stored …": cookies by count, other storage by place. */
-export const STORAGE_WORDS: Record<StorageKind, string> = {
-    cookie: 'cookie',
-    localStorage: 'local storage',
-    sessionStorage: 'session storage',
-    indexedDB: 'IndexedDB',
-};
 
 /** How "Stored …" is judged, for its tip. */
 const STORED_EXPLANATION =

@@ -2,9 +2,9 @@
     import BlockToggle from '../components/BlockToggle.svelte';
     import FingerprintCard from '../components/FingerprintCard.svelte';
     import FoldHeading from '../components/FoldHeading.svelte';
-    import MiddleTruncate from '../components/MiddleTruncate.svelte';
-    import { plural } from '../format';
-    import type { BlockedDetail, ScriptDetail } from '../model';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import { plural } from '@/ui/format';
+    import type { BlockedDetail, ScriptDetail } from '@/ui/model';
 
     // Blocked scripts that tried to load come first, to unblock them; scripts unlikely to fingerprint
     // are folded under a heading of their own, so the suspicious ones are what shows.

@@ -2,11 +2,11 @@
     import { onMount, tick } from 'svelte';
     import { js_beautify } from 'js-beautify/js/lib/beautify.js';
     import { parseViewerQuery, type ViewerApi } from '@/lib/script-viewer';
-    import MiddleTruncate from '../popup/components/MiddleTruncate.svelte';
-    import SignalLine from '../popup/components/SignalLine.svelte';
+    import MiddleTruncate from '@/ui/components/MiddleTruncate.svelte';
+    import SignalLine from '@/ui/components/SignalLine.svelte';
     import { FP_APIS_BY_ID } from '@/lib/fp-apis';
     import { loadPrivacy, savePrivacy } from '@/lib/privacy';
-    import { capitalize, plural } from '../popup/format';
+    import { capitalize, plural } from '@/ui/format';
     import { highlightWithLocations } from './highlight';
     import { inlineScripts } from './inline-scripts';
     import { locateApis, type CodeLocation } from './locations';

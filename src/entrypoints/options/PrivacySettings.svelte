@@ -2,7 +2,7 @@
     // What the extension may contact on the user's behalf (see lib/privacy), saved as soon as switched.
     import { onMount } from 'svelte';
     import { DEFAULT_PRIVACY, loadPrivacy, savePrivacy, watchPrivacy, type PrivacyOptions } from '@/lib/privacy';
-    import Switch from '../popup/components/Switch.svelte';
+    import Switch from '@/ui/components/Switch.svelte';
     import SectionHead from './SectionHead.svelte';
 
     const SWITCHES: { key: keyof PrivacyOptions; label: string; description: string }[] = [
