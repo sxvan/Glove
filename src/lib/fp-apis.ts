@@ -188,8 +188,10 @@ export type SpecialRead = 'gpuName' | 'highEntropyValues' | 'fontProbing' | 'hid
 //   (0.1). (Chrome counts no use of navigator.webdriver: its IDL has no MeasureAs.)
 // - bound: a particular read is at most as common as the API it uses. Hidden canvases are read
 //   through toDataURL (14%), getImageData (8%) and toBlob (0.6%), most of those reads fingerprinting
-//   (0.9, 0.95; toBlob's own 0.994 leaves no room above it, so its hidden read has that); font probing through measureText (8%), most of which is laying out text (0.96);
-//   the WebGPU adapter's info after requestAdapter (10%; 0.95).
+//   (0.9, 0.95; toBlob's 0.6% gives 0.994, rounded 0.99 for toBlob, so its hidden read keeps 0.994);
+//   font probing through measureText (8%), most of which is laying out text (0.96); the graphics
+//   card name in WebGL 2 through webgl2.getParameter (0.97, as rare as that); the WebGPU adapter's
+//   info after requestAdapter (10%; 0.95).
 // - estimate: the detailed client hints (Google Analytics asks for them by default, so about half
 //   of the 64% asking for client hints at all) and document.referrer.
 export const FP_APIS: FpApi[] = [
@@ -303,7 +305,7 @@ export const FP_APIS: FpApi[] = [
     { id: 'webgl.getContextAttributes', owner: 'WebGLRenderingContext', prop: 'getContextAttributes', category: 'GraphicsCard', reveals: 'graphics settings', bits: 0.4, rarity: 0.9, overlap: { group: 'gpu', adds: 0.2 }, bitsBasis: 'adjusted', rarityBasis: 'trackerRadar' },
 
     { id: 'webgl2.getParameter', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics capabilities', bits: 2.8, rarity: 0.97, same: 'webgl.getParameter', overlap: { group: 'gpu', adds: 0.3 }, rarityBasis: 'trackerRadar' },
-    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 0.72, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' }, overlap: { group: 'gpu', adds: 1.6 }, rarityBasis: 'related' },
+    { id: 'webgl2.gpuName', owner: 'WebGL2RenderingContext', prop: 'getParameter', category: 'GraphicsCard', reveals: 'graphics card name', bits: 5.9, rarity: 0.97, same: 'webgl.gpuName', readOf: { api: 'webgl2.getParameter', read: 'gpuName' }, overlap: { group: 'gpu', adds: 1.6 }, rarityBasis: 'bound' },
     { id: 'webgl2.getExtension', owner: 'WebGL2RenderingContext', prop: 'getExtension', category: 'GraphicsCard', reveals: 'graphics extensions', bits: 0.8, rarity: 0.94, same: 'webgl.getExtension', overlap: { group: 'gpu', adds: 0.1 }, bitsBasis: 'estimate' },
     { id: 'webgl2.getSupportedExtensions', owner: 'WebGL2RenderingContext', prop: 'getSupportedExtensions', category: 'GraphicsCard', reveals: 'supported graphics extensions', bits: 4.6, rarity: 0.98, same: 'webgl.getSupportedExtensions', overlap: { group: 'gpu', adds: 0.6 } },
     { id: 'webgl2.readPixels', owner: 'WebGL2RenderingContext', prop: 'readPixels', category: 'GraphicsCard', reveals: 'rendered 3D image', bits: 5.8, rarity: 0.95, same: 'webgl.readPixels', overlap: { group: 'gpu', adds: 0.5 }, rarityBasis: 'trackerRadar' },
