@@ -74,6 +74,18 @@ Glove isn't in the Chrome Web Store yet. Download the zip of the
 [latest release](https://github.com/sxvan/Glove/releases/latest), unpack it, open
 `chrome://extensions`, turn on developer mode and choose "Load unpacked" with the unpacked folder.
 
+## Roadmap
+
+Next up are community reports, so what one person finds out helps everyone. Both are opt-in: nothing
+is reported or applied unless you turn it on.
+
+- **Report sites that fingerprint.** You can report a site as fingerprinting. With the feature turned
+  on, a site the community has reported asks first whether you really want to visit it, and opens
+  only once you confirm.
+- **Report scripts that are safe to block.** After blocking a script and trying the site without it,
+  you can report that the site still works. With the feature turned on, scripts the community has
+  reported as fingerprinting but safe to block are blocked automatically.
+
 ## Development
 
 Tool versions are pinned with [mise](https://mise.jdx.dev). With mise installed:
