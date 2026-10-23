@@ -43,6 +43,11 @@ reloads at once and the site's cookies and storage are cleared, so an identifier
 too. Blocking scripts automatically from a score is available in the settings, as an experiment: it
 blocks by score alone and will break sites that need the script.
 
+When a site changes part of a script's address on every load, edit the blocked address in the
+settings and put `*` there, e.g. `https://www.gstatic.com/recaptcha/releases/*/recaptcha__en.js`. A
+script such a pattern blocks can be allowed on its own from its card, while the pattern keeps blocking
+the others; allowed scripts are listed in the settings.
+
 Glove can also be turned off for a site from the popup: it then records, scores and blocks nothing
 there.
 
@@ -65,7 +70,9 @@ Glove sees fingerprinting by wrapping browser APIs in the page. Its wrappers loo
 but a page can still tell that APIs were wrapped, and some scripts (anti-cheat, bot detection) then
 collect less, so they score lower than for other visitors. Scripts that wait for interaction, like
 reCAPTCHA before its checkbox is clicked, show only part of their collection until you act. Reads in
-web workers aren't recorded: Chrome gives extensions no way to run code in them.
+web workers aren't recorded: Chrome gives extensions no way to run code in them. Glove's presence can
+itself be detected, and as a rare extension that can make you more identifiable; turning it off for a
+site keeps it out of that site's pages.
 
 ## Privacy
 
