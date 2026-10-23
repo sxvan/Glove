@@ -2,6 +2,7 @@ import { browser, type Browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import {
     blockKey,
+    blockedBy,
     DEFAULT_BLOCKING_OPTIONS,
     loadBlocked,
     loadBlockingOptions,
@@ -63,7 +64,6 @@ export default defineBackground(() => {
     follow('performance limits', loadLimits, watchLimits, (loaded) => (limits = loaded));
 
     let blockedList: BlockedScript[] = [];
-    let blocked = new Set<string>();
     let offSites: OffSite[] = [];
     // One update at a time: an update replaces all rules by their ids, so two at once collide.
     let rulesSynced: Promise<void> = Promise.resolve();
@@ -75,7 +75,6 @@ export default defineBackground(() => {
     }
     function applyBlocked(list: BlockedScript[]) {
         blockedList = list;
-        blocked = new Set(list.map((script) => script.key));
         return syncRules();
     }
     function applyOffSites(sites: OffSite[]) {
@@ -136,7 +135,7 @@ export default defineBackground(() => {
             for (const [name, script] of Object.entries(document.scripts)) {
                 const score = script.fpMetrics?.score ?? 0;
                 const key = blockKey(name);
-                if (score < blockingOptions.autoBlockFrom || !key || blocked.has(key) || exempt.has(key) || autoBlocking.has(key)) continue;
+                if (score < blockingOptions.autoBlockFrom || !key || blockedBy(name, blockedList) || exempt.has(key) || autoBlocking.has(key)) continue;
                 found.set(name, score);
             }
         }
@@ -332,12 +331,12 @@ export default defineBackground(() => {
         (details) => {
             const { tabId } = details;
             if (tabId === -1 || details.frameId === -1 || !details.documentId || details.error !== 'net::ERR_BLOCKED_BY_CLIENT') return;
-            const key = blockKey(details.url);
+            const entry = blockedBy(details.url, blockedList);
             const { frameId, documentId } = recordingTarget(session, tabId, details.frameId, details.documentId);
-            if (!key || !blocked.has(key) || !documentExists(session, tabId, frameId, documentId)) return;
+            if (!entry || !documentExists(session, tabId, frameId, documentId)) return;
 
             const { document } = ensureDocument(session, tabId, frameId, documentId, null);
-            const attempt = (document.blockedScripts[key] ??= { url: details.url, attempts: 0 });
+            const attempt = (document.blockedScripts[blockKey(details.url)!] ??= { key: entry.key, url: details.url, attempts: 0 });
             attempt.attempts++;
             showBlockedCount(tabId, blockedOnPage(tabId));
             publishAnalysis(session, tabId);

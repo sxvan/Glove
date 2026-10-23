@@ -1,7 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import {
+        blockPattern,
         DEFAULT_BLOCKING_OPTIONS,
+        editBlocked,
         loadBlocked,
         loadBlockingOptions,
         loadExempt,
@@ -65,12 +67,14 @@
         title: string;
         scripts: { key: string; detail: string }[];
         action: 'Unblock' | 'Remove';
+        editable?: boolean;
         confirm: (count: string) => string;
         act: (keys: string[]) => void;
     }
 
     const unblocking = {
         action: 'Unblock' as const,
+        editable: true,
         confirm: (count: string) => `Unblock the ${count}? They load again on every site, and none of them is blocked automatically after that.`,
         // They aren't blocked automatically after that.
         act: (keys: string[]) => setBlocked(keys, false),
@@ -117,6 +121,27 @@
         changed = optionsChanged;
     });
     const reset = () => saveBlockingOptions({ ...DEFAULT_BLOCKING_OPTIONS });
+
+    // The address being edited, and what is typed for it.
+    let editing = $state<string | null>(null);
+    let draft = $state('');
+    const draftKey = $derived(blockPattern(draft));
+
+    function startEdit(key: string) {
+        editing = key;
+        draft = key;
+    }
+
+    async function saveEdit() {
+        if (editing === null || draftKey === null) return;
+        if (draftKey !== editing) await editBlocked(editing, draftKey);
+        editing = null;
+    }
+
+    function editKey(event: KeyboardEvent) {
+        if (event.key === 'Enter') saveEdit();
+        else if (event.key === 'Escape') editing = null;
+    }
 
     function actOnAll(group: Group) {
         const count = `${plural(group.scripts.length, 'script')} ${group.title.toLowerCase()}`;
@@ -191,7 +216,10 @@
 <div class="row">
     <div>
         <div class="name">Blocked scripts <span class="count">{blocked.length}</span></div>
-        <div class="description">Blocked on every site; unblocked scripts load again from their next load.</div>
+        <div class="description">
+            Blocked on every site; unblocked scripts load again from their next load. Edit an address to put <code>*</code> where a site changes a
+            part of it, such as a name it makes up for every visit.
+        </div>
     </div>
     <div class="actions">
         {#if blocked.length > 0}
@@ -214,11 +242,28 @@
         {#each group.scripts as script (script.key)}
             {@const { host, pathname } = new URL(script.key)}
             <li>
-                <div class="script" title={script.key}>
-                    <div class="address"><MiddleTruncate text={pathname} path /></div>
-                    <div class="description">{[host, script.detail].filter(Boolean).join(' · ')}</div>
-                </div>
-                <button type="button" class="button" onclick={() => group.act([script.key])}>{group.action}</button>
+                {#if editing === script.key}
+                    <div class="script">
+                        <!-- svelte-ignore a11y_autofocus -->
+                        <input class="pattern" type="text" spellcheck="false" aria-label="Address to block" bind:value={draft} onkeydown={editKey} autofocus />
+                        <div class="description" class:invalid={draftKey === null}>
+                            {draftKey === null ? 'An http or https address with a path, without ? or #' : '* stands for any characters'}
+                        </div>
+                    </div>
+                    <div class="buttons">
+                        <button type="button" class="button" onclick={() => (editing = null)}>Cancel</button>
+                        <button type="button" class="button" disabled={draftKey === null} onclick={saveEdit}>Save</button>
+                    </div>
+                {:else}
+                    <div class="script" title={script.key}>
+                        <div class="address"><MiddleTruncate text={pathname} path /></div>
+                        <div class="description">{[host, script.detail].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    <div class="buttons">
+                        {#if group.editable}<button type="button" class="button" onclick={() => startEdit(script.key)}>Edit</button>{/if}
+                        <button type="button" class="button" onclick={() => group.act([script.key])}>{group.action}</button>
+                    </div>
+                {/if}
             </li>
         {/each}
     </ul>
@@ -282,5 +327,26 @@
         min-width: 0;
         font-family: var(--mono);
         font-size: 12px;
+    }
+
+    .buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .pattern {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+    }
+
+    .description.invalid {
+        color: var(--possible);
     }
 </style>

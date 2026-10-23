@@ -52,12 +52,14 @@ export interface LearnedKind {
 }
 
 export interface BlockedDetail {
-    /** What it is blocked by (see blockKey). */
+    /** Its address (see blockKey), one card per address even where a pattern blocks several. */
     key: string;
     name: string;
     origin: string;
     url: string;
     attempts: number;
+    /** The pattern with * that blocked it, as a path on the script's own host; null when blocked by its address. */
+    pattern: string | null;
 }
 
 export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
@@ -68,10 +70,16 @@ export function blockedDetails(snapshot: TabSnapshot): BlockedDetail[] {
             if (!key) continue;
             const known = byKey.get(key);
             if (known) known.attempts += attempt.attempts;
-            else byKey.set(key, { key, name: urlPath(attempt.url), origin: hostOf(attempt.url), url: attempt.url, attempts: attempt.attempts });
+            else byKey.set(key, { key, name: urlPath(attempt.url), origin: hostOf(attempt.url), url: attempt.url, attempts: attempt.attempts, pattern: patternOf(attempt.key, attempt.url) });
         }
     }
     return [...byKey.values()].sort((a, b) => b.attempts - a.attempts);
+}
+
+function patternOf(key: string, url: string): string | null {
+    if (!key.includes('*')) return null;
+    const origin = new URL(url).origin;
+    return key.startsWith(origin + '/') ? key.slice(origin.length) : key;
 }
 
 export function fingerprintingDetails(snapshot: TabSnapshot): ScriptDetail[] {

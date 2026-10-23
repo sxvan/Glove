@@ -1,6 +1,7 @@
 // Scripts the user chose to block, kept in storage and enforced by the browser through
 // declarativeNetRequest. A script is blocked by its address without query or fragment, so a new
 // version parameter doesn't let it through again, on every site, as the same tracker runs on many.
+// An address edited in the settings may hold * for any characters, for a part a site randomizes.
 import { browser } from 'wxt/browser';
 import { listOf, loadStored, watchStored } from './storage';
 
@@ -29,6 +30,35 @@ export function blockKey(url: string): string | null {
     }
 }
 
+/**
+ * An address typed in the settings as a key: http(s), without query or fragment, with * for any
+ * characters; null if it isn't one. Not | or ^, which a rule's pattern reads as anchors.
+ */
+export function blockPattern(text: string): string | null {
+    const pattern = text.trim();
+    if (!/^https?:\/\/[^/?#\s|^]+\/[^?#\s|^]*$/.test(pattern)) return null;
+    try {
+        new URL(pattern.replaceAll('*', 'x'));
+        return pattern;
+    } catch {
+        return null;
+    }
+}
+
+// As the rule's urlFilter `|key^` matches (see syncBlockingRules): from the start of the full address,
+// ignoring case, * for any characters, and ^ for a separator (not a letter, digit, _ - . or %) or the end.
+function covers(key: string, url: string): boolean {
+    const pattern = key.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+    return new RegExp(`^${pattern}(?:[^\\w\\-.%]|$)`, 'i').test(url);
+}
+
+/** The entry blocking the script at `url`, by its address or a pattern covering it. */
+export function blockedBy(url: string, list: BlockedScript[]): BlockedScript | undefined {
+    const key = blockKey(url);
+    if (key === null) return undefined;
+    return list.find((script) => script.key === key) ?? list.find((script) => covers(script.key, url));
+}
+
 export async function loadBlocked(): Promise<BlockedScript[]> {
     return listOf(await loadStored(STORAGE_KEY));
 }
@@ -43,10 +73,12 @@ export async function removeExempt(keys: string[]): Promise<void> {
 }
 
 // Letting a script run again exempts it from being blocked automatically; blocking it by hand takes that back.
+// `urls` may also be entries' keys, patterns included; letting a script run again removes the pattern covering it.
 export async function setBlocked(urls: string[], blocked: boolean, auto?: Map<string, number>): Promise<void> {
-    const keys = new Map(urls.map((url) => [blockKey(url), url] as const).filter((entry): entry is [string, string] => entry[0] !== null));
+    const keys = new Map(urls.map((url) => [blockKey(url) ?? blockPattern(url), url] as const).filter((entry): entry is [string, string] => entry[0] !== null));
     if (keys.size === 0) return;
-    const list = (await loadBlocked()).filter((script) => !keys.has(script.key));
+    const covering = (script: BlockedScript) => [...keys.keys()].some((key) => script.key === key || (!blocked && covers(script.key, key)));
+    const list = (await loadBlocked()).filter((script) => !covering(script));
     if (blocked) {
         for (const [key, url] of keys) {
             const score = auto?.get(url);
@@ -56,6 +88,12 @@ export async function setBlocked(urls: string[], blocked: boolean, auto?: Map<st
     const exempt = (await loadExempt()).filter((key) => !keys.has(key));
     if (!blocked) exempt.push(...keys.keys());
     await browser.storage.local.set({ [STORAGE_KEY]: list, ...(auto ? {} : { [EXEMPT_KEY]: exempt }) });
+}
+
+/** Changes what an entry blocks to `key` (see blockPattern), keeping when and how it was blocked. */
+export async function editBlocked(from: string, key: string): Promise<void> {
+    const list = (await loadBlocked()).filter((script) => script.key !== key || script.key === from);
+    await browser.storage.local.set({ [STORAGE_KEY]: list.map((script) => (script.key === from ? { ...script, key } : script)) });
 }
 
 export function watchBlocked(onChange: (list: BlockedScript[]) => void): () => void {

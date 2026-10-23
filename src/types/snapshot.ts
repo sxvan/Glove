@@ -95,7 +95,7 @@ export interface DocumentSnapshot {
     /** The page's own bursts, across all its scripts; without their calls, which the scripts have. */
     bursts: MetricsSnapshot[];
     scripts: ScriptSnapshot[];
-    blockedScripts: { url: string; attempts: number }[];
+    blockedScripts: { key: string; url: string; attempts: number }[];
 }
 
 export interface FrameSnapshot {

@@ -33,7 +33,7 @@ export interface DocumentState {
     scripts: Record<string, ScriptState>;
     bursts: FpBurst[];
     fpMetrics?: FpMetrics | null;
-    /** By blockKey. */
+    /** By the script's address (see blockKey). */
     blockedScripts: Record<string, BlockedAttempt>;
     /** For a document the page made itself: the one that made it, where it is recorded (see recordingTarget). */
     madeBy?: DocumentRef;
@@ -45,6 +45,8 @@ export interface DocumentRef {
 }
 
 export interface BlockedAttempt {
+    /** The entry that blocked it: its address, or a pattern covering it. */
+    key: string;
     /** The address it tried to load from, the first time. */
     url: string;
     attempts: number;

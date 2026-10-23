@@ -44,7 +44,7 @@
                 <span class="name" title={script.url}><MiddleTruncate text={script.name} path /></span>
                 <span class="origin"><MiddleTruncate text={script.origin} /></span>
             </div>
-            <BlockToggle url={script.url} label="Block this script" detail={script.attempts === 1 ? 'Tried to load once' : `Tried to load ${plural(script.attempts, 'time')}`} />
+            <BlockToggle url={script.url} label="Block this script" detail={[script.attempts === 1 ? 'Tried to load once' : `Tried to load ${plural(script.attempts, 'time')}`, script.pattern && `Blocked by ${script.pattern}`].filter(Boolean).join(' · ')} />
         </article>
     {/each}
 
