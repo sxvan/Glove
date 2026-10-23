@@ -1,0 +1,44 @@
+title: "Fingerprinting on "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A site where Glove found fingerprinting, especially one that surprised you. One site per post, so others can add to it.
+  - type: input
+    id: site
+    attributes:
+      label: Site
+      description: The page you were on, without anything personal in the address.
+      placeholder: https://www.example.com/
+    validations:
+      required: true
+  - type: input
+    id: score
+    attributes:
+      label: Page score
+      description: The page's score in the popup, from 0 to 100.
+      placeholder: "91"
+    validations:
+      required: true
+  - type: textarea
+    id: scripts
+    attributes:
+      label: Scripts
+      description: The scripts scoring possible or likely, with their score, and what their cards say (e.g. "Read 57 fingerprinting APIs", "Sent 4.4 KB right after reading").
+      placeholder: |
+        /v4/b9Y07pv2XnjDfsj5yA4u on fpnpmcdn.net, 91: read 57 APIs, up to 74 bits, sent 4.4 KB right after reading
+    validations:
+      required: true
+  - type: textarea
+    id: surprise
+    attributes:
+      label: What surprised you
+      description: Optional. E.g. a site you didn't expect, a script loading again from a backup address, data sent through an alias.
+  - type: input
+    id: version
+    attributes:
+      label: Glove version
+      description: In chrome://extensions, on Glove's card.
+      placeholder: "0.2.0"
+    validations:
+      required: true

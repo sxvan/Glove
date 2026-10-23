@@ -1,0 +1,53 @@
+title: "Safe to block on "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A script you blocked where the site still worked. Others can confirm it, or report what broke, in the replies.
+  - type: input
+    id: site
+    attributes:
+      label: Site
+      placeholder: https://www.example.com/
+    validations:
+      required: true
+  - type: input
+    id: pattern
+    attributes:
+      label: Blocked address or pattern
+      description: As in the settings (Blocking → Blocked scripts), with * where the site changes the address.
+      placeholder: https://www.gstatic.com/recaptcha/releases/*/recaptcha__en.js
+    validations:
+      required: true
+  - type: input
+    id: score
+    attributes:
+      label: Its score before blocking
+      placeholder: "91"
+  - type: checkboxes
+    id: tested
+    attributes:
+      label: What still worked with it blocked
+      description: Tick only what you tried.
+      options:
+        - label: Browsing and reading pages
+        - label: Logging in
+        - label: Signing up
+        - label: Posting, commenting or sending messages
+        - label: Search
+        - label: Checkout or payment
+        - label: Video or audio
+  - type: textarea
+    id: broke
+    attributes:
+      label: What didn't work
+      description: Anything that broke or asked you to verify, or "nothing".
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Glove version
+      placeholder: "0.2.0"
+    validations:
+      required: true

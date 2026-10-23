@@ -105,6 +105,9 @@ is reported or applied unless you turn it on.
   you can report that the site still works. With the feature turned on, scripts the community has
   reported as fingerprinting but safe to block are blocked automatically.
 
+Until then, share what you find in Discussions: [sites that fingerprint](https://github.com/sxvan/Glove/discussions/categories/fingerprinting-sites)
+and [scripts that are safe to block](https://github.com/sxvan/Glove/discussions/categories/safe-to-block-patterns).
+
 ## Development
 
 Tool versions are pinned with [mise](https://mise.jdx.dev). With mise installed:
