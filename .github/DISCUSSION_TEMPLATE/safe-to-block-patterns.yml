@@ -11,19 +11,30 @@ body:
       placeholder: https://www.example.com/
     validations:
       required: true
-  - type: input
+  - type: textarea
     id: pattern
     attributes:
-      label: Blocked address or pattern
-      description: As in the settings (Blocking → Blocked scripts), with * where the site changes the address.
+      label: Blocked addresses or patterns
+      description: As in the settings (Blocking → Blocked scripts), with * where the site changes the address. One per line if you blocked several, e.g. when the script loaded again from a backup address.
       placeholder: https://www.gstatic.com/recaptcha/releases/*/recaptcha__en.js
     validations:
       required: true
   - type: input
-    id: score
+    id: score-before
     attributes:
-      label: Its score before blocking
+      label: Page score before blocking
+      description: The page's score in the popup, from 0 to 100.
       placeholder: "91"
+    validations:
+      required: true
+  - type: input
+    id: score-after
+    attributes:
+      label: Page score after blocking
+      description: After the page reloaded without the script.
+      placeholder: "1"
+    validations:
+      required: true
   - type: checkboxes
     id: tested
     attributes:
