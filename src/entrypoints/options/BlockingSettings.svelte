@@ -4,15 +4,19 @@
         blockPattern,
         DEFAULT_BLOCKING_OPTIONS,
         editBlocked,
+        loadAllowed,
         loadBlocked,
         loadBlockingOptions,
         loadExempt,
         removeExempt,
         saveBlockingOptions,
+        setAllowed,
         setBlocked,
+        watchAllowed,
         watchBlocked,
         watchBlockingOptions,
         watchExempt,
+        type AllowedScript,
         type BlockedScript,
         type BlockingOptions,
     } from '@/lib/blocking';
@@ -59,6 +63,8 @@
 
     let blocked = $state<BlockedScript[]>([]);
     let exempt = $state<string[]>([]);
+    let allowed = $state<AllowedScript[]>([]);
+    let allowedOpen = $state(false);
     let blockedOpen = $state(false);
     let exemptOpen = $state(false);
 
@@ -98,8 +104,19 @@
         act: (keys: string[]) => removeExempt(keys),
     });
 
+    const allowedGroup = $derived<Group>({
+        id: 'allowed',
+        title: 'Allowed scripts',
+        scripts: [...allowed].sort((a, b) => b.since - a.since).map((script) => ({ key: script.key, detail: day(script.since) })),
+        action: 'Remove',
+        confirm: (count: string) => `Remove the ${count}? Where a pattern covers them, they are blocked again.`,
+        act: (keys: string[]) => setAllowed(keys, false),
+    });
+
     onMount(() => {
         loadBlockingOptions().then((loaded) => (options = loaded));
+        loadAllowed().then((list) => (allowed = list));
+        const stopAllowed = watchAllowed((list) => (allowed = list));
         loadBlocked().then((list) => (blocked = list));
         loadExempt().then((keys) => (exempt = keys));
         const stopBlocked = watchBlocked((list) => (blocked = list));
@@ -109,6 +126,7 @@
         return () => {
             stopBlocked();
             stopExempt();
+            stopAllowed();
             stopOptions();
         };
     });
@@ -235,6 +253,22 @@
         </div>
         {@render scripts(group)}
     {/each}
+{/if}
+
+<div class="row">
+    <div>
+        <div class="name">Allowed scripts <span class="count">{allowed.length}</span></div>
+        <div class="description">Run even where a pattern of the blocked scripts covers them, and are never blocked automatically.</div>
+    </div>
+    <div class="actions">
+        {#if allowed.length > 0}
+            <button type="button" class="button" aria-expanded={allowedOpen} onclick={() => (allowedOpen = !allowedOpen)}>{allowedOpen ? 'Hide' : 'Show'}</button>
+            <button type="button" class="button" onclick={() => actOnAll(allowedGroup)}>Remove all</button>
+        {/if}
+    </div>
+</div>
+{#if allowedOpen && allowed.length > 0}
+    {@render scripts(allowedGroup)}
 {/if}
 
 {#snippet scripts(group: Group)}

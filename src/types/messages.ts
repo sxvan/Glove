@@ -34,6 +34,13 @@ export interface SetBlockedMessage {
     tabId: number | null;
 }
 
+/** Popup -> background: runs the script even where a pattern blocks it; answered with a SetBlockedResult. */
+export interface SetAllowedMessage {
+    type: 'SET_ALLOWED';
+    url: string;
+    tabId: number | null;
+}
+
 export interface SetBlockedResult {
     reloaded: boolean;
     cleared: boolean;

@@ -2,20 +2,27 @@
     // Follows the stored list, so other switches for the same script stay in step.
     import { onMount } from 'svelte';
     import { browser } from 'wxt/browser';
-    import { blockedBy, loadBlocked, watchBlocked, type BlockedScript } from '@/lib/blocking';
+    import { blockedBy, loadAllowed, loadBlocked, watchAllowed, watchBlocked, type AllowedScript, type BlockedScript } from '@/lib/blocking';
     import type { SetBlockedMessage, SetBlockedResult } from '@/types/messages';
 
     let { url, label, detail = '' }: { url: string; label: string; detail?: string } = $props();
 
     let list = $state<BlockedScript[]>([]);
-    const entry = $derived(blockedBy(url, list));
+    let allowed = $state<AllowedScript[]>([]);
+    const entry = $derived(blockedBy(url, list, allowed));
     const blocked = $derived(entry !== undefined);
     const autoText = $derived(entry?.auto ? `Blocked automatically at score ${Math.round(entry.auto.score * 100)}` : '');
     let done = $state<SetBlockedResult | null>(null);
 
     onMount(() => {
         loadBlocked().then((loaded) => (list = loaded));
-        return watchBlocked((changed) => (list = changed));
+        loadAllowed().then((loaded) => (allowed = loaded));
+        const stopBlocked = watchBlocked((changed) => (list = changed));
+        const stopAllowed = watchAllowed((changed) => (allowed = changed));
+        return () => {
+            stopBlocked();
+            stopAllowed();
+        };
     });
 
     async function toggle() {

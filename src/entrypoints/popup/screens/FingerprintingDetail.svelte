@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { browser } from 'wxt/browser';
+    import type { SetAllowedMessage } from '@/types/messages';
     import BlockToggle from '../components/BlockToggle.svelte';
     import FingerprintCard from '../components/FingerprintCard.svelte';
     import FoldHeading from '../components/FoldHeading.svelte';
@@ -25,6 +27,12 @@
     const suspicious = $derived(scripts.filter((script) => script.likelihood === 'possible' || script.likelihood === 'likely'));
     const unlikely = $derived(scripts.filter((script) => !suspicious.includes(script)));
     const listed = $derived(blocked.length + suspicious.length);
+
+    async function allow(url: string) {
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        const message: SetAllowedMessage = { type: 'SET_ALLOWED', url, tabId: tab?.id ?? null };
+        await browser.runtime.sendMessage(message);
+    }
 </script>
 
 <!-- The page's card also without fingerprinting, when it has something to say, such as requests through an alias. -->
@@ -45,6 +53,12 @@
                 <span class="origin"><MiddleTruncate text={script.origin} /></span>
             </div>
             <BlockToggle url={script.url} label="Block this script" detail={[script.attempts === 1 ? 'Tried to load once' : `Tried to load ${plural(script.attempts, 'time')}`, script.pattern && `Blocked by ${script.pattern}`].filter(Boolean).join(' · ')} />
+            {#if script.pattern}
+                <div class="allow">
+                    <span class="allow-text">Let this address run; the pattern keeps blocking the others.</span>
+                    <button type="button" class="button" onclick={() => allow(script.url)}>Allow</button>
+                </div>
+            {/if}
         </article>
     {/each}
 
@@ -85,6 +99,18 @@
     .origin {
         min-width: 0;
         font-size: 14px;
+    }
+
+    .allow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+
+    .allow-text {
+        color: var(--muted);
+        font-size: 12px;
     }
 
     .empty {

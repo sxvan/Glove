@@ -4,14 +4,18 @@ import {
     blockKey,
     blockedBy,
     DEFAULT_BLOCKING_OPTIONS,
+    loadAllowed,
     loadBlocked,
     loadBlockingOptions,
     loadExempt,
+    setAllowed,
     setBlocked,
     syncBlockingRules,
+    watchAllowed,
     watchBlocked,
     watchBlockingOptions,
     watchExempt,
+    type AllowedScript,
     type BlockedScript,
 } from '@/lib/blocking';
 import { DEFAULT_LIMITS, loadLimits, watchLimits } from '@/lib/limits';
@@ -27,7 +31,7 @@ import { DEFAULT_SETTINGS, loadScoringSettings, watchScoringSettings, type Scori
 import { forgetTabIcon, showBlockedCount, showScoreIcon } from '@/lib/toolbar-icon';
 import { createSession, currentDocument, currentDocuments, dropTab, dropPreviousPageFrames, ensureDocument, updateDocumentRoute, updateCurrentDocument, storeHttpEvent, storeFpEvent, storeStorageEvent, documentExists, notePageMade, recordingTarget } from '@/lib/session-manager';
 import type { HttpRequest } from '@/types/analysis';
-import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
+import type { AnalysisUpdatedMessage, GetEventLogMessage, GetTabSnapshotMessage, RecorderMessage, SetAllowedMessage, SetBlockedMessage, SetBlockedResult, SetSiteOffMessage } from '@/types/messages';
 import type { DocumentState, Session } from '@/types/session';
 
 let settings: ScoringSettings = DEFAULT_SETTINGS;
@@ -64,12 +68,13 @@ export default defineBackground(() => {
     follow('performance limits', loadLimits, watchLimits, (loaded) => (limits = loaded));
 
     let blockedList: BlockedScript[] = [];
+    let allowedList: AllowedScript[] = [];
     let offSites: OffSite[] = [];
     // One update at a time: an update replaces all rules by their ids, so two at once collide.
     let rulesSynced: Promise<void> = Promise.resolve();
     function syncRules() {
         rulesSynced = rulesSynced
-            .then(() => syncBlockingRules(blockedList, offSites.map(({ site }) => site)))
+            .then(() => syncBlockingRules(blockedList, allowedList, offSites.map(({ site }) => site)))
             .catch((error) => console.warn('Could not update the blocking rules', error));
         return rulesSynced;
     }
@@ -77,11 +82,16 @@ export default defineBackground(() => {
         blockedList = list;
         return syncRules();
     }
+    function applyAllowed(list: AllowedScript[]) {
+        allowedList = list;
+        return syncRules();
+    }
     function applyOffSites(sites: OffSite[]) {
         offSites = sites;
         return Promise.all([syncRules(), registerRecorders(sites).catch((error) => console.warn('Could not register the recorders', error))]);
     }
     follow('blocked scripts', loadBlocked, watchBlocked, applyBlocked);
+    follow('allowed scripts', loadAllowed, watchAllowed, applyAllowed);
     follow('sites turned off', loadOffSites, watchOffSites, applyOffSites);
 
     function blockedOnPage(tabId: number): number {
@@ -135,7 +145,7 @@ export default defineBackground(() => {
             for (const [name, script] of Object.entries(document.scripts)) {
                 const score = script.fpMetrics?.score ?? 0;
                 const key = blockKey(name);
-                if (score < blockingOptions.autoBlockFrom || !key || blockedBy(name, blockedList) || exempt.has(key) || autoBlocking.has(key)) continue;
+                if (score < blockingOptions.autoBlockFrom || !key || blockedBy(name, blockedList, allowedList) || allowedList.some((script) => script.key === key) || exempt.has(key) || autoBlocking.has(key)) continue;
                 found.set(name, score);
             }
         }
@@ -151,6 +161,21 @@ export default defineBackground(() => {
         if (msg?.type !== 'SET_BLOCKED') return;
         changeBlocked([msg.url], msg.blocked, msg.tabId).then(sendResponse, (error) => {
             console.warn('Could not block or unblock the script', error);
+            sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
+        });
+        return true;
+    });
+
+    browser.runtime.onMessage.addListener((msg: SetAllowedMessage, _sender, sendResponse) => {
+        if (msg?.type !== 'SET_ALLOWED') return;
+        (async (): Promise<SetBlockedResult> => {
+            await setAllowed([msg.url], true);
+            await applyAllowed(await loadAllowed());
+            if (msg.tabId === null || !(await loadBlockingOptions()).reload) return { reloaded: false, cleared: false };
+            await browser.tabs.reload(msg.tabId);
+            return { reloaded: true, cleared: false };
+        })().then(sendResponse, (error) => {
+            console.warn('Could not allow the script', error);
             sendResponse({ reloaded: false, cleared: false } satisfies SetBlockedResult);
         });
         return true;
@@ -331,7 +356,7 @@ export default defineBackground(() => {
         (details) => {
             const { tabId } = details;
             if (tabId === -1 || details.frameId === -1 || !details.documentId || details.error !== 'net::ERR_BLOCKED_BY_CLIENT') return;
-            const entry = blockedBy(details.url, blockedList);
+            const entry = blockedBy(details.url, blockedList, allowedList);
             const { frameId, documentId } = recordingTarget(session, tabId, details.frameId, details.documentId);
             if (!entry || !documentExists(session, tabId, frameId, documentId)) return;
 

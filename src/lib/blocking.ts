@@ -17,6 +17,15 @@ const STORAGE_KEY = 'blockedScripts';
 // Scripts the user let run again, by what they are blocked by: never blocked automatically after.
 const EXEMPT_KEY = 'autoBlockExempt';
 
+/** A script that runs even where a pattern blocks its address, and is never blocked automatically. */
+export interface AllowedScript {
+    key: string;
+    /** When it was allowed (ms since the epoch). */
+    since: number;
+}
+
+const ALLOWED_KEY = 'allowedScripts';
+
 // Null for a script that can't be blocked by address (inline, generated, other schemes) or that a rule can't express.
 export function blockKey(url: string): string | null {
     try {
@@ -52,15 +61,31 @@ function covers(key: string, url: string): boolean {
     return new RegExp(`^${pattern}(?:[^\\w\\-.%]|$)`, 'i').test(url);
 }
 
-/** The entry blocking the script at `url`, by its address or a pattern covering it. */
-export function blockedBy(url: string, list: BlockedScript[]): BlockedScript | undefined {
+/** The entry blocking the script at `url`, by its address or a pattern covering it; none for an allowed script. */
+export function blockedBy(url: string, list: BlockedScript[], allowed: AllowedScript[]): BlockedScript | undefined {
     const key = blockKey(url);
-    if (key === null) return undefined;
+    if (key === null || allowed.some((script) => script.key === key)) return undefined;
     return list.find((script) => script.key === key) ?? list.find((script) => covers(script.key, url));
 }
 
 export async function loadBlocked(): Promise<BlockedScript[]> {
     return listOf(await loadStored(STORAGE_KEY));
+}
+
+export async function loadAllowed(): Promise<AllowedScript[]> {
+    return listOf(await loadStored(ALLOWED_KEY));
+}
+
+/** Allows the scripts at `urls` (or with these keys), or takes that back. */
+export async function setAllowed(urls: string[], allowed: boolean): Promise<void> {
+    const keys = new Set(urls.map(blockKey).filter((key) => key !== null));
+    const list = (await loadAllowed()).filter((script) => !keys.has(script.key));
+    if (allowed) for (const key of keys) list.push({ key, since: Date.now() });
+    await browser.storage.local.set({ [ALLOWED_KEY]: list });
+}
+
+export function watchAllowed(onChange: (list: AllowedScript[]) => void): () => void {
+    return watchStored(ALLOWED_KEY, (value) => onChange(listOf(value)));
 }
 
 export async function loadExempt(): Promise<string[]> {
@@ -104,8 +129,9 @@ export function watchExempt(onChange: (keys: string[]) => void): () => void {
     return watchStored(EXEMPT_KEY, (value) => onChange(listOf(value)));
 }
 
-// On sites the extension is off for, a rule of higher priority allows all of a page's requests, its frames' too.
-export async function syncBlockingRules(list: BlockedScript[], offSites: string[]): Promise<void> {
+// Allowed scripts, and on sites the extension is off for all of a page's requests, its frames' too,
+// are allowed by rules of higher priority than the blocking ones.
+export async function syncBlockingRules(list: BlockedScript[], allowed: AllowedScript[], offSites: string[]): Promise<void> {
     const existing = await browser.declarativeNetRequest.getDynamicRules();
     const blockRules = list.map((script, i) => ({
         id: i + 1,
@@ -113,12 +139,18 @@ export async function syncBlockingRules(list: BlockedScript[], offSites: string[
         action: { type: 'block' as const },
         condition: { urlFilter: `|${script.key}^`, resourceTypes: ['script' as const] },
     }));
+    const allowScriptRules = allowed.map((script, i) => ({
+        id: blockRules.length + i + 1,
+        priority: 2,
+        action: { type: 'allow' as const },
+        condition: { urlFilter: `|${script.key}^`, resourceTypes: ['script' as const] },
+    }));
     // requestDomains covers each name's subdomains too, as an off site does.
     const allowRules =
         offSites.length > 0
             ? [
                   {
-                      id: blockRules.length + 1,
+                      id: blockRules.length + allowScriptRules.length + 1,
                       priority: 2,
                       action: { type: 'allowAllRequests' as const },
                       condition: { requestDomains: offSites, resourceTypes: ['main_frame' as const] },
@@ -127,7 +159,7 @@ export async function syncBlockingRules(list: BlockedScript[], offSites: string[
             : [];
     await browser.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: existing.map((rule) => rule.id),
-        addRules: [...blockRules, ...allowRules],
+        addRules: [...blockRules, ...allowScriptRules, ...allowRules],
     });
 }
 
